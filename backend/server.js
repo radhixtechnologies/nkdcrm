@@ -148,8 +148,8 @@ app.use((err, req, res, next) => {
     });
 });
 
-const server = app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+const server = app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running on http://localhost:${port} and network http://0.0.0.0:${port}`);
 
     // Auto-initialize DB on startup for both local and cloud databases
     const { initializeDatabase } = require('./services/initDb');
