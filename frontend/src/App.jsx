@@ -18,6 +18,8 @@ import SiteShift from './pages/SiteShift';
 import UserManagement from './pages/UserManagement';
 import Recruitment from './pages/Recruitment';
 import Invoices from './pages/Invoices';
+import Vendors from './pages/Vendors';
+import Assets from './pages/Assets';
 
 function App() {
   return (
@@ -43,6 +45,8 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="recruitment" element={<ProtectedRoute><Recruitment /></ProtectedRoute>} />
           <Route path="invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
+          <Route path="vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+          <Route path="assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />
 
           <Route
             path="sites"

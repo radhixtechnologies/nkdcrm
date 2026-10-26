@@ -15,7 +15,9 @@ import {
     ChevronRight,
     ShieldCheck,
     UserPlus,
-    Receipt
+    Receipt,
+    Package,
+    Truck
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
@@ -29,6 +31,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { title: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
         { title: 'Recruitment', path: '/recruitment', icon: <UserPlus size={20} />, restricted: true },
         { title: 'Client Invoices', path: '/invoices', icon: <Receipt size={20} />, restricted: true },
+        { title: 'Vendors', path: '/vendors', icon: <Truck size={20} />, restricted: true },
+        { title: 'Assets & PPE', path: '/assets', icon: <Package size={20} />, restricted: true },
         { title: 'Site & Shift', path: '/site-shift', icon: <Clock size={20} /> },
         { title: 'Sites & Branches', path: '/sites', icon: <Building size={20} />, restricted: true },
         { title: 'Employees', path: '/employees', icon: <Users size={20} />, restricted: true },

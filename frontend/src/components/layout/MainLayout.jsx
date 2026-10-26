@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import AIChatbotWidget from '../ai/AIChatbotWidget';
 
 const MainLayout = () => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -15,6 +16,8 @@ const MainLayout = () => {
                     <Outlet />
                 </main>
             </div>
+            {/* Global AI Assistant Floating Widget */}
+            <AIChatbotWidget />
         </div>
     );
 };

@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { FileText, Download, Eye, Calendar, X, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { FileText, Download, Eye, Calendar, X, AlertCircle, Sparkles, ShieldCheck, AlertTriangle, ShieldAlert } from 'lucide-react';
 import api from '../services/api';
+import aiService from '../services/aiService';
 import toast from 'react-hot-toast';
 
 const reportConfigs = [
@@ -35,6 +36,19 @@ const Reports = () => {
     const [loadingKey, setLoadingKey] = useState(null);
     const [previewData, setPreviewData] = useState(null);
     const [previewTitle, setPreviewTitle] = useState('');
+    const [aiCompliance, setAiCompliance] = useState(null);
+
+    useEffect(() => {
+        const fetchAiPrediction = async () => {
+            try {
+                const res = await aiService.getCompliancePrediction();
+                setAiCompliance(res.data?.data || res.data);
+            } catch (err) {
+                console.warn('AI compliance score unavailable:', err.message);
+            }
+        };
+        fetchAiPrediction();
+    }, []);
 
     const fetchReport = async (key) => {
         const res = await api.get(`/reports/${key}?month=${selectedMonth}&year=${selectedYear}`);
@@ -131,6 +145,66 @@ const Reports = () => {
                     </select>
                 </div>
             </div>
+
+            {/* AI Predictive Compliance Health Card */}
+            {aiCompliance && (
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 shadow-lg border border-indigo-900/40">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5">
+                            <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
+                                <Sparkles size={24} />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-base font-bold text-white tracking-wide">
+                                        AI Compliance Risk & Statutory Health Predictor
+                                    </h2>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        aiCompliance.risk_level === 'LOW_RISK' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                        aiCompliance.risk_level === 'MODERATE_RISK' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                                        'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    }`}>
+                                        {aiCompliance.risk_level?.replace('_', ' ')}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-300 mt-0.5">
+                                    Predictive compliance score based on UAN linkage, bank records, CLRA capacity & 15th monthly ECR deadlines.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-6 self-stretch md:self-auto justify-between border-t md:border-t-0 pt-3 md:pt-0 border-white/10">
+                            <div className="text-left md:text-right">
+                                <div className="text-[11px] text-slate-400 font-semibold uppercase">Days to ECR Deadline</div>
+                                <div className="text-xl font-bold text-amber-400 font-mono">
+                                    {aiCompliance.days_to_pf_esic_deadline} Days
+                                </div>
+                            </div>
+
+                            <div className="text-right">
+                                <div className="text-[11px] text-slate-400 font-semibold uppercase">Health Score</div>
+                                <div className={`text-2xl font-black font-mono ${
+                                    aiCompliance.compliance_health_score >= 80 ? 'text-emerald-400' :
+                                    aiCompliance.compliance_health_score >= 60 ? 'text-amber-400' : 'text-rose-400'
+                                }`}>
+                                    {aiCompliance.compliance_health_score}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {aiCompliance.risk_factors && aiCompliance.risk_factors.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            {aiCompliance.risk_factors.map((factor, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-amber-200/90 bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5">
+                                    <AlertTriangle size={13} className="text-amber-400 shrink-0" />
+                                    <span className="truncate">{factor}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Reports Grid */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

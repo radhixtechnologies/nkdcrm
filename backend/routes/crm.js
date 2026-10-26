@@ -22,6 +22,9 @@ const pdfService = require('../services/pdfService');
 const excelService = require('../services/excelService');
 const invoiceService = require('../services/invoiceService');
 const recruitmentService = require('../services/recruitmentService');
+const vendorService = require('../services/vendorService');
+const assetService = require('../services/assetService');
+const aiService = require('../services/aiService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -1076,6 +1079,130 @@ router.put('/recruitment/offers/:id/status', async (req, res, next) => {
 router.post('/recruitment/candidates/:id/convert-to-employee', async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.convertToEmployee(req.params.id, req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// VENDOR MANAGEMENT ROUTES
+// ==========================================
+router.get('/vendors/stats', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.getVendorStats());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendors', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.getVendors(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/vendors', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.createVendor(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/vendors/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.updateVendor(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/vendors/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.deleteVendor(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendors/agreements', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.getAgreements(req.query.vendor_id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/vendors/agreements', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.createAgreement(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/vendors/agreements/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.deleteAgreement(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// ASSET MANAGEMENT ROUTES
+// ==========================================
+router.get('/assets/stats', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.getAssetStats());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/assets', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.getAssets(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/assets', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.createAsset(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/assets/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.updateAsset(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/assets/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.deleteAsset(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/assets/allocations', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.getAllocations(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/assets/allocate', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.allocateAsset(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/assets/return/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.returnAsset(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// AI FEATURES ROUTES
+// ==========================================
+router.post('/ai/chat', async (req, res, next) => {
+    try {
+        const { message, context } = req.body;
+        return sendData(res, await aiService.handleChatMessage(message, context));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/ai/screen-candidate/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await aiService.screenCandidate(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/ai/compliance-prediction', async (req, res, next) => {
+    try {
+        return sendData(res, await aiService.getPredictiveCompliance());
     } catch (error) { return sendError(next, error); }
 });
 

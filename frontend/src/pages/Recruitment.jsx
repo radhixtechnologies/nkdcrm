@@ -3,11 +3,12 @@ import {
     Briefcase, Users, FileCheck, UserPlus, Plus,
     CheckCircle2, Clock, Calendar, Star, ArrowRight,
     Search, Filter, Eye, AlertCircle, X, ChevronRight,
-    Mail, Phone, MapPin, Building2, UserCheck
+    Mail, Phone, MapPin, Building2, UserCheck, Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import recruitmentService from '../services/recruitmentService';
 import siteService from '../services/siteService';
+import aiService from '../services/aiService';
 
 const Recruitment = () => {
     const [activeTab, setActiveTab] = useState('pipeline'); // 'pipeline', 'requisitions', 'offers'
@@ -27,6 +28,21 @@ const Recruitment = () => {
     const [showOfferModal, setShowOfferModal] = useState(false);
     const [selectedCandidate, setSelectedCandidate] = useState(null);
     const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [screeningId, setScreeningId] = useState(null);
+
+    const handleAiScreen = async (candId) => {
+        setScreeningId(candId);
+        try {
+            const res = await aiService.screenCandidate(candId);
+            const data = res.data?.data || res.data || {};
+            toast.success(`AI Match Score: ${data.match_score}% (${data.recommendation})`);
+            fetchData();
+        } catch (err) {
+            toast.error('AI Screening failed');
+        } finally {
+            setScreeningId(null);
+        }
+    };
 
     // Form states
     const [reqForm, setReqForm] = useState({
@@ -353,6 +369,40 @@ const Recruitment = () => {
                                                         {cand.interviewer_name && <p>Interviewer: {cand.interviewer_name}</p>}
                                                         {cand.interview_feedback && <p className="italic mt-0.5">"{cand.interview_feedback}"</p>}
                                                     </div>
+                                                )}
+
+                                                {/* AI Resume Screening Result or Action */}
+                                                {cand.ai_match_score ? (
+                                                    <div className="mt-2.5 p-2 rounded-lg bg-indigo-50/80 border border-indigo-100 text-[11px] text-indigo-900">
+                                                        <div className="font-semibold flex items-center justify-between">
+                                                            <span className="flex items-center gap-1 text-indigo-700">
+                                                                <Sparkles size={12} className="text-indigo-600" />
+                                                                AI Match: {cand.ai_match_score}%
+                                                            </span>
+                                                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                                                                cand.ai_recommendation === 'STRONG_HIRE' ? 'bg-emerald-100 text-emerald-800' :
+                                                                cand.ai_recommendation === 'CONSIDER' ? 'bg-amber-100 text-amber-800' :
+                                                                'bg-rose-100 text-rose-800'
+                                                            }`}>
+                                                                {cand.ai_recommendation}
+                                                            </span>
+                                                        </div>
+                                                        {cand.ai_screening_summary && (
+                                                            <p className="text-slate-600 mt-1 whitespace-pre-line text-[10px] leading-tight">
+                                                                {cand.ai_screening_summary}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAiScreen(cand.candidate_id)}
+                                                        disabled={screeningId === cand.candidate_id}
+                                                        className="mt-2 w-full py-1 px-2 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 text-indigo-700 border border-indigo-200 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <Sparkles size={11} className={screeningId === cand.candidate_id ? 'animate-spin' : ''} />
+                                                        {screeningId === cand.candidate_id ? 'AI Screening...' : 'Run AI Resume Screening'}
+                                                    </button>
                                                 )}
                                             </div>
                                         </div>
