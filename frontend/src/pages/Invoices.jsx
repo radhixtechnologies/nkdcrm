@@ -67,7 +67,7 @@ const Invoices = () => {
             const [invRes, cliRes, siteRes, statRes] = await Promise.all([
                 invoiceService.getInvoices().catch(() => ({ data: { data: [] } })),
                 invoiceService.getClients().catch(() => ({ data: { data: [] } })),
-                siteService.getSites().catch(() => ({ data: { data: [] } })),
+                (siteService.getAllSites ? siteService.getAllSites() : siteService.getSites()).catch(() => ({ data: { data: [] } })),
                 invoiceService.getInvoiceStats().catch(() => ({ data: { data: {} } }))
             ]);
             setInvoices(invRes.data?.data || []);

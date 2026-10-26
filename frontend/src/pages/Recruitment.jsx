@@ -77,7 +77,7 @@ const Recruitment = () => {
                 recruitmentService.getRequisitions().catch(() => ({ data: { data: [] } })),
                 recruitmentService.getCandidates().catch(() => ({ data: { data: [] } })),
                 recruitmentService.getOffers().catch(() => ({ data: { data: [] } })),
-                siteService.getSites().catch(() => ({ data: { data: [] } }))
+                (siteService.getAllSites ? siteService.getAllSites() : siteService.getSites()).catch(() => ({ data: { data: [] } }))
             ]);
             setRequisitions(reqRes.data?.data || []);
             setCandidates(candRes.data?.data || []);
