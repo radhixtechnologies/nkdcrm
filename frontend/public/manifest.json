@@ -1,0 +1,41 @@
+{
+  "name": "NKD CRM Workforce & HRMS",
+  "short_name": "NKD CRM",
+  "description": "Enterprise Workforce Management, GPS Attendance, Payroll & ESS Portal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Punch Attendance",
+      "short_name": "Punch",
+      "description": "Live GPS Attendance Punch-in / Punch-out",
+      "url": "/mobile",
+      "icons": [{ "src": "/icon.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "Apply Leave",
+      "short_name": "Leaves",
+      "description": "Apply for casual, sick, or earned leave",
+      "url": "/leaves",
+      "icons": [{ "src": "/icon.svg", "sizes": "96x96" }]
+    },
+    {
+      "name": "My Payslip",
+      "short_name": "Payslip",
+      "description": "View and download monthly payslips",
+      "url": "/payroll",
+      "icons": [{ "src": "/icon.svg", "sizes": "96x96" }]
+    }
+  ]
+}

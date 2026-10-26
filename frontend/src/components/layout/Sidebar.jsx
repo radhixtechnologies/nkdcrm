@@ -17,7 +17,8 @@ import {
     UserPlus,
     Receipt,
     Package,
-    Truck
+    Truck,
+    Smartphone
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
@@ -29,6 +30,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
     const menuItems = [
         { title: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+        { title: 'Mobile App View', path: '/mobile', icon: <Smartphone size={20} /> },
         { title: 'Recruitment', path: '/recruitment', icon: <UserPlus size={20} />, restricted: true },
         { title: 'Client Invoices', path: '/invoices', icon: <Receipt size={20} />, restricted: true },
         { title: 'Vendors', path: '/vendors', icon: <Truck size={20} />, restricted: true },
@@ -52,7 +54,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
     return (
         <aside
-            className={`fixed left-0 top-0 z-40 h-screen border-r border-slate-200 bg-white transition-all duration-300 ease-in-out ${isOpen ? 'w-64' : 'w-20'
+            className={`hidden md:block fixed left-0 top-0 z-40 h-screen border-r border-slate-200 bg-white transition-all duration-300 ease-in-out ${isOpen ? 'w-64' : 'w-20'
                 }`}
         >
             {/* Toggle Button */}

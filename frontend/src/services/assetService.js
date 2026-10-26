@@ -13,3 +13,4 @@ const assetService = {
 };
 
 export default assetService;
+

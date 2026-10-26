@@ -82,3 +82,4 @@ CREATE TABLE IF NOT EXISTS asset_allocations (
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ai_match_score INTEGER;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ai_screening_summary TEXT;
 ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ai_recommendation VARCHAR(50);
+

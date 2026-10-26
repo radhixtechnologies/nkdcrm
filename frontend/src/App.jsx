@@ -20,6 +20,7 @@ import Recruitment from './pages/Recruitment';
 import Invoices from './pages/Invoices';
 import Vendors from './pages/Vendors';
 import Assets from './pages/Assets';
+import MobileApp from './pages/MobileApp';
 
 function App() {
   return (
@@ -47,6 +48,7 @@ function App() {
           <Route path="invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
           <Route path="vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
           <Route path="assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />
+          <Route path="mobile" element={<ProtectedRoute><MobileApp /></ProtectedRoute>} />
 
           <Route
             path="sites"
