@@ -92,8 +92,20 @@ const runMigration = async () => {
             ON CONFLICT (module_code) DO NOTHING;
         `);
 
-        // 6. Create permissions table
+        // 6. Create permissions table (drop if old schema missing role_id)
         console.log('6️⃣  Creating permissions table...');
+        await client.query(`
+            DO $$ 
+            BEGIN 
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'permissions'
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'permissions' AND column_name = 'role_id'
+                ) THEN 
+                    DROP TABLE permissions CASCADE; 
+                END IF; 
+            END $$;
+        `);
         await client.query(`
             CREATE TABLE IF NOT EXISTS permissions (
                 permission_id SERIAL PRIMARY KEY,

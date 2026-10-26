@@ -64,19 +64,20 @@ const runAuthMigration = async () => {
             is_active BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        DO $$ 
+        BEGIN 
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'permissions'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'permissions' AND column_name = 'role_id'
+            ) THEN 
+                DROP TABLE permissions CASCADE; 
+            END IF; 
+        END $$;
         CREATE TABLE IF NOT EXISTS permissions (
             permission_id SERIAL PRIMARY KEY,
-            module_id INTEGER REFERENCES modules(module_id) ON DELETE CASCADE,
-            permission_name VARCHAR(100) NOT NULL,
-            permission_code VARCHAR(50) UNIQUE NOT NULL,
-            description TEXT,
-            action VARCHAR(20) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS role_permissions (
-            role_permission_id SERIAL PRIMARY KEY,
-            role_id INTEGER REFERENCES roles(role_id) ON DELETE CASCADE,
-            module_id INTEGER REFERENCES modules(module_id) ON DELETE CASCADE,
+            role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+            module_id INTEGER NOT NULL REFERENCES modules(module_id) ON DELETE CASCADE,
             can_view BOOLEAN DEFAULT FALSE,
             can_create BOOLEAN DEFAULT FALSE,
             can_update BOOLEAN DEFAULT FALSE,
@@ -84,7 +85,6 @@ const runAuthMigration = async () => {
             can_approve BOOLEAN DEFAULT FALSE,
             can_export BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(role_id, module_id)
         );
         CREATE TABLE IF NOT EXISTS users (
@@ -133,7 +133,7 @@ const runAuthMigration = async () => {
         const allModules = await pool.query("SELECT module_id FROM modules");
         for (const m of allModules.rows) {
             await pool.query(`
-                INSERT INTO role_permissions (role_id, module_id, can_view, can_create, can_update, can_delete, can_approve, can_export)
+                INSERT INTO permissions (role_id, module_id, can_view, can_create, can_update, can_delete, can_approve, can_export)
                 VALUES ($1, $2, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)
                 ON CONFLICT (role_id, module_id) DO UPDATE SET
                     can_view = TRUE, can_create = TRUE, can_update = TRUE, can_delete = TRUE, can_approve = TRUE, can_export = TRUE
@@ -175,3 +175,4 @@ const initializeDatabase = async () => {
 };
 
 module.exports = { initializeDatabase };
+
