@@ -4,10 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
     User,
     LogOut,
-
+    Menu
 } from 'lucide-react';
 
-const Header = () => {
+const Header = ({ toggleMobileSidebar }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -33,13 +33,20 @@ const Header = () => {
     }, []);
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between bg-white border-b border-slate-200 px-6 shadow-sm">
-            {/* Left Side (Breadcrumbs or Page Title - Optional) */}
-            <div className="flex items-center gap-4">
-                {/* <button className="text-slate-500 hover:text-slate-700 md:hidden">
-                    <Menu size={24} />
-                </button> */}
-                {/* <h2 className="text-lg font-semibold text-slate-800">Dashboard</h2> */}
+        <header className="sticky top-0 z-20 flex h-16 w-full items-center justify-between bg-white border-b border-slate-200 px-4 md:px-8 shadow-2xs">
+            {/* Left Side: Mobile Hamburger & Logo */}
+            <div className="flex items-center gap-3">
+                <button
+                    onClick={toggleMobileSidebar}
+                    className="md:hidden p-2 -ml-1 rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none"
+                    aria-label="Open sidebar"
+                >
+                    <Menu size={22} />
+                </button>
+                <div className="flex items-center gap-2 md:hidden">
+                    <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-xs">N</div>
+                    <span className="font-bold text-primary-600 text-base tracking-tight">NKD CRM</span>
+                </div>
             </div>
 
             {/* Right Side Actions */}
