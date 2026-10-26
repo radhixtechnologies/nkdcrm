@@ -62,6 +62,24 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+app.get('/api/setup-database', async (req, res) => {
+    try {
+        const { initializeDatabase } = require('./services/initDb');
+        const result = await initializeDatabase();
+        res.json({
+            success: true,
+            message: result.message,
+            superAdmin: {
+                email: process.env.SUPER_ADMIN_EMAIL || 'admin@nkdcrm.com',
+                password: process.env.SUPER_ADMIN_PASSWORD || 'Admin@123'
+            }
+        });
+    } catch (err) {
+        console.error('Setup endpoint error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api', crmRoutes);
@@ -123,6 +141,15 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
+
+    // Auto-initialize DB on startup if DATABASE_URL or DB_HOST connection string is present
+    const isCloudDb = process.env.DATABASE_URL || (process.env.DB_HOST && process.env.DB_HOST.includes('@'));
+    if (isCloudDb) {
+        const { initializeDatabase } = require('./services/initDb');
+        initializeDatabase().catch(err => {
+            console.error('Auto-initialization warning:', err.message);
+        });
+    }
 });
 
 server.on('error', (error) => {
