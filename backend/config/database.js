@@ -8,10 +8,17 @@ const path = require('path');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
+// Detect if connection string is in DATABASE_URL or inadvertently placed in DB_HOST
+const rawConnectionString = process.env.DATABASE_URL ||
+  (process.env.DB_HOST && (process.env.DB_HOST.startsWith('postgres://') || process.env.DB_HOST.startsWith('postgresql://')) ? process.env.DB_HOST : null);
+
+const isUrlLike = rawConnectionString || (process.env.DB_HOST && process.env.DB_HOST.includes('@'));
+const finalConnectionString = rawConnectionString || (isUrlLike ? `postgresql://${process.env.DB_HOST}` : null);
+
 // Debug: Show what database we're connecting to
 console.log('🔍 Database Configuration:');
-if (process.env.DATABASE_URL) {
-  console.log('   Using DATABASE_URL connection string');
+if (finalConnectionString) {
+  console.log('   Using connection string (auto-detected for cloud database)');
 } else {
   console.log('   DB_NAME from .env:', process.env.DB_NAME);
   console.log('   DB_USER:', process.env.DB_USER);
@@ -19,9 +26,9 @@ if (process.env.DATABASE_URL) {
 }
 
 // Create PostgreSQL connection pool with cloud/Render support (DATABASE_URL & SSL)
-const poolConfig = process.env.DATABASE_URL
+const poolConfig = finalConnectionString
   ? {
-      connectionString: process.env.DATABASE_URL,
+      connectionString: finalConnectionString,
       ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
       max: 20,
       idleTimeoutMillis: 30000,

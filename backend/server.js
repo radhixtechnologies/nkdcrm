@@ -108,6 +108,13 @@ app.use((err, req, res, next) => {
         });
     }
 
+    if (err.code === 'ENOTFOUND' || err.message?.includes('getaddrinfo') || err.message?.includes('password authentication failed')) {
+        return res.status(503).json({
+            success: false,
+            message: 'Database connection failed. Please check your Render DATABASE_URL or database settings.'
+        });
+    }
+
     res.status(err.status || 500).json({
         success: false,
         message: err.message || 'Internal server error'
