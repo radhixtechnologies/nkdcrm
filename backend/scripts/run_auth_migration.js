@@ -3,17 +3,7 @@
  * Runs the auth migration with better error handling
  */
 
-const { Pool } = require('pg');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
-
-const pool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
-    database: process.env.DB_NAME || 'NKD_CRM',
-    user: process.env.DB_USER || 'postgres',
-    password: () => String(process.env.DB_PASSWORD ?? '')
-});
+const { pool } = require('../config/database');
 
 const runMigration = async () => {
     const client = await pool.connect();

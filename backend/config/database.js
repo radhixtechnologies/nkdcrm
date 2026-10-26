@@ -10,21 +10,36 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 // Debug: Show what database we're connecting to
 console.log('🔍 Database Configuration:');
-console.log('   DB_NAME from .env:', process.env.DB_NAME);
-console.log('   DB_USER:', process.env.DB_USER);
-console.log('   DB_HOST:', process.env.DB_HOST);
+if (process.env.DATABASE_URL) {
+  console.log('   Using DATABASE_URL connection string');
+} else {
+  console.log('   DB_NAME from .env:', process.env.DB_NAME);
+  console.log('   DB_USER:', process.env.DB_USER);
+  console.log('   DB_HOST:', process.env.DB_HOST);
+}
 
-// Create PostgreSQL connection pool
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'NKD_CRM',
-  user: process.env.DB_USER || 'postgres',
-  password: () => String(process.env.DB_PASSWORD ?? ''),
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 2000, // Return error after 2 seconds if connection not available
-});
+// Create PostgreSQL connection pool with cloud/Render support (DATABASE_URL & SSL)
+const poolConfig = process.env.DATABASE_URL
+  ? {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DB_SSL === 'false' ? false : { rejectUnauthorized: false },
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    }
+  : {
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 5432,
+      database: process.env.DB_NAME || 'NKD_CRM',
+      user: process.env.DB_USER || 'postgres',
+      password: () => String(process.env.DB_PASSWORD ?? ''),
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    };
+
+const pool = new Pool(poolConfig);
 
 // Test database connection
 pool.on('connect', () => {

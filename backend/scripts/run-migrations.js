@@ -4,11 +4,17 @@ const { pool } = require('../config/database');
 
 const runMigrations = async () => {
     try {
-        // Construct path relative to backend/scripts
-        const migrationsDir = path.join(__dirname, '../../database/migrations');
-        console.log(`Checking for migrations in: ${migrationsDir}`);
+        // Check possible paths for database/migrations
+        const candidatePaths = [
+            path.join(__dirname, '../../database/migrations'),
+            path.join(__dirname, '../database/migrations'),
+            path.join(process.cwd(), 'database/migrations'),
+            path.join(process.cwd(), '../database/migrations')
+        ];
+        const migrationsDir = candidatePaths.find(p => fs.existsSync(p));
+        console.log(`Checking for migrations in: ${migrationsDir || candidatePaths[0]}`);
 
-        if (!fs.existsSync(migrationsDir)) {
+        if (!migrationsDir) {
             console.log('No migrations folder found.');
             process.exit(0);
         }
