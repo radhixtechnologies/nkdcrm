@@ -21,3 +21,4 @@ const recruitmentService = {
 };
 
 export default recruitmentService;
+

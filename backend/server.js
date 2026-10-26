@@ -120,9 +120,15 @@ app.use((err, req, res, next) => {
     }
 
     if (err.code === '42P01') {
+        const missingRelation = err.message ? err.message.replace('relation ', '').replace(' does not exist', '') : 'table';
+        try {
+            const { initializeDatabase } = require('./services/initDb');
+            initializeDatabase().catch(() => {});
+        } catch (_) {}
+
         return res.status(503).json({
             success: false,
-            message: 'Auth tables are missing. Run npm run setup:auth in the backend folder.'
+            message: `Database table missing: ${missingRelation}. Initializing tables, please refresh.`
         });
     }
 
@@ -142,14 +148,13 @@ app.use((err, req, res, next) => {
 const server = app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
 
-    // Auto-initialize DB on startup if DATABASE_URL or DB_HOST connection string is present
-    const isCloudDb = process.env.DATABASE_URL || (process.env.DB_HOST && process.env.DB_HOST.includes('@'));
-    if (isCloudDb) {
-        const { initializeDatabase } = require('./services/initDb');
-        initializeDatabase().catch(err => {
-            console.error('Auto-initialization warning:', err.message);
-        });
-    }
+    // Auto-initialize DB on startup for both local and cloud databases
+    const { initializeDatabase } = require('./services/initDb');
+    initializeDatabase().then(() => {
+        console.log('✅ Database schema verified and initialized.');
+    }).catch(err => {
+        console.warn('Database initialization note:', err.message);
+    });
 });
 
 server.on('error', (error) => {

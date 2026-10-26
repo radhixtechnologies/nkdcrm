@@ -270,3 +270,4 @@ const recruitmentService = {
 };
 
 module.exports = recruitmentService;
+

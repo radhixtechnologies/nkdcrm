@@ -161,6 +161,7 @@ const runAuthMigration = async () => {
             is_active BOOLEAN DEFAULT TRUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE modules ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
         DO $$ 
         BEGIN 
             IF EXISTS (

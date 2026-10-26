@@ -68,9 +68,11 @@ const runMigration = async () => {
                 module_name VARCHAR(50) UNIQUE NOT NULL,
                 module_code VARCHAR(20) UNIQUE NOT NULL,
                 description TEXT,
+                display_order INTEGER DEFAULT 0,
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            ALTER TABLE modules ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
         `);
 
         // 5. Insert default modules
