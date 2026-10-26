@@ -416,13 +416,18 @@ router.post('/attendance/tracker/check-in', async (req, res, next) => {
         const now = new Date();
         const date = now.toISOString().split('T')[0];
         const check_in = now.toTimeString().split(' ')[0];
+        const { latitude, longitude, location_accuracy, punch_address } = req.body;
 
         const log = await attendanceDailyService.upsertAttendance({
             employee_id: emp.employee_id,
             date,
             status: 'P',
-            source: 'WEB_PORTAL',
-            check_in
+            source: latitude ? 'GPS' : 'WEB_PORTAL',
+            check_in,
+            latitude: latitude || null,
+            longitude: longitude || null,
+            location_accuracy: location_accuracy || null,
+            punch_address: punch_address || null
         });
         return res.json({ success: true, check_in, data: log });
     } catch (error) { return sendError(next, error); }
@@ -435,15 +440,56 @@ router.post('/attendance/tracker/check-out', async (req, res, next) => {
         const now = new Date();
         const date = now.toISOString().split('T')[0];
         const check_out = now.toTimeString().split(' ')[0];
+        const { latitude, longitude, location_accuracy, punch_address } = req.body;
 
         const log = await attendanceDailyService.upsertAttendance({
             employee_id: emp.employee_id,
             date,
             status: 'P',
-            source: 'WEB_PORTAL',
-            check_out
+            source: latitude ? 'GPS' : 'WEB_PORTAL',
+            check_out,
+            latitude: latitude || null,
+            longitude: longitude || null,
+            location_accuracy: location_accuracy || null,
+            punch_address: punch_address || null
         });
         return res.json({ success: true, check_out, data: log });
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/attendance/gps-punch', async (req, res, next) => {
+    try {
+        const { employee_id, latitude, longitude, location_accuracy, punch_address, punch_type } = req.body;
+        const targetEmp = employee_id ? await resolveEmployee(employee_id) : await getRequesterEmployee(req.user);
+        if (!targetEmp) return res.status(400).json({ success: false, message: 'Employee not found' });
+
+        const now = new Date();
+        const date = now.toISOString().split('T')[0];
+        const timeStr = now.toTimeString().split(' ')[0];
+
+        const payload = {
+            employee_id: targetEmp.employee_id,
+            date,
+            status: 'P',
+            source: 'GPS',
+            latitude,
+            longitude,
+            location_accuracy,
+            punch_address
+        };
+
+        if (punch_type === 'OUT') {
+            payload.check_out = timeStr;
+        } else {
+            payload.check_in = timeStr;
+        }
+
+        const log = await attendanceDailyService.upsertAttendance(payload);
+        return res.json({
+            success: true,
+            message: `GPS punch recorded successfully at ${timeStr}`,
+            data: log
+        });
     } catch (error) { return sendError(next, error); }
 });
 

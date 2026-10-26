@@ -22,6 +22,10 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
             main_contractor_name: initialData?.main_contractor_name || '',
             main_contractor_address: initialData?.main_contractor_address || '',
             nature_of_work: initialData?.nature_of_work || '',
+            labour_license_no: initialData?.labour_license_no || '',
+            labour_license_expiry: initialData?.labour_license_expiry ? new Date(initialData.labour_license_expiry).toISOString().split('T')[0] : '',
+            max_labour_capacity: initialData?.max_labour_capacity || '',
+            license_authority: initialData?.license_authority || '',
         },
         validationSchema: Yup.object({
             site_code: Yup.string().required('Required').max(20, 'Max 20 chars'),
@@ -182,6 +186,55 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                                 ></textarea>
                             </div>
                         </div>
+
+                        {/* Labour License Compliance (CLRA Act) */}
+                        <div className="pt-3 border-t border-slate-200 mt-3">
+                            <div className="mb-2">
+                                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Labour License & Capacity (CLRA Compliance)</h4>
+                                <p className="text-[11px] text-slate-500">Contract Labour statutory license & permitted strength</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mb-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-600">Labour License No.</label>
+                                    <input
+                                        type="text"
+                                        {...formik.getFieldProps('labour_license_no')}
+                                        className="w-full rounded-lg border-slate-300 px-3 py-2 text-xs focus:ring-primary-500 focus:border-primary-500 border font-mono"
+                                        placeholder="e.g. CLRA/2026/0491"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-600">License Expiry Date</label>
+                                    <input
+                                        type="date"
+                                        {...formik.getFieldProps('labour_license_expiry')}
+                                        className="w-full rounded-lg border-slate-300 px-3 py-2 text-xs focus:ring-primary-500 focus:border-primary-500 border"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-600">Max Permitted Workmen</label>
+                                    <input
+                                        type="number"
+                                        {...formik.getFieldProps('max_labour_capacity')}
+                                        className="w-full rounded-lg border-slate-300 px-3 py-2 text-xs focus:ring-primary-500 focus:border-primary-500 border"
+                                        placeholder="e.g. 100"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-600">Licensing Authority</label>
+                                    <input
+                                        type="text"
+                                        {...formik.getFieldProps('license_authority')}
+                                        className="w-full rounded-lg border-slate-300 px-3 py-2 text-xs focus:ring-primary-500 focus:border-primary-500 border"
+                                        placeholder="e.g. ALC / Commissioner"
+                                    />
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="pt-4 flex justify-end gap-3">
@@ -217,6 +270,38 @@ const Sites = () => {
             setLoading(false);
         }
     }, []);
+
+    const getLicenseBadge = (site) => {
+        if (!site.labour_license_no) {
+            return <span className="text-[11px] text-slate-400 italic">Not Registered</span>;
+        }
+        if (!site.labour_license_expiry) {
+            return <span className="text-xs font-mono font-semibold text-slate-700">{site.labour_license_no}</span>;
+        }
+        const diffDays = Math.ceil((new Date(site.labour_license_expiry) - new Date()) / (1000 * 60 * 60 * 24));
+        if (diffDays < 0) {
+            return (
+                <div>
+                    <span className="text-xs font-mono font-bold text-slate-800">{site.labour_license_no}</span>
+                    <span className="block text-[10px] font-bold text-rose-600">Expired ({new Date(site.labour_license_expiry).toLocaleDateString()})</span>
+                </div>
+            );
+        }
+        if (diffDays <= 30) {
+            return (
+                <div>
+                    <span className="text-xs font-mono font-bold text-slate-800">{site.labour_license_no}</span>
+                    <span className="block text-[10px] font-bold text-amber-600">Expires in {diffDays} days</span>
+                </div>
+            );
+        }
+        return (
+            <div>
+                <span className="text-xs font-mono font-semibold text-slate-800">{site.labour_license_no}</span>
+                <span className="block text-[10px] text-emerald-600">Valid till {new Date(site.labour_license_expiry).toLocaleDateString()}</span>
+            </div>
+        );
+    };
 
     useEffect(() => {
         fetchSites();
@@ -270,6 +355,7 @@ const Sites = () => {
                                 <th className="px-6 py-3">Code</th>
                                 <th className="px-6 py-3">Site Name</th>
                                 <th className="px-6 py-3">Location</th>
+                                <th className="px-6 py-3">Labour License (CLRA)</th>
                                 <th className="px-6 py-3">Status</th>
                                 <th className="px-6 py-3 text-right">Actions</th>
                             </tr>
@@ -282,6 +368,9 @@ const Sites = () => {
                                     <td className="px-6 py-4 text-slate-600">
                                         {site.city}, {site.state}
                                         <div className="text-xs text-slate-400 truncate max-w-[200px]">{site.address}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        {getLicenseBadge(site)}
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${site.is_active ? 'bg-green-50 text-green-700 ring-1 ring-green-600/20' : 'bg-slate-100 text-slate-600'}`}>

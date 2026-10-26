@@ -6,11 +6,14 @@ class AttendanceDailyService {
      * @param {Object} data 
      */
     async upsertAttendance(data) {
-        const { employee_id, date, status, source, check_in, check_out, remarks } = data;
+        const { employee_id, date, status, source, check_in, check_out, remarks, latitude, longitude, location_accuracy, punch_address } = data;
 
         const query = `
-            INSERT INTO attendance_daily (employee_id, date, status, source, check_in, check_out, remarks)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO attendance_daily (
+                employee_id, date, status, source, check_in, check_out, remarks,
+                latitude, longitude, location_accuracy, punch_address
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (employee_id, date) 
             DO UPDATE SET 
                 status = COALESCE(EXCLUDED.status, attendance_daily.status),
@@ -18,6 +21,10 @@ class AttendanceDailyService {
                 check_in = COALESCE(EXCLUDED.check_in, attendance_daily.check_in),
                 check_out = COALESCE(EXCLUDED.check_out, attendance_daily.check_out),
                 remarks = COALESCE(EXCLUDED.remarks, attendance_daily.remarks),
+                latitude = COALESCE(EXCLUDED.latitude, attendance_daily.latitude),
+                longitude = COALESCE(EXCLUDED.longitude, attendance_daily.longitude),
+                location_accuracy = COALESCE(EXCLUDED.location_accuracy, attendance_daily.location_accuracy),
+                punch_address = COALESCE(EXCLUDED.punch_address, attendance_daily.punch_address),
                 updated_at = CURRENT_TIMESTAMP
             RETURNING *, 
             TO_CHAR(check_in, 'HH24:MI:SS') as check_in_fmt,
@@ -34,7 +41,19 @@ class AttendanceDailyService {
             END as total_seconds
         `;
 
-        const values = [employee_id, date, status, source, check_in || null, check_out || null, remarks || null];
+        const values = [
+            employee_id,
+            date,
+            status,
+            source || (latitude ? 'GPS' : 'MANUAL'),
+            check_in || null,
+            check_out || null,
+            remarks || null,
+            latitude || null,
+            longitude || null,
+            location_accuracy || null,
+            punch_address || null
+        ];
         const result = await db.query(query, values);
         return result.rows[0];
     }

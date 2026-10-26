@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Search, Filter, Clock, CheckCircle } from 'lucide-react';
+import { Calendar, Search, Filter, Clock, CheckCircle, MapPin } from 'lucide-react';
 import attendanceService from '../../services/attendanceService';
 import toast from 'react-hot-toast';
 
@@ -167,8 +167,20 @@ const DailyAttendance = () => {
                                             {log.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-slate-500 text-xs uppercase font-semibold">
-                                        {log.source}
+                                    <td className="px-6 py-4 text-xs font-semibold">
+                                        {log.source === 'GPS' || log.latitude ? (
+                                            <a
+                                                href={`https://www.google.com/maps?q=${log.latitude},${log.longitude}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                                title={`Lat: ${log.latitude}, Lng: ${log.longitude}`}
+                                            >
+                                                <MapPin size={12} /> GPS Verified
+                                            </a>
+                                        ) : (
+                                            <span className="text-slate-500 uppercase">{log.source || 'MANUAL'}</span>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

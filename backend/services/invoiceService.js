@@ -104,13 +104,19 @@ const invoiceService = {
         const taxAmount = parseFloat(((subtotal * taxRate) / 100).toFixed(2));
         const totalAmount = parseFloat((subtotal + taxAmount).toFixed(2));
 
+        // Client TDS (e.g. 194C 1% or 2%)
+        const tdsRate = parseFloat(data.tds_rate) || 0;
+        const tdsAmount = parseFloat(((subtotal * tdsRate) / 100).toFixed(2));
+        const netReceivable = parseFloat((totalAmount - tdsAmount).toFixed(2));
+
         const dueDate = data.due_date || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
         const query = `
             INSERT INTO invoices (
                 invoice_number, client_id, site_id, billing_month, billing_year,
-                subtotal, tax_amount, total_amount, status, issue_date, due_date, notes
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                subtotal, tax_amount, total_amount, tds_rate, tds_amount, net_receivable,
+                status, issue_date, due_date, notes
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING *
         `;
         const params = [
@@ -122,6 +128,9 @@ const invoiceService = {
             subtotal,
             taxAmount,
             totalAmount,
+            tdsRate,
+            tdsAmount,
+            netReceivable,
             data.status || 'PENDING',
             data.issue_date || new Date().toISOString().split('T')[0],
             dueDate,
@@ -244,6 +253,40 @@ const invoiceService = {
                 description: 'Statutory verification documents pending upload in employee master.',
                 actionLink: '/employees'
             });
+        }
+
+        // 3. Labour License Expiry Alerts (Contract Labour Regulation & Abolition Act)
+        try {
+            const licenseRes = await db.query(`
+                SELECT site_name, labour_license_no, labour_license_expiry,
+                       (labour_license_expiry - CURRENT_DATE)::int as days_remaining
+                FROM sites
+                WHERE labour_license_expiry IS NOT NULL
+                  AND (labour_license_expiry - CURRENT_DATE) <= 30
+                ORDER BY labour_license_expiry ASC
+            `);
+
+            licenseRes.rows.forEach(site => {
+                if (site.days_remaining < 0) {
+                    alerts.unshift({
+                        id: `license_expired_${site.site_name}`,
+                        type: 'CRITICAL',
+                        title: `Labour License EXPIRED: ${site.site_name}`,
+                        description: `License #${site.labour_license_no || 'N/A'} expired ${Math.abs(site.days_remaining)} days ago. Immediate renewal required under CLRA.`,
+                        actionLink: '/sites'
+                    });
+                } else {
+                    alerts.push({
+                        id: `license_expiring_${site.site_name}`,
+                        type: 'WARNING',
+                        title: `Labour License Expiring in ${site.days_remaining} Days: ${site.site_name}`,
+                        description: `License #${site.labour_license_no || 'N/A'} expires on ${new Date(site.labour_license_expiry).toLocaleDateString()}. Apply for renewal.`,
+                        actionLink: '/sites'
+                    });
+                }
+            });
+        } catch (e) {
+            console.warn('Labour license alerts query warning:', e.message);
         }
 
         return {

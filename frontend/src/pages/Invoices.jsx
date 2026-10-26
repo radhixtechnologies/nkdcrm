@@ -57,6 +57,7 @@ const Invoices = () => {
         billing_year: new Date().getFullYear(),
         subtotal: '',
         tax_rate: 18,
+        tds_rate: 2, // Default 2% under Sec 194C for companies
         due_date: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
         notes: ''
     });
@@ -301,7 +302,9 @@ const Invoices = () => {
                                         <th className="px-4 py-3">Period</th>
                                         <th className="px-4 py-3">Subtotal</th>
                                         <th className="px-4 py-3">GST (18%)</th>
-                                        <th className="px-4 py-3">Total Amount</th>
+                                        <th className="px-4 py-3">Total Gross</th>
+                                        <th className="px-4 py-3">TDS (194C)</th>
+                                        <th className="px-4 py-3">Net Receivable</th>
                                         <th className="px-4 py-3">Due Date</th>
                                         <th className="px-4 py-3">Status</th>
                                         <th className="px-4 py-3">Action</th>
@@ -309,10 +312,10 @@ const Invoices = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loading ? (
-                                        <tr><td colSpan="9" className="py-8 text-center text-slate-400">Loading invoices...</td></tr>
+                                        <tr><td colSpan="11" className="py-8 text-center text-slate-400">Loading invoices...</td></tr>
                                     ) : filteredInvoices.length === 0 ? (
                                         <tr>
-                                            <td colSpan="9" className="py-8 text-center text-slate-400">
+                                            <td colSpan="11" className="py-8 text-center text-slate-400">
                                                 No invoices found. Click "Generate Invoice" to create one.
                                             </td>
                                         </tr>
@@ -327,7 +330,13 @@ const Invoices = () => {
                                                 <td className="px-4 py-3">{inv.billing_month}/{inv.billing_year}</td>
                                                 <td className="px-4 py-3">{formatINR(inv.subtotal)}</td>
                                                 <td className="px-4 py-3 text-slate-500">{formatINR(inv.tax_amount)}</td>
-                                                <td className="px-4 py-3 font-bold text-slate-900">{formatINR(inv.total_amount)}</td>
+                                                <td className="px-4 py-3 font-semibold text-slate-700">{formatINR(inv.total_amount)}</td>
+                                                <td className="px-4 py-3 text-rose-600 font-medium">
+                                                    {Number(inv.tds_amount) > 0 ? `-${formatINR(inv.tds_amount)} (${inv.tds_rate}%)` : '₹0'}
+                                                </td>
+                                                <td className="px-4 py-3 font-bold text-slate-900">
+                                                    {formatINR(inv.net_receivable || (Number(inv.total_amount) - (Number(inv.tds_amount) || 0)))}
+                                                </td>
                                                 <td className="px-4 py-3">{new Date(inv.due_date).toLocaleDateString()}</td>
                                                 <td className="px-4 py-3">
                                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -604,6 +613,22 @@ const Invoices = () => {
                                     />
                                 </div>
                                 <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Client TDS Rate</label>
+                                    <select
+                                        value={invoiceForm.tds_rate}
+                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, tds_rate: parseFloat(e.target.value) || 0 })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    >
+                                        <option value="0">0% (No TDS)</option>
+                                        <option value="1">1% - Sec 194C (Individual / HUF)</option>
+                                        <option value="2">2% - Sec 194C (Corporate / Firm)</option>
+                                        <option value="10">10% - Sec 194J (Professional Fee)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
                                     <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Due Date</label>
                                     <input
                                         type="date"
@@ -612,21 +637,43 @@ const Invoices = () => {
                                         className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
                                     />
                                 </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Notes / PO Ref</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. PO-8492"
+                                        value={invoiceForm.notes}
+                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    />
+                                </div>
                             </div>
 
                             {invoiceForm.subtotal && (
                                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
                                     <div className="flex justify-between text-slate-600">
-                                        <span>Subtotal:</span>
+                                        <span>Subtotal (Base Value):</span>
                                         <span>{formatINR(invoiceForm.subtotal)}</span>
                                     </div>
                                     <div className="flex justify-between text-slate-600">
                                         <span>GST (18%):</span>
-                                        <span>{formatINR(Number(invoiceForm.subtotal) * 0.18)}</span>
+                                        <span>+{formatINR(Number(invoiceForm.subtotal) * 0.18)}</span>
                                     </div>
-                                    <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1">
-                                        <span>Total Payable:</span>
+                                    <div className="flex justify-between text-slate-600">
+                                        <span>Total Invoice Gross:</span>
                                         <span>{formatINR(Number(invoiceForm.subtotal) * 1.18)}</span>
+                                    </div>
+                                    {invoiceForm.tds_rate > 0 && (
+                                        <div className="flex justify-between text-rose-600 font-medium">
+                                            <span>Less: Client TDS ({invoiceForm.tds_rate}%):</span>
+                                            <span>-{formatINR((Number(invoiceForm.subtotal) * invoiceForm.tds_rate) / 100)}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-sm">
+                                        <span>Net Receivable:</span>
+                                        <span className="text-primary-700">
+                                            {formatINR(Number(invoiceForm.subtotal) * 1.18 - ((Number(invoiceForm.subtotal) * invoiceForm.tds_rate) / 100))}
+                                        </span>
                                     </div>
                                 </div>
                             )}

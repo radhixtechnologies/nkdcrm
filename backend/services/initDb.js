@@ -53,6 +53,16 @@ const runSqlMigrations = async () => {
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             ALTER TABLE sites ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL;
+            ALTER TABLE sites ADD COLUMN IF NOT EXISTS labour_license_no VARCHAR(100);
+            ALTER TABLE sites ADD COLUMN IF NOT EXISTS labour_license_expiry DATE;
+            ALTER TABLE sites ADD COLUMN IF NOT EXISTS max_labour_capacity INTEGER DEFAULT 50;
+            ALTER TABLE sites ADD COLUMN IF NOT EXISTS license_authority VARCHAR(150);
+
+            ALTER TABLE attendance_daily ADD COLUMN IF NOT EXISTS latitude NUMERIC(10, 7);
+            ALTER TABLE attendance_daily ADD COLUMN IF NOT EXISTS longitude NUMERIC(10, 7);
+            ALTER TABLE attendance_daily ADD COLUMN IF NOT EXISTS location_accuracy NUMERIC(8, 2);
+            ALTER TABLE attendance_daily ADD COLUMN IF NOT EXISTS punch_address TEXT;
+
             CREATE TABLE IF NOT EXISTS invoices (
                 invoice_id SERIAL PRIMARY KEY,
                 invoice_number VARCHAR(80) UNIQUE NOT NULL,
@@ -65,7 +75,10 @@ const runSqlMigrations = async () => {
                 sgst NUMERIC(14,2) NOT NULL DEFAULT 0,
                 igst NUMERIC(14,2) NOT NULL DEFAULT 0,
                 tax_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+                tds_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+                tds_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
                 total_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+                net_receivable NUMERIC(14,2) NOT NULL DEFAULT 0,
                 status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
                 issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
                 due_date DATE NOT NULL,
@@ -75,6 +88,9 @@ const runSqlMigrations = async () => {
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tds_rate NUMERIC(5, 2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tds_amount NUMERIC(14, 2) DEFAULT 0;
+            ALTER TABLE invoices ADD COLUMN IF NOT EXISTS net_receivable NUMERIC(14, 2) DEFAULT 0;
             CREATE TABLE IF NOT EXISTS job_requisitions (
                 requisition_id SERIAL PRIMARY KEY,
                 requisition_code VARCHAR(50) UNIQUE NOT NULL,

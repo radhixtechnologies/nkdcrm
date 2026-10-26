@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 import dayjs from 'dayjs';
-import { Clock, Play, Square, History } from 'lucide-react';
+import { Clock, Play, Square, History, MapPin } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // API Base URL (Relative path handling in api.js or use full path)
@@ -15,6 +15,32 @@ const AttendanceWidget = () => {
     const [logs, setLogs] = useState([]);
     const [timer, setTimer] = useState('00:00:00');
     const [loadingAction, setLoadingAction] = useState(false);
+    const [gpsCoords, setGpsCoords] = useState(null);
+
+    const getCoordinates = () => {
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                resolve(null);
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const coords = {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        location_accuracy: pos.coords.accuracy
+                    };
+                    setGpsCoords(coords);
+                    resolve(coords);
+                },
+                (err) => {
+                    console.warn('GPS location unavailable or declined:', err.message);
+                    resolve(null);
+                },
+                { enableHighAccuracy: true, timeout: 6000 }
+            );
+        });
+    };
 
     // Initial Fetch
     useEffect(() => {
@@ -95,16 +121,20 @@ const AttendanceWidget = () => {
     const handleCheckIn = async () => {
         setLoadingAction(true);
         try {
-            const res = await api.post(`${API_ENDPOINT}/check-in`);
+            const coords = await getCoordinates();
+            const res = await api.post(`${API_ENDPOINT}/check-in`, coords || {});
             console.log('Check-in response:', res.data);
             setStatus('CHECKED_IN');
-            // Parse newly created checkIn - handle both check_in (alias) and in_time (DB column)
             const timeStr = res.data.check_in || res.data.in_time; // HH:MM:SS
-            const today = dayjs().format('YYYY-MM-DD'); // Assuming server returns same day
+            const today = dayjs().format('YYYY-MM-DD');
             const [h, m, s] = timeStr.split(':');
             setCheckInTime(dayjs(today).hour(h).minute(m).second(s));
 
-            toast.success('Checked In Successfully!');
+            if (coords) {
+                toast.success('📍 Checked In with GPS Location!');
+            } else {
+                toast.success('Checked In Successfully!');
+            }
             fetchHistory(); // Refresh logs
         } catch (err) {
             console.error('Check-in error:', err);
@@ -117,10 +147,15 @@ const AttendanceWidget = () => {
     const handleCheckOut = async () => {
         setLoadingAction(true);
         try {
-            await api.post(`${API_ENDPOINT}/check-out`);
+            const coords = await getCoordinates();
+            await api.post(`${API_ENDPOINT}/check-out`, coords || {});
             setStatus('CHECKED_OUT');
             setCheckInTime(null);
-            toast.success('Checked Out Successfully!');
+            if (coords) {
+                toast.success('📍 Checked Out with GPS Location!');
+            } else {
+                toast.success('Checked Out Successfully!');
+            }
             fetchHistory();
         } catch (err) {
             toast.error(err.response?.data?.msg || 'Check-out failed');
@@ -231,7 +266,20 @@ const AttendanceWidget = () => {
                             ) : logs.slice(0, 5).map((log, i) => (
                                 <tr key={i} className="hover:bg-slate-50">
                                     <td className="px-3 py-2 text-slate-700">
-                                        {dayjs(log.date).format('DD MMM')}
+                                        <div className="flex items-center gap-1">
+                                            <span>{dayjs(log.date).format('DD MMM')}</span>
+                                            {log.latitude && (
+                                                <a
+                                                    href={`https://maps.google.com/?q=${log.latitude},${log.longitude}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    title={`GPS Location: ${log.latitude}, ${log.longitude}`}
+                                                    className="text-emerald-600 hover:text-emerald-700 inline-flex items-center"
+                                                >
+                                                    <MapPin size={12} />
+                                                </a>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 font-mono text-xs">
                                         {log.check_in ? log.check_in.slice(0, 5) : '-'}

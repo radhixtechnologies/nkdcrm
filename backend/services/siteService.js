@@ -17,7 +17,8 @@ class SiteService {
             site_code, site_name, address, city, state, pincode, is_active,
             principal_employer_name, principal_employer_address,
             main_contractor_name, main_contractor_address,
-            nature_of_work
+            nature_of_work,
+            labour_license_no, labour_license_expiry, max_labour_capacity, license_authority, client_id
         } = siteData;
 
         const query = `
@@ -25,9 +26,10 @@ class SiteService {
                 site_code, site_name, address, city, state, pincode, is_active,
                 principal_employer_name, principal_employer_address,
                 main_contractor_name, main_contractor_address,
-                nature_of_work
+                nature_of_work,
+                labour_license_no, labour_license_expiry, max_labour_capacity, license_authority, client_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING *
         `;
         const values = [
@@ -36,7 +38,12 @@ class SiteService {
             principal_employer_address || null,
             main_contractor_name || null,
             main_contractor_address || null,
-            nature_of_work || null
+            nature_of_work || null,
+            labour_license_no || null,
+            labour_license_expiry || null,
+            max_labour_capacity ? parseInt(max_labour_capacity) : 50,
+            license_authority || null,
+            client_id ? parseInt(client_id) : null
         ];
         const result = await db.query(query, values);
         return result.rows[0];
@@ -50,7 +57,8 @@ class SiteService {
             site_code, site_name, address, city, state, pincode, is_active,
             principal_employer_name, principal_employer_address,
             main_contractor_name, main_contractor_address,
-            nature_of_work
+            nature_of_work,
+            labour_license_no, labour_license_expiry, max_labour_capacity, license_authority, client_id
         } = siteData;
 
         const query = `
@@ -60,8 +68,13 @@ class SiteService {
                 principal_employer_name = $8, principal_employer_address = $9,
                 main_contractor_name = $10, main_contractor_address = $11,
                 nature_of_work = $12,
+                labour_license_no = COALESCE($13, labour_license_no),
+                labour_license_expiry = COALESCE($14, labour_license_expiry),
+                max_labour_capacity = COALESCE($15, max_labour_capacity),
+                license_authority = COALESCE($16, license_authority),
+                client_id = COALESCE($17, client_id),
                 updated_at = CURRENT_TIMESTAMP
-            WHERE site_id = $13
+            WHERE site_id = $18
             RETURNING *
         `;
         const values = [
@@ -71,6 +84,11 @@ class SiteService {
             main_contractor_name || null,
             main_contractor_address || null,
             nature_of_work || null,
+            labour_license_no || null,
+            labour_license_expiry || null,
+            max_labour_capacity ? parseInt(max_labour_capacity) : null,
+            license_authority || null,
+            client_id ? parseInt(client_id) : null,
             id
         ];
         const result = await db.query(query, values);
