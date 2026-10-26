@@ -1,0 +1,255 @@
+import { useState, useEffect } from 'react';
+import api from '../services/api';
+import dayjs from 'dayjs';
+import { Clock, Play, Square, History } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+// API Base URL (Relative path handling in api.js or use full path)
+// api.js usually has baseURL configured. Assuming it points to /api
+// So we use /attendance/tracker endpoint
+const API_ENDPOINT = '/attendance/tracker';
+
+const AttendanceWidget = () => {
+    const [status, setStatus] = useState('LOADING'); // LOADING, CHECKED_IN, CHECKED_OUT
+    const [checkInTime, setCheckInTime] = useState(null);
+    const [logs, setLogs] = useState([]);
+    const [timer, setTimer] = useState('00:00:00');
+    const [loadingAction, setLoadingAction] = useState(false);
+
+    // Initial Fetch
+    useEffect(() => {
+        fetchHistory();
+    }, []);
+
+    // Timer Logic
+    useEffect(() => {
+        let interval;
+        if (status === 'CHECKED_IN' && checkInTime) {
+            interval = setInterval(() => {
+                const now = dayjs();
+                const start = dayjs(checkInTime);
+                const diffSeconds = now.diff(start, 'second');
+
+                const h = Math.floor(diffSeconds / 3600);
+                const m = Math.floor((diffSeconds % 3600) / 60);
+                const s = diffSeconds % 60;
+
+                setTimer(
+                    `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+                );
+            }, 1000);
+        } else {
+            setTimer('00:00:00');
+        }
+        return () => clearInterval(interval);
+    }, [status, checkInTime]);
+
+    const fetchHistory = async () => {
+        try {
+            const res = await api.get(`${API_ENDPOINT}/history`);
+            const history = res.data;
+            setLogs(history);
+
+            // Determine current status based on today's record
+            const today = dayjs().format('YYYY-MM-DD');
+            const todayLog = history.find(log => dayjs(log.date).format('YYYY-MM-DD') === today);
+
+            console.log('Today Log:', todayLog);
+
+            if (todayLog) {
+                // If checked in but not checked out
+                // Check for null, undefined, or empty string
+                const hasCheckOut = todayLog.check_out !== null &&
+                    todayLog.check_out !== undefined &&
+                    todayLog.check_out !== '';
+
+                if (todayLog.check_in && !hasCheckOut) {
+                    console.log('Setting status to CHECKED_IN');
+                    setStatus('CHECKED_IN');
+                    // Construct full date-time for check-in
+                    // The backend returns 'HH:MM:SS' string for time.
+                    // We need to combine with date.
+                    const [h, m, s] = todayLog.check_in.split(':');
+                    const fullDate = dayjs(todayLog.date).hour(h).minute(m).second(s);
+                    setCheckInTime(fullDate);
+                } else if (hasCheckOut) {
+                    console.log('Setting status to CHECKED_OUT (has check_out)');
+                    setStatus('CHECKED_OUT');
+                    setCheckInTime(null);
+                } else {
+                    // exists but no check_in time
+                    console.log('Setting status to CHECKED_OUT (no check_in)');
+                    setStatus('CHECKED_OUT');
+                }
+            } else {
+                console.log('No log for today, setting status to CHECKED_OUT');
+                setStatus('CHECKED_OUT'); // Ready to check in
+            }
+        } catch (err) {
+            console.error('Error fetching history:', err);
+            // If 401, handle auth but assume auth middleware allows for now
+            setStatus('CHECKED_OUT'); // Fallback on error
+        }
+    };
+
+    const handleCheckIn = async () => {
+        setLoadingAction(true);
+        try {
+            const res = await api.post(`${API_ENDPOINT}/check-in`);
+            console.log('Check-in response:', res.data);
+            setStatus('CHECKED_IN');
+            // Parse newly created checkIn - handle both check_in (alias) and in_time (DB column)
+            const timeStr = res.data.check_in || res.data.in_time; // HH:MM:SS
+            const today = dayjs().format('YYYY-MM-DD'); // Assuming server returns same day
+            const [h, m, s] = timeStr.split(':');
+            setCheckInTime(dayjs(today).hour(h).minute(m).second(s));
+
+            toast.success('Checked In Successfully!');
+            fetchHistory(); // Refresh logs
+        } catch (err) {
+            console.error('Check-in error:', err);
+            toast.error(err.response?.data?.msg || 'Check-in failed');
+        } finally {
+            setLoadingAction(false);
+        }
+    };
+
+    const handleCheckOut = async () => {
+        setLoadingAction(true);
+        try {
+            await api.post(`${API_ENDPOINT}/check-out`);
+            setStatus('CHECKED_OUT');
+            setCheckInTime(null);
+            toast.success('Checked Out Successfully!');
+            fetchHistory();
+        } catch (err) {
+            toast.error(err.response?.data?.msg || 'Check-out failed');
+        } finally {
+            setLoadingAction(false);
+        }
+    };
+
+    const formatSeconds = (sec) => {
+        if (!sec && sec !== 0) return '-';
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = Math.round(sec % 60);
+        return `${h}h ${m}m ${s}s`;
+    };
+
+    const formatDuration = (log) => {
+        if (log.total_seconds !== undefined && log.total_seconds !== null) return formatSeconds(log.total_seconds);
+        if (log.work_duration && typeof log.work_duration === 'object') {
+            const h = log.work_duration.hours || 0;
+            const m = log.work_duration.minutes || 0;
+            const s = log.work_duration.seconds || 0;
+            return `${h}h ${m}m ${s}s`;
+        }
+        const inTime = log.check_in_fmt || log.check_in;
+        const outTime = log.check_out_fmt || log.check_out;
+        if (inTime && outTime) {
+            const [h1, m1, s1] = String(inTime).split(':').map(Number);
+            const [h2, m2, s2] = String(outTime).split(':').map(Number);
+            let diff = (h2 * 3600 + m2 * 60 + (s2 || 0)) - (h1 * 3600 + m1 * 60 + (s1 || 0));
+            if (diff < 0) diff += 24 * 3600;
+            return formatSeconds(diff);
+        }
+        return '-';
+    };
+
+    return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-md mx-auto">
+            <div className="text-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
+                    <Clock className="text-primary-600" />
+                    Attendance Tracker
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">{dayjs().format('dddd, D MMMM YYYY')}</p>
+            </div>
+
+            {/* Timer Display */}
+            <div className="bg-slate-50 rounded-lg p-6 mb-6 text-center border border-slate-100">
+                <div className="text-4xl font-mono font-bold text-slate-700 tracking-wider">
+                    {timer}
+                </div>
+                <div className="text-xs text-slate-400 mt-2 font-medium uppercase tracking-widest">
+                    {status === 'CHECKED_IN' ? 'Current Session' : 'Ready to Start'}
+                </div>
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-1 gap-4 mb-8">
+                {status === 'CHECKED_IN' ? (
+                    <button
+                        onClick={handleCheckOut}
+                        disabled={loadingAction}
+                        className="flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-3 px-4 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-50"
+                    >
+                        {loadingAction ? 'Processing...' : (
+                            <>
+                                <Square size={20} fill="currentColor" /> Stop / Check Out
+                            </>
+                        )}
+                    </button>
+                ) : (
+                    <button
+                        onClick={handleCheckIn}
+                        disabled={loadingAction || status === 'LOADING'}
+                        className="flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white py-3 px-4 rounded-lg font-semibold transition-all shadow-sm disabled:opacity-50"
+                    >
+                        {loadingAction ? 'Processing...' : (
+                            <>
+                                <Play size={20} fill="currentColor" /> Start / Check In
+                            </>
+                        )}
+                    </button>
+                )}
+            </div>
+
+            {/* History */}
+            <div>
+                <h3 className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
+                    <History size={16} /> Recent History
+                </h3>
+                <div className="border border-slate-100 rounded-lg overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th className="px-3 py-2">Date</th>
+                                <th className="px-3 py-2">In</th>
+                                <th className="px-3 py-2">Out</th>
+                                <th className="px-3 py-2 text-right">Dur</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {logs.length === 0 ? (
+                                <tr>
+                                    <td colSpan="4" className="px-3 py-4 text-center text-slate-400 text-xs">
+                                        No logs found
+                                    </td>
+                                </tr>
+                            ) : logs.slice(0, 5).map((log, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                    <td className="px-3 py-2 text-slate-700">
+                                        {dayjs(log.date).format('DD MMM')}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">
+                                        {log.check_in ? log.check_in.slice(0, 5) : '-'}
+                                    </td>
+                                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">
+                                        {log.check_out ? log.check_out.slice(0, 5) : '-'}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-medium text-slate-600 text-xs">
+                                        {formatDuration(log)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default AttendanceWidget;
