@@ -5,7 +5,39 @@ const aiService = {
     async handleChatMessage(message, context = {}) {
         const text = (message || '').toLowerCase().trim();
 
-        // Knowledge Base & Intelligent NLP Matching for HR, Compliance, Payroll & Portal
+        // 1A. Optional Live Cloud LLM Call (if GEMINI_API_KEY or OPENAI_API_KEY is configured in .env)
+        if (process.env.GEMINI_API_KEY) {
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `You are the NKD CRM AI Smart Assistant for an Indian Facilities & Manpower company. Answer concisely with bullet points.\nContext: User asked: "${message}". Indian compliance: EPF 12%, ESIC 0.75%/3.25%, PT ₹200, 194C TDS 1%/2%, 15th monthly ECR deadline.`
+                            }]
+                        }]
+                    })
+                });
+                const data = await response.json();
+                const geminiReply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (geminiReply) {
+                    return {
+                        reply: geminiReply,
+                        category: 'LIVE_AI',
+                        suggestedActions: [
+                            { label: 'Attendance', link: '/attendance' },
+                            { label: 'Leaves', link: '/leaves' },
+                            { label: 'Payroll', link: '/payroll' }
+                        ]
+                    };
+                }
+            } catch (err) {
+                console.warn('Gemini API call note, fallback to built-in knowledge base:', err.message);
+            }
+        }
+
+        // 1B. Built-in Standalone Knowledge Base (100% Free, Zero API cost, Instant)
         if (text.includes('pf') || text.includes('provident fund') || text.includes('uan')) {
             return {
                 reply: "📌 **EPF (Provident Fund) Compliance Rules:**\n- **Employee Contribution:** 12% of Basic + DA (capped at ₹15,000 basic = ₹1,800/month).\n- **Employer Contribution:** 12% (3.67% to EPF, 8.33% to EPS).\n- **Filing Deadline:** 15th of every month on the EPFO Unified Portal.\n- Employees must have an active 12-digit UAN linked to Aadhaar & Bank Account.",
