@@ -30,7 +30,10 @@ app.use(cors({
             allowedOrigins.includes(origin) ||
             origin.endsWith('.vercel.app') ||
             origin.includes('localhost') ||
-            origin.includes('127.0.0.1');
+            origin.includes('127.0.0.1') ||
+            origin.includes('192.168.') ||
+            origin.includes('10.') ||
+            origin.includes('172.');
 
         if (isAllowed) {
             callback(null, true);
