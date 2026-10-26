@@ -30,6 +30,103 @@ const runSqlMigrations = async () => {
             console.warn(`Note on ${file}: ${err.message}`);
         }
     }
+
+    // Direct guarantee for Recruitment and Invoice tables
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS clients (
+                client_id SERIAL PRIMARY KEY,
+                client_code VARCHAR(50) UNIQUE NOT NULL,
+                client_name VARCHAR(200) NOT NULL,
+                company_name VARCHAR(200),
+                gstin VARCHAR(30),
+                pan VARCHAR(20),
+                contact_person VARCHAR(150),
+                email VARCHAR(150),
+                phone VARCHAR(30),
+                billing_address TEXT,
+                city VARCHAR(100),
+                state VARCHAR(100),
+                pincode VARCHAR(20),
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            ALTER TABLE sites ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL;
+            CREATE TABLE IF NOT EXISTS invoices (
+                invoice_id SERIAL PRIMARY KEY,
+                invoice_number VARCHAR(80) UNIQUE NOT NULL,
+                client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL,
+                site_id INTEGER REFERENCES sites(site_id) ON DELETE SET NULL,
+                billing_month INTEGER NOT NULL,
+                billing_year INTEGER NOT NULL,
+                subtotal NUMERIC(14,2) NOT NULL DEFAULT 0,
+                cgst NUMERIC(14,2) NOT NULL DEFAULT 0,
+                sgst NUMERIC(14,2) NOT NULL DEFAULT 0,
+                igst NUMERIC(14,2) NOT NULL DEFAULT 0,
+                tax_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+                total_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+                status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+                issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                due_date DATE NOT NULL,
+                paid_date DATE,
+                payment_mode VARCHAR(50),
+                notes TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS job_requisitions (
+                requisition_id SERIAL PRIMARY KEY,
+                requisition_code VARCHAR(50) UNIQUE NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                department VARCHAR(100) NOT NULL,
+                job_location VARCHAR(150) NOT NULL,
+                vacancies INTEGER NOT NULL DEFAULT 1,
+                experience_required VARCHAR(50),
+                min_salary NUMERIC(12,2) DEFAULT 0,
+                max_salary NUMERIC(12,2) DEFAULT 0,
+                employment_type VARCHAR(50) DEFAULT 'FULL_TIME',
+                status VARCHAR(30) NOT NULL DEFAULT 'OPEN',
+                job_description TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS candidates (
+                candidate_id SERIAL PRIMARY KEY,
+                requisition_id INTEGER REFERENCES job_requisitions(requisition_id) ON DELETE SET NULL,
+                full_name VARCHAR(150) NOT NULL,
+                email VARCHAR(150) NOT NULL,
+                phone VARCHAR(30) NOT NULL,
+                current_company VARCHAR(150),
+                current_designation VARCHAR(150),
+                experience_years NUMERIC(4,1) DEFAULT 0,
+                current_stage VARCHAR(50) NOT NULL DEFAULT 'APPLIED',
+                interview_date TIMESTAMP,
+                interviewer_name VARCHAR(150),
+                interview_feedback TEXT,
+                rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+                resume_url TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS offer_letters (
+                offer_id SERIAL PRIMARY KEY,
+                offer_code VARCHAR(50) UNIQUE NOT NULL,
+                candidate_id INTEGER REFERENCES candidates(candidate_id) ON DELETE CASCADE,
+                designation VARCHAR(150) NOT NULL,
+                department VARCHAR(100) NOT NULL,
+                site_id INTEGER REFERENCES sites(site_id) ON DELETE SET NULL,
+                offered_ctc NUMERIC(14,2) NOT NULL DEFAULT 0,
+                joining_date DATE NOT NULL,
+                status VARCHAR(30) NOT NULL DEFAULT 'OFFERED',
+                terms_and_conditions TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+    } catch (err) {
+        console.warn('Note on recruitment & invoice tables fallback:', err.message);
+    }
 };
 
 const runAuthMigration = async () => {
@@ -116,7 +213,9 @@ const runAuthMigration = async () => {
         ['Benefits & Perks', 'BENEFITS', 'Allowances & Reimbursements', 7],
         ['Statutory & Reports', 'REPORTS', 'PF, ESI, PT, TDS reports', 8],
         ['User Management', 'USERS', 'User accounts & RBAC', 9],
-        ['System Settings', 'SETTINGS', 'Global configuration', 10]
+        ['System Settings', 'SETTINGS', 'Global configuration', 10],
+        ['Recruitment & Onboarding', 'RECRUITMENT', 'Requisitions, Interviews, Offers, Onboarding', 11],
+        ['Client Master & Invoices', 'INVOICES', 'Clients, Billing & Invoices', 12]
     ];
     for (const [mName, mCode, desc, order] of modules) {
         await pool.query(`

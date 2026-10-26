@@ -3,7 +3,8 @@ import {
     Users, UserCheck, DollarSign, Calendar,
     Building2, TrendingUp, Clock, Plus,
     FileSpreadsheet, CreditCard, ArrowRight,
-    CheckCircle, AlertCircle, RefreshCw
+    CheckCircle, AlertCircle, RefreshCw,
+    ShieldAlert, Receipt, AlertTriangle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -153,6 +154,136 @@ const AdminDashboard = () => {
                     link="/payroll"
                     linkText="Manage"
                 />
+            </div>
+
+            {/* Compliance Alerts & Invoice Status Section (Module 1 Requested Features) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Statutory Compliance Alerts */}
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 rounded-xl bg-rose-50 text-rose-600">
+                                    <ShieldAlert size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-800">Compliance & Statutory Alerts</h3>
+                                    <p className="text-xs text-slate-500">PF, ESIC deadlines & mandatory employee KYC tracking</p>
+                                </div>
+                            </div>
+                            <Link to="/reports" className="text-xs font-semibold text-primary-600 hover:underline">
+                                Statutory Center
+                            </Link>
+                        </div>
+
+                        <div className="space-y-3">
+                            {(!stats?.complianceAlerts?.alerts || stats.complianceAlerts.alerts.length === 0) ? (
+                                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-3 text-xs text-emerald-800">
+                                    <CheckCircle size={18} className="text-emerald-600 shrink-0" />
+                                    <span>All statutory filing deadlines & employee records are up to date.</span>
+                                </div>
+                            ) : (
+                                stats.complianceAlerts.alerts.map((alt, idx) => (
+                                    <div
+                                        key={alt.id || idx}
+                                        className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 ${
+                                            alt.type === 'CRITICAL' ? 'bg-rose-50/70 border-rose-200 text-rose-900' :
+                                            alt.type === 'WARNING' ? 'bg-amber-50/70 border-amber-200 text-amber-900' :
+                                            'bg-blue-50/70 border-blue-200 text-blue-900'
+                                        }`}
+                                    >
+                                        <div className="flex items-start gap-2.5">
+                                            {alt.type === 'CRITICAL' ? <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" /> :
+                                             alt.type === 'WARNING' ? <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" /> :
+                                             <ShieldAlert size={16} className="text-blue-600 shrink-0 mt-0.5" />}
+                                            <div>
+                                                <p className="font-bold">{alt.title}</p>
+                                                <p className="text-[11px] opacity-80 mt-0.5">{alt.description}</p>
+                                            </div>
+                                        </div>
+                                        {alt.actionLink && (
+                                            <Link
+                                                to={alt.actionLink}
+                                                className="shrink-0 text-[11px] font-bold px-2 py-1 rounded bg-white shadow-xs border border-slate-200 hover:bg-slate-50 transition-colors"
+                                            >
+                                                Review
+                                            </Link>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Invoice Status & Billing Overview */}
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                    <div>
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                                    <Receipt size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-800">Deployment Invoice Status</h3>
+                                    <p className="text-xs text-slate-500">Corporate client billing & collection cycle</p>
+                                </div>
+                            </div>
+                            <Link to="/invoices" className="text-xs font-semibold text-primary-600 hover:underline">
+                                View Invoices
+                            </Link>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                <p className="text-[11px] font-semibold text-slate-500 uppercase">Total Invoiced</p>
+                                <p className="text-lg font-bold text-slate-900 mt-0.5">
+                                    {formatCurrency(stats?.invoiceStats?.total_invoiced)}
+                                </p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                                <p className="text-[11px] font-semibold text-emerald-700 uppercase">Total Received</p>
+                                <p className="text-lg font-bold text-emerald-700 mt-0.5">
+                                    {formatCurrency(stats?.invoiceStats?.total_received)}
+                                </p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-100">
+                                <p className="text-[11px] font-semibold text-amber-700 uppercase">Pending Collection</p>
+                                <p className="text-lg font-bold text-amber-700 mt-0.5">
+                                    {formatCurrency(stats?.invoiceStats?.pending_amount)}
+                                </p>
+                            </div>
+                            <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-100">
+                                <p className="text-[11px] font-semibold text-rose-700 uppercase">Overdue</p>
+                                <p className="text-lg font-bold text-rose-700 mt-0.5">
+                                    {formatCurrency(stats?.invoiceStats?.overdue_amount)}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Collection Progress */}
+                        <div>
+                            <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1.5">
+                                <span>Collection Realization Rate</span>
+                                <span>
+                                    {stats?.invoiceStats?.total_invoiced > 0
+                                        ? Math.round((Number(stats.invoiceStats.total_received) / Number(stats.invoiceStats.total_invoiced)) * 100)
+                                        : 0}%
+                                </span>
+                            </div>
+                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                                    style={{
+                                        width: `${stats?.invoiceStats?.total_invoiced > 0
+                                            ? Math.min(100, Math.round((Number(stats.invoiceStats.total_received) / Number(stats.invoiceStats.total_invoiced)) * 100))
+                                            : 0}%`
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Interactive Graph Charts Grid */}

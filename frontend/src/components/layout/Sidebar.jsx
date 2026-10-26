@@ -13,7 +13,9 @@ import {
     Clock,
     ChevronLeft,
     ChevronRight,
-    ShieldCheck
+    ShieldCheck,
+    UserPlus,
+    Receipt
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
@@ -25,6 +27,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
     const menuItems = [
         { title: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} /> },
+        { title: 'Recruitment', path: '/recruitment', icon: <UserPlus size={20} />, restricted: true },
+        { title: 'Client Invoices', path: '/invoices', icon: <Receipt size={20} />, restricted: true },
         { title: 'Site & Shift', path: '/site-shift', icon: <Clock size={20} /> },
         { title: 'Sites & Branches', path: '/sites', icon: <Building size={20} />, restricted: true },
         { title: 'Employees', path: '/employees', icon: <Users size={20} />, restricted: true },

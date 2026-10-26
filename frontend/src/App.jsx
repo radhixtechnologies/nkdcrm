@@ -16,6 +16,8 @@ import Benefits from './pages/Benefits';
 import Profile from './pages/Profile';
 import SiteShift from './pages/SiteShift';
 import UserManagement from './pages/UserManagement';
+import Recruitment from './pages/Recruitment';
+import Invoices from './pages/Invoices';
 
 function App() {
   return (
@@ -39,6 +41,8 @@ function App() {
           <Route path="profile" element={<Profile />} />
           <Route path="site-shift" element={<SiteShift />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="recruitment" element={<ProtectedRoute><Recruitment /></ProtectedRoute>} />
+          <Route path="invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
 
           <Route
             path="sites"

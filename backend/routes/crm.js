@@ -20,6 +20,8 @@ const perkService = require('../services/perkService');
 const reportsService = require('../services/reportsService');
 const pdfService = require('../services/pdfService');
 const excelService = require('../services/excelService');
+const invoiceService = require('../services/invoiceService');
+const recruitmentService = require('../services/recruitmentService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -125,6 +127,20 @@ router.get('/dashboard/stats', async (req, res, next) => {
             ? Math.round((presentToday / totalEmployees) * 100) 
             : 0;
 
+        let complianceAlerts = { summary: {}, alerts: [] };
+        try {
+            complianceAlerts = await invoiceService.getComplianceAlerts();
+        } catch (e) {
+            console.warn('Compliance alerts fetch error:', e.message);
+        }
+
+        let invoiceStats = { total_invoiced: 0, total_received: 0, pending_amount: 0, overdue_amount: 0 };
+        try {
+            invoiceStats = await invoiceService.getInvoiceStats();
+        } catch (e) {
+            console.warn('Invoice stats fetch error:', e.message);
+        }
+
         return sendData(res, {
             totalEmployees,
             presentToday,
@@ -134,7 +150,9 @@ router.get('/dashboard/stats', async (req, res, next) => {
             pendingLeaves,
             pendingClaims,
             totalSites,
-            latestPayroll
+            latestPayroll,
+            complianceAlerts,
+            invoiceStats
         });
     } catch (error) { return sendError(next, error); }
 });
@@ -894,6 +912,124 @@ router.get('/reports/download/:type', async (req, res, next) => {
         else return res.status(400).json({ success: false, message: 'Invalid report type' });
 
         return res.json({ success: true, reportType: type, period: { month: m, year: y }, data });
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// CLIENT MASTER & INVOICES
+// ==========================================
+router.get('/clients', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.getClients());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/clients', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.createClient(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/clients/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.updateClient(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/invoices', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.getInvoices(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/invoices', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.createInvoice(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/invoices/:id/status', async (req, res, next) => {
+    try {
+        const { status, payment_mode } = req.body;
+        return sendData(res, await invoiceService.updateInvoiceStatus(req.params.id, status, { payment_mode }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/invoices/stats', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.getInvoiceStats());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/compliance/alerts', async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.getComplianceAlerts());
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// RECRUITMENT & ONBOARDING
+// ==========================================
+router.get('/recruitment/requisitions', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.getRequisitions());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/requisitions', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.createRequisition(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/recruitment/requisitions/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.updateRequisition(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/recruitment/candidates', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.getCandidates(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/candidates', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.createCandidate(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/recruitment/candidates/:id/stage', async (req, res, next) => {
+    try {
+        const { stage, interview_date, interviewer_name, interview_feedback, rating } = req.body;
+        return sendData(res, await recruitmentService.updateCandidateStage(req.params.id, stage, {
+            interview_date, interviewer_name, interview_feedback, rating
+        }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/recruitment/offers', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.getOffers());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/offers', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.createOffer(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/recruitment/offers/:id/status', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.updateOfferStatus(req.params.id, req.body.status));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/candidates/:id/convert-to-employee', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.convertToEmployee(req.params.id, req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
