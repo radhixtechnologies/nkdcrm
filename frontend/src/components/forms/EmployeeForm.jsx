@@ -9,7 +9,7 @@ import siteService from '../../services/siteService';
 
 
 const Wrapper = ({ children, isModal }) => isModal ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40">{children}</div>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 p-0 backdrop-blur-xs bg-slate-900/60 overflow-hidden">{children}</div>
 ) : <>{children}</>;
 
 const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, viewOnly = false }) => {
@@ -219,6 +219,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
         { id: 'statutory', label: 'Statutory Info', icon: <FileText size={18} /> },
         { id: 'user', label: 'Login Access', icon: <CheckCircle size={18} /> },
     ];
+    const currentIdx = tabs.findIndex(tab => tab.id === activeTab);
 
     const tabFieldMap = {
         basic: ['first_name', 'last_name', 'mobile', 'email', 'personal_email'],
@@ -289,23 +290,23 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
 
     return (
         <Wrapper isModal={isModal}>
-            <div className={`flex flex-col bg-white overflow-hidden ${isModal ? 'w-full max-w-5xl rounded-2xl shadow-2xl animate-in fade-in zoom-in duration-200 h-[90vh]' : 'w-full h-full'}`}>
+            <div className={`flex flex-col bg-white overflow-hidden ${isModal ? 'w-full max-w-5xl sm:rounded-2xl rounded-none shadow-2xl h-full sm:h-[90vh]' : 'w-full h-full'}`}>
 
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4 flex-shrink-0">
+                <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 sm:px-6 py-3.5 sm:py-4 shrink-0">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-800">
+                        <h2 className="text-lg sm:text-xl font-bold text-slate-800 leading-tight">
                             {viewOnly ? 'Employee Details' : (isEdit ? 'Edit Employee' : 'New Employee Onboarding')}
                         </h2>
-                        <p className="text-sm text-slate-500">Central Employee Master</p>
+                        <p className="text-xs sm:text-sm text-slate-500">Central Employee Master</p>
                     </div>
-                    <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors">
-                        <X size={24} />
+                    <button onClick={onClose} className="rounded-full p-1.5 sm:p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors">
+                        <X size={20} className="sm:w-6 sm:h-6" />
                     </button>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-slate-200 bg-white px-6 overflow-x-auto">
+                <div className="flex border-b border-slate-200 bg-white px-2 sm:px-6 overflow-x-auto scrollbar-thin">
                     {tabs.map(tab => {
                         const errCount = (tabFieldMap[tab.id] || []).filter(f => formik.touched[f] && formik.errors[f]).length;
                         return (
@@ -313,13 +314,13 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 px-5 py-4 text-sm font-medium border-b-2 whitespace-nowrap transition-colors relative ${activeTab === tab.id
-                                    ? 'border-primary-600 text-primary-600'
+                                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-3 sm:py-4 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${activeTab === tab.id
+                                    ? 'border-primary-600 text-primary-600 font-bold'
                                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                                     }`}
                             >
                                 {tab.icon}
-                                {tab.label}
+                                <span>{tab.label}</span>
                                 {errCount > 0 && (
                                     <span className="ml-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold text-white bg-red-500 rounded-full">
                                         {errCount}
@@ -331,7 +332,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                 </div>
 
                 <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-                    <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50">
 
                         {/* Tab Content: Basic Info */}
                         <fieldset disabled={viewOnly} className="contents">
@@ -374,9 +375,9 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                         </div>
                                     </section>
 
-                                    <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Contact Information</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                                             <div className="space-y-1">
                                                 <label className="input-label">Mobile Number</label>
                                                 <input type="tel" {...formik.getFieldProps('mobile')} className="input-field" />
@@ -394,7 +395,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                                 <label className="input-label">Emergency Contact</label>
                                                 <input type="tel" {...formik.getFieldProps('emergency_contact')} className="input-field" />
                                             </div>
-                                            <div className="col-span-2 space-y-1">
+                                            <div className="col-span-1 md:col-span-2 space-y-1">
                                                 <label className="input-label">Residential Address</label>
                                                 <textarea {...formik.getFieldProps('address')} className="input-field min-h-[80px]" placeholder="Full address..." />
                                             </div>
@@ -591,9 +592,9 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                             {/* Tab Content: Statutory Info */}
                             {activeTab === 'statutory' && (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                    <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                    <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Personal Statutory Details</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                                             <div className="space-y-1">
                                                 <label className="input-label">Gender</label>
                                                 <select {...formik.getFieldProps('gender')} className="input-field">
@@ -629,7 +630,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                                     <option value="Unskilled">Unskilled</option>
                                                 </select>
                                             </div>
-                                            <div className="space-y-1 col-span-3">
+                                            <div className="space-y-1 col-span-1 sm:col-span-2 md:col-span-3">
                                                 <label className="input-label">Permanent Address</label>
                                                 <textarea {...formik.getFieldProps('permanent_address')} className="input-field min-h-[60px]" placeholder="Permanent Home Address (as per Aadhaar)" />
                                             </div>
@@ -815,23 +816,23 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                     </div>
 
                     {/* Footer Actions */}
-                    <div className="border-t border-slate-200 bg-white p-4 flex justify-between items-center z-10 flex-shrink-0">
+                    <div className="border-t border-slate-200 bg-white p-3.5 sm:p-4 flex flex-wrap justify-between items-center z-10 shrink-0 gap-2">
                         <div>
-                            {activeTab !== 'basic' && (
+                            {currentIdx > 0 && (
                                 <button
                                     type="button"
                                     onClick={handlePrevTab}
-                                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                    className="rounded-lg border border-slate-300 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                 >
-                                    ← Previous
+                                    ← <span className="hidden sm:inline">Previous: </span>{tabs[currentIdx - 1]?.label}
                                 </button>
                             )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                                className="rounded-lg border border-slate-300 px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                             >
                                 Cancel
                             </button>
@@ -840,7 +841,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                     type="button"
                                     onClick={handleSaveClick}
                                     disabled={formik.isSubmitting || Object.values(uploading).some(Boolean)}
-                                    className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+                                    className="rounded-lg border border-slate-300 bg-white px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
                                     title="Save employee immediately"
                                 >
                                     Save Directly
@@ -851,15 +852,15 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                     type="button"
                                     onClick={handleSaveAndNext}
                                     disabled={formik.isSubmitting || Object.values(uploading).some(Boolean)}
-                                    className="flex items-center gap-2 rounded-lg bg-primary-600 px-7 py-2.5 text-sm font-bold text-white shadow-lg hover:bg-primary-700 hover:shadow-primary-500/20 transition-all disabled:opacity-70 cursor-pointer"
+                                    className="flex items-center gap-1.5 sm:gap-2 rounded-lg bg-primary-600 px-4 sm:px-7 py-2 sm:py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg hover:bg-primary-700 hover:shadow-primary-500/20 transition-all disabled:opacity-70 cursor-pointer"
                                 >
                                     {activeTab === 'user' ? (
                                         <>
-                                            <Save size={18} /> Save Employee
+                                            <Save size={16} /> Save Employee
                                         </>
                                     ) : (
                                         <>
-                                            <Save size={18} /> Save & Next →
+                                            <Save size={16} /> Save & Next →
                                         </>
                                     )}
                                 </button>
@@ -868,12 +869,6 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                     </div>
                 </form>
             </div>
-
-            <style>{`
-                .input-label { @apply text-xs font-semibold text-slate-600 uppercase mb-1 block; }
-                .input-field { @apply w-full rounded-lg border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-primary-500 focus:ring-primary-500 disabled:bg-slate-100 disabled:text-slate-500 border shadow-sm transition-all; }
-                .error-msg { @apply text-xs text-red-500 mt-1; }
-            `}</style>
         </Wrapper>
     );
 };

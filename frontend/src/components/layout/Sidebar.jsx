@@ -19,6 +19,7 @@ import {
     Package,
     Truck,
     Smartphone,
+    ClipboardList,
     X
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
         { title: 'Assets & PPE', path: '/assets', icon: <Package size={20} />, moduleCode: 'ASSETS' },
         { title: 'Site & Shift', path: '/site-shift', icon: <Clock size={20} />, moduleCode: 'SITES' },
         { title: 'Sites & Branches', path: '/sites', icon: <Building size={20} />, moduleCode: 'SITES' },
+        { title: 'Site Progress (DPR)', path: '/dpr', icon: <ClipboardList size={20} />, moduleCode: 'DPR' },
         { title: 'Employees', path: '/employees', icon: <Users size={20} />, moduleCode: 'EMPLOYEES' },
         { title: 'Attendance', path: '/attendance', icon: <CalendarCheck size={20} />, moduleCode: 'ATTENDANCE' },
         { title: 'Leave', path: '/leaves', icon: <Briefcase size={20} />, moduleCode: 'LEAVES' },

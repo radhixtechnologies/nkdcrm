@@ -133,10 +133,12 @@ const MobileApp = () => {
         if (!code) return;
         try {
             const balRes = await leaveService.getEmployeeBalances(code);
-            const balances = balRes.data?.data || [];
+            const balances = balRes.data?.data || balRes.data || [];
             if (Array.isArray(balances)) {
-                const rem = balances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
-                const tot = balances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
+                // Filter only paid leaves, excluding LWP (Unpaid)
+                const paidBalances = balances.filter(b => b && b.is_paid !== false && b.leave_code !== 'LWP');
+                const rem = paidBalances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
+                const tot = paidBalances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
                 setLeaveBalance({ remaining: rem, total: tot });
             }
 

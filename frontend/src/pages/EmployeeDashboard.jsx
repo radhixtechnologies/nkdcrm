@@ -33,19 +33,22 @@ const EmployeeDashboard = () => {
             try {
                 // Fetch Leave Balance
                 const balRes = await leaveService.getEmployeeBalances(user.employeeCode);
-                const balances = balRes.data?.data || [];
-                // Sum up simplified balance for card (e.g. Annual Leave or Total)
-                const totalRemaining = balances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
-                const totalAllocated = balances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
-                setLeaveBalance({ remaining: totalRemaining, total: totalAllocated });
+                const balances = balRes.data?.data || balRes.data || [];
+                if (Array.isArray(balances)) {
+                    // Filter only paid leave types (CL, SL, PL) and exclude LWP (Leave Without Pay / Unpaid)
+                    const paidBalances = balances.filter(b => b && b.is_paid !== false && b.leave_code !== 'LWP');
+                    const totalRemaining = paidBalances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
+                    const totalAllocated = paidBalances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
+                    setLeaveBalance({ remaining: totalRemaining, total: totalAllocated });
+                }
 
                 // Fetch Latest Payslip
                 const year = new Date().getFullYear();
                 const payRes = await payrollService.getMyPayrollHistory(year);
-                const payslips = payRes.data?.data || [];
-                if (payslips.length > 0) {
+                const payslips = payRes.data?.data || payRes.data || [];
+                if (Array.isArray(payslips) && payslips.length > 0) {
                     // Sort descending by month
-                    payslips.sort((a, b) => b.month - a.month);
+                    payslips.sort((a, b) => (b.month || 0) - (a.month || 0));
                     setLatestPayslip(payslips[0]);
                 }
 

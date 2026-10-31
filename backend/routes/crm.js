@@ -25,6 +25,7 @@ const recruitmentService = require('../services/recruitmentService');
 const vendorService = require('../services/vendorService');
 const assetService = require('../services/assetService');
 const aiService = require('../services/aiService');
+const dprService = require('../services/dprService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -1278,6 +1279,51 @@ router.post('/ai/screen-candidate/:id', async (req, res, next) => {
 router.get('/ai/compliance-prediction', async (req, res, next) => {
     try {
         return sendData(res, await aiService.getPredictiveCompliance());
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// DPR (DAILY PROGRESS REPORT) ROUTES
+// ==========================================
+router.get('/dpr', async (req, res, next) => {
+    try {
+        const { site_id, search, start_date, end_date } = req.query;
+        return sendData(res, await dprService.getAllDprs({ site_id, search, start_date, end_date }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/:id', async (req, res, next) => {
+    try {
+        const dpr = await dprService.getDprById(req.params.id);
+        if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
+        return sendData(res, dpr);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/dpr', async (req, res, next) => {
+    try {
+        const dpr = await dprService.createDpr(req.body, req.user?.userId);
+        return sendData(res, dpr, 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/dpr/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await dprService.updateDpr(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/dpr/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await dprService.deleteDpr(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/:id/pdf', async (req, res, next) => {
+    try {
+        const dpr = await dprService.getDprById(req.params.id);
+        if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
+        await dprService.generateDprPdf(dpr, res);
     } catch (error) { return sendError(next, error); }
 });
 

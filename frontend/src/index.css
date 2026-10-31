@@ -179,7 +179,19 @@
 }
 
 @layer components {
-  .input-field {
-    @apply w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm outline-none transition-all duration-200 focus:border-primary-500 focus:ring-3 focus:ring-primary-100 bg-white hover:border-slate-400;
+  .input-label {
+    @apply block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5;
   }
+  .input-field {
+    @apply w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm outline-none transition-all duration-200 focus:border-primary-500 focus:ring-3 focus:ring-primary-100 bg-white hover:border-slate-400;
+  }
+  .error-msg {
+    @apply text-xs text-rose-500 font-medium mt-1 block;
+  }
+}
+
+.glass-surface {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
