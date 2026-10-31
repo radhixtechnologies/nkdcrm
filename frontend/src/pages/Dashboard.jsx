@@ -17,13 +17,13 @@ import WorkflowFlowchart from '../components/charts/WorkflowFlowchart';
 import toast from 'react-hot-toast';
 
 const StatCard = ({ title, value, badge, icon: Icon, color, bg, link, linkText }) => (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between">
+    <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs flex flex-col justify-between group">
         <div className="flex items-start justify-between">
             <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900 tracking-tight">{value}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900 tracking-tight group-hover:text-primary-700 transition-colors">{value}</p>
             </div>
-            <div className={`rounded-xl p-2.5 ${bg} ${color} shrink-0`}>
+            <div className={`rounded-xl p-2.5 ${bg} ${color} shrink-0 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-2xs`}>
                 <Icon size={22} strokeWidth={2.2} />
             </div>
         </div>
@@ -33,8 +33,8 @@ const StatCard = ({ title, value, badge, icon: Icon, color, bg, link, linkText }
                 {badge}
             </span>
             {link && (
-                <Link to={link} className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-0.5">
-                    {linkText || 'View'} <ArrowRight size={12} />
+                <Link to={link} className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-0.5 group/link">
+                    {linkText || 'View'} <ArrowRight size={12} className="transition-transform group-hover/link:translate-x-1" />
                 </Link>
             )}
         </div>
@@ -88,21 +88,21 @@ const AdminDashboard = () => {
                     <button
                         onClick={loadData}
                         title="Refresh Data"
-                        className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-xs"
+                        className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-all btn-press shadow-xs hover:shadow-sm"
                     >
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
 
                     <Link
                         to="/employees"
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-xs hover:shadow-md btn-press transition-all"
                     >
                         <Plus size={15} /> Add Employee
                     </Link>
 
                     <Link
                         to="/payroll"
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs font-semibold text-white shadow-xs transition-colors"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-xs font-bold text-white shadow-xs hover:shadow-md hover:shadow-primary-500/20 btn-press transition-all"
                     >
                         <DollarSign size={15} /> Run Payroll
                     </Link>
@@ -159,11 +159,11 @@ const AdminDashboard = () => {
             {/* Compliance Alerts & Invoice Status Section (Module 1 Requested Features) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Statutory Compliance Alerts */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                                <div className="p-2 rounded-xl bg-rose-50 text-rose-600">
+                                <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 shadow-2xs">
                                     <ShieldAlert size={20} />
                                 </div>
                                 <div>
@@ -171,14 +171,14 @@ const AdminDashboard = () => {
                                     <p className="text-xs text-slate-500">PF, ESIC deadlines & mandatory employee KYC tracking</p>
                                 </div>
                             </div>
-                            <Link to="/reports" className="text-xs font-semibold text-primary-600 hover:underline">
+                            <Link to="/reports" className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline">
                                 Statutory Center
                             </Link>
                         </div>
 
                         <div className="space-y-3">
                             {(!stats?.complianceAlerts?.alerts || stats.complianceAlerts.alerts.length === 0) ? (
-                                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-3 text-xs text-emerald-800">
+                                <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-100 flex items-center gap-3 text-xs text-emerald-800">
                                     <CheckCircle size={18} className="text-emerald-600 shrink-0" />
                                     <span>All statutory filing deadlines & employee records are up to date.</span>
                                 </div>
@@ -186,7 +186,7 @@ const AdminDashboard = () => {
                                 stats.complianceAlerts.alerts.map((alt, idx) => (
                                     <div
                                         key={alt.id || idx}
-                                        className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 ${
+                                        className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 transition-all duration-200 hover:translate-x-1 ${
                                             alt.type === 'CRITICAL' ? 'bg-rose-50/70 border-rose-200 text-rose-900' :
                                             alt.type === 'WARNING' ? 'bg-amber-50/70 border-amber-200 text-amber-900' :
                                             'bg-blue-50/70 border-blue-200 text-blue-900'
@@ -217,7 +217,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Invoice Status & Billing Overview */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ const AdminDashboard = () => {
             {/* Interactive Graph Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* 1. Attendance Trend Chart */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Weekly Attendance Turnout</h3>
@@ -309,7 +309,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 2. Workforce by Department Donut */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-2">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Workforce Distribution</h3>
@@ -328,7 +328,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 3. Site / Branch Deployment Bar Chart */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Site & Branch Staffing</h3>
@@ -348,7 +348,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 4. Live Attendance Stream / Activity */}
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
                     <div className="flex items-center justify-between mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Live Punch Feed</h3>

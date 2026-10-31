@@ -42,12 +42,12 @@ function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
 
           <Route path="profile" element={<Profile />} />
-          <Route path="site-shift" element={<SiteShift />} />
+          <Route path="site-shift" element={<ProtectedRoute requiredPermission="SITES.can_view"><SiteShift /></ProtectedRoute>} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="recruitment" element={<ProtectedRoute><Recruitment /></ProtectedRoute>} />
-          <Route path="invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
-          <Route path="vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
-          <Route path="assets" element={<ProtectedRoute><Assets /></ProtectedRoute>} />
+          <Route path="recruitment" element={<ProtectedRoute requiredPermission="RECRUITMENT.can_view"><Recruitment /></ProtectedRoute>} />
+          <Route path="invoices" element={<ProtectedRoute requiredPermission="INVOICES.can_view"><Invoices /></ProtectedRoute>} />
+          <Route path="vendors" element={<ProtectedRoute requiredPermission="VENDORS.can_view"><Vendors /></ProtectedRoute>} />
+          <Route path="assets" element={<ProtectedRoute requiredPermission="ASSETS.can_view"><Assets /></ProtectedRoute>} />
           <Route path="mobile" element={<ProtectedRoute><MobileApp /></ProtectedRoute>} />
 
           <Route

@@ -208,20 +208,21 @@ const Payroll = () => {
                 </div>
 
                 {/* Controls */}
-                <div className="flex gap-4 items-center bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+                <div className="flex flex-wrap gap-2.5 items-center bg-white p-2.5 rounded-2xl shadow-xs border border-slate-200/80">
                     <select
                         value={month}
                         onChange={(e) => setMonth(parseInt(e.target.value))}
-                        className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer"
+                        className="bg-slate-50 font-semibold text-slate-700 outline-none cursor-pointer text-xs rounded-xl px-3 py-2 border border-slate-200 hover:border-slate-300 transition-colors"
                     >
                         {months.map((m, i) => (
                             <option key={i} value={i}>{m}</option>
                         ))}
                     </select>
+
                     <select
                         value={year}
                         onChange={(e) => setYear(parseInt(e.target.value))}
-                        className="bg-transparent font-medium text-slate-700 outline-none cursor-pointer border-l pl-2"
+                        className="bg-slate-50 font-semibold text-slate-700 outline-none cursor-pointer text-xs rounded-xl px-3 py-2 border border-slate-200 hover:border-slate-300 transition-colors"
                     >
                         {[2024, 2025, 2026, 2027].map(y => (
                             <option key={y} value={y}>{y}</option>
@@ -230,25 +231,25 @@ const Payroll = () => {
 
                     <button
                         onClick={handleGenerate}
-                        className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ml-2 shadow-sm"
+                        className="bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-primary-500/20 btn-press"
                     >
-                        <RefreshCw size={16} /> Generate Payroll
+                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Generate
                     </button>
 
                     <button
                         onClick={() => payrollService.downloadExcel(month + 1, year)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-emerald-500/20 btn-press"
                         title="Export to Excel"
                     >
-                        <Download size={16} /> Export
+                        <Download size={14} /> Export
                     </button>
 
                     <button
                         onClick={() => setShowFlowchart(!showFlowchart)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors border shadow-xs ${showFlowchart ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all border shadow-xs btn-press ${showFlowchart ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
                         title="Toggle Process Flowchart"
                     >
-                        <GitBranch size={16} /> Process Flowchart
+                        <GitBranch size={14} /> Flowchart
                     </button>
                 </div>
             </div>
@@ -261,19 +262,20 @@ const Payroll = () => {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div className="text-slate-500 text-sm font-medium">Total Net Payout</div>
-                    <div className="text-2xl font-bold text-slate-800 mt-1">₹ {totalPayout.toLocaleString('en-IN')}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Net Payout</div>
+                    <div className="text-2xl font-bold text-slate-900 mt-1">₹ {totalPayout.toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Disbursed to staff bank accounts</div>
                 </div>
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div className="text-slate-500 text-sm font-medium">Total PF Contribution</div>
-                    <div className="text-2xl font-bold text-slate-800 mt-1">₹ {totalPF.toLocaleString('en-IN')}</div>
-                    <div className="text-xs text-slate-400 mt-1">Employer + Employee</div>
+                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Statutory PF Pool</div>
+                    <div className="text-2xl font-bold text-slate-900 mt-1">₹ {totalPF.toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Combined Employer + Employee</div>
                 </div>
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
                     <div>
-                        <div className="text-slate-500 text-sm font-medium">Status</div>
+                        <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Batch Status</div>
                         <div className="text-lg font-bold text-slate-800 mt-1">
                             {payrollList.length === 0 ? "Not Generated" :
                                 payrollList.some(p => p.payment_status === 'PENDING') ? "Draft / Pending" : "Finalized"}
@@ -283,7 +285,7 @@ const Payroll = () => {
                     {selectedRows.length > 0 && (
                         <button
                             onClick={handleFinalize}
-                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md animate-in zoom-in"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:shadow-lg hover:shadow-emerald-500/25 btn-press transition-all animate-scale-in"
                         >
                             Finalize ({selectedRows.length})
                         </button>

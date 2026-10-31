@@ -191,52 +191,52 @@ const Invoices = () => {
 
             {/* Financial Overview Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Billed</p>
-                            <p className="mt-1 text-2xl font-bold text-slate-900">{formatINR(stats.total_invoiced)}</p>
+                            <p className="mt-1 text-2xl font-bold text-slate-900 group-hover:text-primary-700 transition-colors">{formatINR(stats.total_invoiced)}</p>
                         </div>
-                        <div className="rounded-xl p-2.5 bg-blue-50 text-blue-600">
+                        <div className="rounded-xl p-2.5 bg-blue-50 text-blue-600 group-hover:scale-110 transition-transform">
                             <Receipt size={22} />
                         </div>
                     </div>
                     <p className="mt-3 text-xs text-slate-500">{invoices.length} invoices generated</p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Received</p>
-                            <p className="mt-1 text-2xl font-bold text-emerald-600">{formatINR(stats.total_received)}</p>
+                            <p className="mt-1 text-2xl font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">{formatINR(stats.total_received)}</p>
                         </div>
-                        <div className="rounded-xl p-2.5 bg-emerald-50 text-emerald-600">
+                        <div className="rounded-xl p-2.5 bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">
                             <CheckCircle size={22} />
                         </div>
                     </div>
                     <p className="mt-3 text-xs text-slate-500">{stats.paid_count || 0} invoices paid</p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending Collections</p>
-                            <p className="mt-1 text-2xl font-bold text-amber-600">{formatINR(stats.pending_amount)}</p>
+                            <p className="mt-1 text-2xl font-bold text-amber-600 group-hover:text-amber-700 transition-colors">{formatINR(stats.pending_amount)}</p>
                         </div>
-                        <div className="rounded-xl p-2.5 bg-amber-50 text-amber-600">
+                        <div className="rounded-xl p-2.5 bg-amber-50 text-amber-600 group-hover:scale-110 transition-transform">
                             <Clock size={22} />
                         </div>
                     </div>
                     <p className="mt-3 text-xs text-slate-500">{stats.pending_count || 0} invoices awaiting payment</p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Overdue Amount</p>
-                            <p className="mt-1 text-2xl font-bold text-rose-600">{formatINR(stats.overdue_amount)}</p>
+                            <p className="mt-1 text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{formatINR(stats.overdue_amount)}</p>
                         </div>
-                        <div className="rounded-xl p-2.5 bg-rose-50 text-rose-600">
+                        <div className="rounded-xl p-2.5 bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
                             <AlertTriangle size={22} />
                         </div>
                     </div>

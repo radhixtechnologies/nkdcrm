@@ -10,7 +10,7 @@ services:
     runtime: node
     rootDir: backend
     plan: free
-    buildCommand: npm install && npm run setup:prod
+    buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
@@ -26,5 +26,4 @@ services:
       - key: SUPER_ADMIN_EMAIL
         value: admin@nkdcrm.com
       - key: SUPER_ADMIN_PASSWORD
-        value: Admin@123
-
+        sync: false

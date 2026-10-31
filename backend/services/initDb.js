@@ -140,6 +140,27 @@ const runSqlMigrations = async () => {
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- Workflow columns for candidates & offer_letters
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS aadhaar_number VARCHAR(20);
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS pan_number VARCHAR(20);
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
+            ALTER TABLE candidates ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '{}';
+
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS basic_salary NUMERIC(14,2) DEFAULT 0;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS hra NUMERIC(14,2) DEFAULT 0;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS special_allowance NUMERIC(14,2) DEFAULT 0;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS salary_approved_by VARCHAR(100);
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS salary_approved_at TIMESTAMP;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS management_approved_by VARCHAR(100);
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS management_approved_at TIMESTAMP;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS pdf_generated_at TIMESTAMP;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS email_dispatched_at TIMESTAMP;
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS email_dispatch_status VARCHAR(50) DEFAULT 'NOT_SENT';
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS acceptance_status VARCHAR(50) DEFAULT 'PENDING';
+            ALTER TABLE offer_letters ADD COLUMN IF NOT EXISTS acceptance_date TIMESTAMP;
+
             -- Vendor & Asset fallback tables
             CREATE TABLE IF NOT EXISTS vendors (
                 vendor_id SERIAL PRIMARY KEY,
@@ -238,10 +259,14 @@ const runAuthMigration = async () => {
         );
         INSERT INTO roles (role_name, role_code, description) VALUES
         ('Super Admin', 'SUPER_ADMIN', 'Full system access'),
-        ('HR Admin', 'HR_ADMIN', 'HR operations'),
-        ('Finance Manager', 'FINANCE_MANAGER', 'Financial operations'),
-        ('Department Manager', 'DEPT_MANAGER', 'Team management'),
-        ('Employee', 'EMPLOYEE', 'Self-service')
+        ('HR Admin', 'HR_ADMIN', 'HR operations, recruitment & payroll processing'),
+        ('Compliance Officer', 'COMPLIANCE_OFFICER', 'Labour law, PF, ESIC and vendor statutory compliance'),
+        ('Accounts Team', 'ACCOUNTS_TEAM', 'Client billing, GST/TDS invoicing and payroll processing'),
+        ('Site Manager', 'SITE_MANAGER', 'Site staff deployment, shift scheduling and biometric attendance'),
+        ('Employee', 'EMPLOYEE', 'Self-service ESS portal, attendance, leaves and payslips'),
+        ('Client Login', 'CLIENT_LOGIN', 'Client portal for site reports, deployment verification and invoices'),
+        ('Finance Manager', 'FINANCE_MANAGER', 'Financial operations and reporting'),
+        ('Department Manager', 'DEPT_MANAGER', 'Team management and approvals')
         ON CONFLICT (role_code) DO NOTHING;
     `);
 
@@ -341,25 +366,29 @@ const runAuthMigration = async () => {
 
 const createOrUpdateSuperAdmin = async () => {
     const email = (process.env.SUPER_ADMIN_EMAIL || 'admin@nkdcrm.com').trim().toLowerCase();
-    const password = process.env.SUPER_ADMIN_PASSWORD || 'Admin@123';
-    const passwordHash = await bcrypt.hash(password, 10);
-
     const roleResult = await pool.query("SELECT role_id FROM roles WHERE role_code = 'SUPER_ADMIN'");
     if (roleResult.rows.length === 0) return;
     const roleId = roleResult.rows[0].role_id;
 
+    const existingUser = await pool.query('SELECT user_id FROM users WHERE LOWER(email) = $1', [email]);
+    if (existingUser.rows.length > 0) {
+        console.log(`✅ Super Admin already exists: ${email}`);
+        return;
+    }
+
+    const password = process.env.SUPER_ADMIN_PASSWORD;
+    if (!password) {
+        throw new Error('Set SUPER_ADMIN_PASSWORD to create the initial Super Admin account.');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(`
         INSERT INTO users (email, password_hash, role_id, is_active, is_verified)
         VALUES ($1, $2, $3, TRUE, TRUE)
-        ON CONFLICT (email) DO UPDATE
-        SET password_hash = EXCLUDED.password_hash,
-            role_id = EXCLUDED.role_id,
-            is_active = TRUE,
-            is_verified = TRUE,
-            updated_at = CURRENT_TIMESTAMP
+        ON CONFLICT (email) DO NOTHING
     `, [email, passwordHash, roleId]);
 
-    console.log(`✅ Super Admin ready: ${email} / ${password}`);
+    console.log(`✅ Super Admin created: ${email}`);
 };
 
 const initializeDatabase = async () => {
@@ -372,4 +401,3 @@ const initializeDatabase = async () => {
 };
 
 module.exports = { initializeDatabase };
-

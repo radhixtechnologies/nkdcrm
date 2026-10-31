@@ -65,21 +65,12 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-app.get('/api/setup-database', async (req, res) => {
-    try {
-        const { initializeDatabase } = require('./services/initDb');
-        const result = await initializeDatabase();
-        res.json({
-            success: true,
-            message: result.message,
-            superAdmin: {
-                email: process.env.SUPER_ADMIN_EMAIL || 'admin@nkdcrm.com',
-                password: process.env.SUPER_ADMIN_PASSWORD || 'Admin@123'
-            }
-        });
-    } catch (err) {
-        console.error('Setup endpoint error:', err);
-        res.status(500).json({ success: false, message: err.message });
+app.get('/api/download/apk', (req, res) => {
+    const apkPath = path.resolve(__dirname, '..', 'NKD-CRM.apk');
+    if (require('fs').existsSync(apkPath)) {
+        res.download(apkPath, 'NKD-CRM.apk');
+    } else {
+        res.status(404).json({ success: false, message: 'APK not found' });
     }
 });
 

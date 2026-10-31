@@ -1,0 +1,9 @@
+{
+  "appId": "com.radhixtechnologies.nkdcrm",
+  "appName": "NKD CRM",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

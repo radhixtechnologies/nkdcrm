@@ -34,6 +34,16 @@ const benefitService = {
 
     // 10. Get All Claims (HR - New Path)
     getAllClaims: (status) => api.get(`/reimbursements/all${status ? `?status=${status}` : ''}`),
+
+    // 11. Insurance Policies & Renewal
+    getInsurancePolicies: () => api.get('/insurance/policies'),
+
+    // 12. Dependents Management
+    getDependents: (employeeCode) => api.get(`/insurance/dependents/${employeeCode}`),
+    addDependent: (data) => api.post('/insurance/dependents', data),
+
+    // 13. Benefits & Insurance MIS Reports
+    getMISReports: () => api.get('/benefits/mis-reports'),
 };
 
 export default benefitService;

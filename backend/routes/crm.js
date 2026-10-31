@@ -846,6 +846,40 @@ router.post('/reimbursements/mark-paid', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
+router.get('/insurance/policies', async (req, res, next) => {
+    try {
+        return sendData(res, await benefitService.getInsurancePolicies());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/insurance/dependents/:employeeCode', async (req, res, next) => {
+    try {
+        const emp = await getEmployeeByCodeOrThrow(req.params.employeeCode);
+        return sendData(res, await benefitService.getEmployeeDependents(emp.employee_id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/insurance/dependents', async (req, res, next) => {
+    try {
+        let empId = req.body.employee_id;
+        if (!empId && req.body.employee_code) {
+            const emp = await getEmployeeByCodeOrThrow(req.body.employee_code);
+            empId = emp.employee_id;
+        }
+        if (!empId) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            empId = reqEmp ? reqEmp.employee_id : null;
+        }
+        return sendData(res, await benefitService.addEmployeeDependent({ ...req.body, employee_id: parseInt(empId) }), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/benefits/mis-reports', async (req, res, next) => {
+    try {
+        return sendData(res, await benefitService.getBenefitsMISReports());
+    } catch (error) { return sendError(next, error); }
+});
+
 // ==========================================
 // 9. PERKS
 // ==========================================
@@ -1067,6 +1101,47 @@ router.get('/recruitment/offers', async (req, res, next) => {
 router.post('/recruitment/offers', async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.createOffer(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/recruitment/offers/:id/pdf', async (req, res, next) => {
+    try {
+        const offer = await recruitmentService.getOfferById(req.params.id);
+        if (!offer) return res.status(404).json({ success: false, message: 'Offer letter not found' });
+        await recruitmentService.markPdfGenerated(req.params.id);
+        await pdfService.generateAppointmentLetter(offer, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/offers/:id/approve-salary', async (req, res, next) => {
+    try {
+        const approver = req.body.approver || req.user?.fullName || req.user?.username || 'HR Manager';
+        return sendData(res, await recruitmentService.approveSalary(req.params.id, approver));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/offers/:id/approve-management', async (req, res, next) => {
+    try {
+        const approver = req.body.approver || req.user?.fullName || req.user?.username || 'Director';
+        return sendData(res, await recruitmentService.approveManagement(req.params.id, approver));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/offers/:id/dispatch-email', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.dispatchEmail(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/recruitment/offers/:id/accept', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.acceptOffer(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/recruitment/candidates/:id/documents', async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.updateCandidateDocuments(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 

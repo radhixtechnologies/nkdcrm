@@ -3,12 +3,16 @@ import {
     Briefcase, Users, FileCheck, UserPlus, Plus,
     CheckCircle2, Clock, Calendar, Star, ArrowRight,
     Search, Filter, Eye, AlertCircle, X, ChevronRight,
-    Mail, Phone, MapPin, Building2, UserCheck, Sparkles
+    Mail, Phone, MapPin, Building2, UserCheck, Sparkles,
+    Download, Send, FileText, Check, ShieldCheck, CheckSquare,
+    Paperclip, ExternalLink, RefreshCw, Upload,
+    ChevronDown, ChevronUp, Layers, ListOrdered
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import recruitmentService from '../services/recruitmentService';
 import siteService from '../services/siteService';
 import aiService from '../services/aiService';
+import api from '../services/api';
 
 const Recruitment = () => {
     const [activeTab, setActiveTab] = useState('pipeline'); // 'pipeline', 'requisitions', 'offers'
@@ -30,13 +34,217 @@ const Recruitment = () => {
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [screeningId, setScreeningId] = useState(null);
 
+    // 10-Step Workflow: Document Collection Modal State
+    const [showDocModal, setShowDocModal] = useState(false);
+    const [selectedCandForDocs, setSelectedCandForDocs] = useState(null);
+    const [uploadingDoc, setUploadingDoc] = useState(false);
+    const [docForm, setDocForm] = useState({
+        aadhaar_number: '',
+        pan_number: '',
+        bank_name: '',
+        bank_account_no: '',
+        bank_ifsc: '',
+        documents: {}
+    });
+
+    // 10-Step Interactive Lifecycle Controls
+    const [workflowView, setWorkflowView] = useState('milestones'); // 'milestones' | 'timeline'
+    const [isWorkflowExpanded, setIsWorkflowExpanded] = useState(true);
+
+    const workflowMilestones = [
+        {
+            phase: 'Phase 1',
+            title: 'Sourcing & KYC',
+            badge: 'HR Owner',
+            steps: [
+                { num: 1, title: 'Candidate Selected', desc: 'Screened & shortlisted from pipeline', role: 'HR Recruiter' },
+                { num: 2, title: 'KYC & Doc Collection', desc: 'Aadhaar, PAN & Bank IFSC uploaded', role: 'Candidate / HR' }
+            ],
+            actionTab: 'pipeline'
+        },
+        {
+            phase: 'Phase 2',
+            title: 'Compensation & Clearance',
+            badge: 'HR & Director',
+            steps: [
+                { num: 3, title: 'Salary Structure Approval', desc: 'CTC breakdown verified & approved', role: 'HR Manager' },
+                { num: 4, title: 'Appointment Drafted', desc: 'Official terms & offer reference assigned', role: 'System Engine' },
+                { num: 5, title: 'Management Approval', desc: 'Director sign-off & digital authorization', role: 'Director' }
+            ],
+            actionTab: 'offers'
+        },
+        {
+            phase: 'Phase 3',
+            title: 'Issuance & Signoff',
+            badge: 'System & Candidate',
+            steps: [
+                { num: 6, title: 'Signed PDF Generated', desc: 'Formal letterhead appointment letter', role: 'System Engine' },
+                { num: 7, title: 'Email Dispatch', desc: 'Delivered to candidate inbox with PDF', role: 'HR Dispatch' },
+                { num: 8, title: 'Offer Acceptance', desc: 'Terms accepted by candidate', role: 'Candidate' }
+            ],
+            actionTab: 'offers'
+        },
+        {
+            phase: 'Phase 4',
+            title: 'Employee Activation',
+            badge: 'HRMS Live',
+            steps: [
+                { num: 9, title: 'Employee ID Created', desc: 'System assigns official EMP-XXXXXX code', role: 'HRMS System' },
+                { num: 10, title: 'Joining Completed', desc: 'Active in Employee Master, GPS & Payroll', role: 'Operations' }
+            ],
+            actionTab: 'offers'
+        }
+    ];
+
+    const workflowSteps = [
+        { num: 1, title: 'Candidate Selected', sub: 'Pipeline Shortlist', role: 'HR Recruiter', phase: 'Sourcing' },
+        { num: 2, title: 'KYC & Document Collection', sub: 'Aadhaar, PAN & Bank', role: 'Candidate/HR', phase: 'Sourcing' },
+        { num: 3, title: 'Salary Structure Approval', sub: 'CTC & Statutory Review', role: 'HR Manager', phase: 'Clearance' },
+        { num: 4, title: 'Appointment Letter Draft', sub: 'OFR Code & CTC Split', role: 'System Engine', phase: 'Clearance' },
+        { num: 5, title: 'Management Approval', sub: 'Director Digital Signoff', role: 'Director', phase: 'Clearance' },
+        { num: 6, title: 'Signed PDF Generation', sub: 'Official Letterhead & Seal', role: 'System Engine', phase: 'Issuance' },
+        { num: 7, title: 'Email Dispatch', sub: 'Automated Candidate Mail', role: 'HR Dispatch', phase: 'Issuance' },
+        { num: 8, title: 'Candidate Acceptance', sub: 'Formal Signoff & Offer OK', role: 'Candidate', phase: 'Issuance' },
+        { num: 9, title: 'Employee ID Creation', sub: 'EMP-XXXXXX Code Assigned', role: 'HRMS System', phase: 'Activation' },
+        { num: 10, title: 'Joining Completed', sub: 'Active in Master & GPS', role: 'Operations', phase: 'Activation' },
+    ];
+
+    const getOfferStep = (off) => {
+        if (off.status === 'JOINED') {
+            return { step: 10, label: 'Active Joined', pct: 100, color: 'bg-emerald-600', badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+        }
+        if (off.employee_code) {
+            return { step: 9, label: 'Emp ID Created', pct: 90, color: 'bg-sky-600', badgeColor: 'bg-sky-50 text-sky-700 border-sky-200' };
+        }
+        if (off.acceptance_status === 'ACCEPTED' || off.status === 'ACCEPTED') {
+            return { step: 8, label: 'Offer Accepted', pct: 80, color: 'bg-blue-600', badgeColor: 'bg-blue-50 text-blue-700 border-blue-200' };
+        }
+        if (off.email_dispatch_status === 'SENT') {
+            return { step: 7, label: 'Email Dispatched', pct: 70, color: 'bg-teal-600', badgeColor: 'bg-teal-50 text-teal-700 border-teal-200' };
+        }
+        if (off.pdf_generated_at) {
+            return { step: 6, label: 'Signed PDF Ready', pct: 60, color: 'bg-cyan-600', badgeColor: 'bg-cyan-50 text-cyan-700 border-cyan-200' };
+        }
+        if (off.management_approved_by) {
+            return { step: 5, label: 'Director Approved', pct: 50, color: 'bg-purple-600', badgeColor: 'bg-purple-50 text-purple-700 border-purple-200' };
+        }
+        if (off.offer_code) {
+            return { step: 4, label: 'Letter Drafted', pct: 40, color: 'bg-indigo-600', badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+        }
+        if (off.salary_approved_by) {
+            return { step: 3, label: 'Salary Approved', pct: 30, color: 'bg-amber-600', badgeColor: 'bg-amber-50 text-amber-700 border-amber-200' };
+        }
+        if (off.aadhaar_number || off.pan_number || off.bank_account_no) {
+            return { step: 2, label: 'KYC Collected', pct: 20, color: 'bg-indigo-600', badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+        }
+        return { step: 1, label: 'Candidate Selected', pct: 10, color: 'bg-slate-500', badgeColor: 'bg-slate-50 text-slate-700 border-slate-200' };
+    };
+
+    const handleOpenDocModal = (cand) => {
+        setSelectedCandForDocs(cand);
+        setDocForm({
+            aadhaar_number: cand.aadhaar_number || '',
+            pan_number: cand.pan_number || '',
+            bank_name: cand.bank_name || '',
+            bank_account_no: cand.bank_account_no || '',
+            bank_ifsc: cand.bank_ifsc || '',
+            documents: cand.documents || cand.candidate_documents || {}
+        });
+        setShowDocModal(true);
+    };
+
+    const handleFileUpload = async (docType, file) => {
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        setUploadingDoc(true);
+        try {
+            const res = await api.post('/employees/upload-document', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            const fileUrl = res.data?.url || res.data?.data?.url;
+            setDocForm(prev => ({
+                ...prev,
+                documents: { ...prev.documents, [docType]: fileUrl }
+            }));
+            toast.success(`${docType.toUpperCase()} file uploaded!`);
+        } catch (err) {
+            toast.error('Failed to upload document file');
+        } finally {
+            setUploadingDoc(false);
+        }
+    };
+
+    const handleSaveDocuments = async (e) => {
+        e.preventDefault();
+        if (!selectedCandForDocs) return;
+        try {
+            await recruitmentService.updateCandidateDocuments(selectedCandForDocs.candidate_id, docForm);
+            toast.success(`Documents & Bank details saved for ${selectedCandForDocs.full_name}!`);
+            setShowDocModal(false);
+            loadData();
+        } catch (err) {
+            toast.error('Failed to update candidate documents');
+        }
+    };
+
+    const handleApproveSalary = async (offerId) => {
+        try {
+            await recruitmentService.approveSalary(offerId, { approver: 'HR Manager' });
+            toast.success('✅ Step 3: Salary structure approved by HR Manager!');
+            loadData();
+        } catch (err) {
+            toast.error('Failed to approve salary structure');
+        }
+    };
+
+    const handleApproveManagement = async (offerId) => {
+        try {
+            await recruitmentService.approveManagement(offerId, { approver: 'Director' });
+            toast.success('✅ Step 5: Letter approved by Management/Director!');
+            loadData();
+        } catch (err) {
+            toast.error('Failed to approve letter by Director');
+        }
+    };
+
+    const handleDispatchEmail = async (offer) => {
+        const loadingToast = toast.loading(`Sending appointment letter to ${offer.candidate_email}...`);
+        try {
+            await recruitmentService.dispatchEmail(offer.offer_id);
+            toast.dismiss(loadingToast);
+            toast.success(`✅ Step 7: Appointment Letter email dispatched to ${offer.candidate_email}!`);
+            loadData();
+        } catch (err) {
+            toast.dismiss(loadingToast);
+            toast.error('Email dispatch failed');
+        }
+    };
+
+    const handleAcceptOffer = async (offerId) => {
+        try {
+            await recruitmentService.acceptOffer(offerId);
+            toast.success('✅ Step 8: Employee offer acceptance confirmed!');
+            loadData();
+        } catch (err) {
+            toast.error('Failed to record acceptance');
+        }
+    };
+
+    const handleDownloadPdf = (offerId) => {
+        const url = recruitmentService.getAppointmentLetterPdfUrl(offerId);
+        window.open(url, '_blank');
+        toast.success('✅ Step 6: Opening official signed Appointment Letter PDF...');
+        setTimeout(() => loadData(), 2000);
+    };
+
     const handleAiScreen = async (candId) => {
         setScreeningId(candId);
         try {
             const res = await aiService.screenCandidate(candId);
             const data = res.data?.data || res.data || {};
             toast.success(`AI Match Score: ${data.match_score}% (${data.recommendation})`);
-            fetchData();
+            loadData();
         } catch (err) {
             toast.error('AI Screening failed');
         } finally {
@@ -235,36 +443,185 @@ const Recruitment = () => {
                 </div>
             </div>
 
-            {/* Visual Process Flow Indicator */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Recruitment to Onboarding Flow</p>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="inline-block p-2 rounded-lg bg-blue-100 text-blue-700 mb-1"><Briefcase size={16} /></span>
-                        <p className="text-xs font-bold text-slate-800">1. Requisition</p>
-                        <p className="text-[11px] text-slate-500">{requisitions.length} Openings</p>
+            {/* 10-Step Candidate Selection to Joining Lifecycle Engine */}
+            <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden transition-all duration-300">
+                {/* Header Bar */}
+                <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-primary-50/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                            <CheckCircle2 size={20} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
+                                    10-Step Candidate Selection to Joining Lifecycle
+                                </h2>
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+                                    Active Engine
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                End-to-end recruitment workflow: KYC ➔ Multi-Tier Approvals ➔ Signed PDF ➔ Email Dispatch ➔ Joining
+                            </p>
+                        </div>
                     </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="inline-block p-2 rounded-lg bg-indigo-100 text-indigo-700 mb-1"><Users size={16} /></span>
-                        <p className="text-xs font-bold text-slate-800">2. Sourcing</p>
-                        <p className="text-[11px] text-slate-500">{candidates.filter(c => c.current_stage === 'APPLIED').length} Applications</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="inline-block p-2 rounded-lg bg-amber-100 text-amber-700 mb-1"><Calendar size={16} /></span>
-                        <p className="text-xs font-bold text-slate-800">3. Interview</p>
-                        <p className="text-[11px] text-slate-500">{candidates.filter(c => c.current_stage === 'INTERVIEW_SCHEDULED').length} Scheduled</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="inline-block p-2 rounded-lg bg-purple-100 text-purple-700 mb-1"><FileCheck size={16} /></span>
-                        <p className="text-xs font-bold text-slate-800">4. Offer Letter</p>
-                        <p className="text-[11px] text-slate-500">{offers.length} Extended</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="inline-block p-2 rounded-lg bg-emerald-100 text-emerald-700 mb-1"><UserCheck size={16} /></span>
-                        <p className="text-xs font-bold text-slate-800">5. Onboarded</p>
-                        <p className="text-[11px] text-slate-500">{candidates.filter(c => c.current_stage === 'HIRED').length} Employees</p>
+
+                    {/* View Controls & Action Counters */}
+                    <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
+                        {/* Quick Counters */}
+                        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-slate-100/80 rounded-xl text-xs font-semibold text-slate-700 border border-slate-200/60">
+                            <span className="text-primary-700 font-bold">{candidates.length}</span> Candidates
+                            <span className="text-slate-300">•</span>
+                            <span className="text-indigo-700 font-bold">{offers.length}</span> Offers
+                            <span className="text-slate-300">•</span>
+                            <span className="text-emerald-700 font-bold">{candidates.filter(c => c.current_stage === 'HIRED').length}</span> Onboarded
+                        </div>
+
+                        {/* View Switcher: 4 Phases vs 10-Step Timeline */}
+                        <div className="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200 text-xs">
+                            <button
+                                onClick={() => setWorkflowView('milestones')}
+                                className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                                    workflowView === 'milestones'
+                                        ? 'bg-white text-primary-700 shadow-2xs font-bold'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="Grouped by 4 Enterprise Phases"
+                            >
+                                <Layers size={13} />
+                                <span className="hidden sm:inline">4 Phases</span>
+                            </button>
+                            <button
+                                onClick={() => setWorkflowView('timeline')}
+                                className={`px-2.5 py-1 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                                    workflowView === 'timeline'
+                                        ? 'bg-white text-primary-700 shadow-2xs font-bold'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                }`}
+                                title="View continuous 10-step timeline track"
+                            >
+                                <ListOrdered size={13} />
+                                <span className="hidden sm:inline">10 Steps</span>
+                            </button>
+                        </div>
+
+                        {/* Collapse / Expand Button */}
+                        <button
+                            onClick={() => setIsWorkflowExpanded(!isWorkflowExpanded)}
+                            className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
+                            title={isWorkflowExpanded ? "Collapse workflow guide" : "Expand workflow guide"}
+                        >
+                            {isWorkflowExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
                     </div>
                 </div>
+
+                {/* Workflow Body */}
+                {isWorkflowExpanded && (
+                    <div className="p-4 sm:p-5 bg-white">
+                        {/* VIEW 1: 4 Logical Milestone Phases (Spacious, Elegant, No Text Clipping) */}
+                        {workflowView === 'milestones' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                                {workflowMilestones.map((phase, pIdx) => (
+                                    <div
+                                        key={phase.phase}
+                                        className="rounded-xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:border-primary-300 hover:shadow-md transition-all duration-200 p-4 flex flex-col justify-between group"
+                                    >
+                                        <div>
+                                            <div className="flex items-center justify-between pb-2.5 border-b border-slate-200/70">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 font-bold text-[10px] flex items-center justify-center">
+                                                        {pIdx + 1}
+                                                    </span>
+                                                    <span className="text-[11px] font-bold uppercase tracking-wider text-primary-700">
+                                                        {phase.phase}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 shadow-2xs">
+                                                    {phase.badge}
+                                                </span>
+                                            </div>
+
+                                            <h3 className="font-bold text-slate-900 text-xs mt-2.5 mb-2">
+                                                {phase.title}
+                                            </h3>
+
+                                            <div className="space-y-2 mt-3">
+                                                {phase.steps.map((st) => (
+                                                    <div key={st.num} className="bg-white rounded-lg p-2.5 border border-slate-200/60 shadow-2xs">
+                                                        <div className="flex items-center justify-between gap-1">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                                                                    {st.num}
+                                                                </span>
+                                                                <p className="font-bold text-slate-800 text-[11px] leading-snug">
+                                                                    {st.title}
+                                                                </p>
+                                                            </div>
+                                                            <span className="text-[9px] font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.2 rounded shrink-0">
+                                                                {st.role}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-500 mt-1 pl-5.5 leading-tight">
+                                                            {st.desc}
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => setActiveTab(phase.actionTab)}
+                                            className="mt-3 pt-2 border-t border-slate-200/60 text-[11px] font-semibold text-primary-600 hover:text-primary-800 flex items-center justify-between group-hover:translate-x-0.5 transition-transform"
+                                        >
+                                            <span>Go to {phase.actionTab === 'pipeline' ? 'Candidates' : 'Offer Letters'}</span>
+                                            <ArrowRight size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* VIEW 2: Continuous 10-Step Timeline Track (Horizontal Connected Stepper) */}
+                        {workflowView === 'timeline' && (
+                            <div className="overflow-x-auto pb-3 pt-1 scrollbar-thin">
+                                <div className="flex items-center gap-2 min-w-max">
+                                    {workflowSteps.map((st, sIdx) => (
+                                        <React.Fragment key={st.num}>
+                                            <div className="w-48 p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:border-primary-400 hover:shadow-md transition-all duration-200 shrink-0">
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-600 text-white font-black text-xs shadow-2xs">
+                                                        {st.num}
+                                                    </span>
+                                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-700">
+                                                        {st.phase}
+                                                    </span>
+                                                </div>
+                                                <h4 className="font-bold text-slate-900 text-xs leading-snug">
+                                                    {st.title}
+                                                </h4>
+                                                <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                                                    {st.sub}
+                                                </p>
+                                                <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px]">
+                                                    <span className="text-slate-400">Owner:</span>
+                                                    <span className="font-bold text-primary-700">{st.role}</span>
+                                                </div>
+                                            </div>
+
+                                            {sIdx < workflowSteps.length - 1 && (
+                                                <div className="flex items-center justify-center text-slate-300 shrink-0 px-0.5">
+                                                    <ArrowRight size={16} className="text-slate-400" />
+                                                </div>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Navigation Tabs */}
@@ -334,7 +691,7 @@ const Recruitment = () => {
                             filteredCandidates.map((cand) => {
                                 const stageObj = stages.find(s => s.key === cand.current_stage) || { label: cand.current_stage, color: 'bg-slate-100 text-slate-600' };
                                 return (
-                                    <div key={cand.candidate_id} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                                    <div key={cand.candidate_id} className="card-hover-effect bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between group">
                                         <div>
                                             <div className="flex items-start justify-between">
                                                 <div>
@@ -407,23 +764,35 @@ const Recruitment = () => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedCandidate(cand);
-                                                    setInterviewForm({
-                                                        stage: cand.current_stage,
-                                                        interview_date: cand.interview_date ? new Date(cand.interview_date).toISOString().slice(0, 16) : '',
-                                                        interviewer_name: cand.interviewer_name || '',
-                                                        interview_feedback: cand.interview_feedback || '',
-                                                        rating: cand.rating || 4
-                                                    });
-                                                    setShowScheduleModal(true);
-                                                }}
-                                                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                                            >
-                                                Interview / Stage
-                                            </button>
+                                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedCandidate(cand);
+                                                        setInterviewForm({
+                                                            stage: cand.current_stage,
+                                                            interview_date: cand.interview_date ? new Date(cand.interview_date).toISOString().slice(0, 16) : '',
+                                                            interviewer_name: cand.interviewer_name || '',
+                                                            interview_feedback: cand.interview_feedback || '',
+                                                            rating: cand.rating || 4
+                                                        });
+                                                        setShowScheduleModal(true);
+                                                    }}
+                                                    className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                                                >
+                                                    Interview
+                                                </button>
+                                                <button
+                                                    onClick={() => handleOpenDocModal(cand)}
+                                                    className={`text-xs font-semibold px-2 py-1.5 rounded-lg border transition-colors flex items-center gap-1 ${
+                                                        cand.aadhaar_number || cand.pan_number ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                    title="Step 2: Collect Aadhaar, PAN & Bank Details"
+                                                >
+                                                    <FileText size={12} />
+                                                    {cand.aadhaar_number || cand.pan_number ? 'Docs ✓' : 'KYC Docs'}
+                                                </button>
+                                            </div>
 
                                             {cand.current_stage !== 'HIRED' && (
                                                 <div className="flex items-center gap-1">
@@ -535,79 +904,220 @@ const Recruitment = () => {
                 </div>
             )}
 
-            {/* TAB 3: OFFER LETTERS */}
+            {/* TAB 3: OFFER LETTERS & 10-STEP ONBOARDING WORKFLOW */}
             {activeTab === 'offers' && (
                 <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
-                    <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+                    <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                         <div>
-                            <h2 className="text-sm font-bold text-slate-800">Issued Offer Letters</h2>
-                            <p className="text-xs text-slate-500">Formal employment offers extended to candidates</p>
+                            <h2 className="text-sm font-bold text-slate-800">10-Step Onboarding & Appointment Letters</h2>
+                            <p className="text-xs text-slate-500">Track KYC documents, multi-tier approvals, signed PDF generation, email dispatch and joining</p>
                         </div>
+                        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg">
+                            {offers.length} Active Candidates in Onboarding Pipeline
+                        </span>
                     </div>
 
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs text-slate-600">
                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                                 <tr>
-                                    <th className="px-4 py-3">Offer Code</th>
-                                    <th className="px-4 py-3">Candidate</th>
-                                    <th className="px-4 py-3">Designation & Site</th>
-                                    <th className="px-4 py-3">Annual CTC</th>
-                                    <th className="px-4 py-3">Joining Date</th>
-                                    <th className="px-4 py-3">Status</th>
-                                    <th className="px-4 py-3">Action</th>
+                                    <th className="px-4 py-3">Candidate & Ref</th>
+                                    <th className="px-4 py-3">Role & CTC</th>
+                                    <th className="px-4 py-3">Step 2: KYC Docs</th>
+                                    <th className="px-4 py-3">Steps 3 & 5: Approvals</th>
+                                    <th className="px-4 py-3">Steps 6 & 7: PDF & Mail</th>
+                                    <th className="px-4 py-3">Step 8: Acceptance</th>
+                                    <th className="px-4 py-3">Steps 9 & 10: Onboarding</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {offers.length === 0 ? (
                                     <tr>
                                         <td colSpan="7" className="py-8 text-center text-slate-400">
-                                            No offer letters generated yet.
+                                            No offer letters generated yet. Extend an offer from the Candidates tab.
                                         </td>
                                     </tr>
                                 ) : (
-                                    offers.map((off) => (
-                                        <tr key={off.offer_id} className="hover:bg-slate-50/60 transition-colors">
-                                            <td className="px-4 py-3 font-mono font-bold text-slate-800">{off.offer_code}</td>
-                                            <td className="px-4 py-3">
-                                                <p className="font-bold text-slate-900">{off.candidate_name}</p>
-                                                <p className="text-[11px] text-slate-400">{off.candidate_email}</p>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <p className="font-semibold text-slate-800">{off.designation}</p>
-                                                <p className="text-[11px] text-slate-400">{off.site_name || 'All Sites'}</p>
-                                            </td>
-                                            <td className="px-4 py-3 font-bold text-slate-900">
-                                                ₹{Number(off.offered_ctc).toLocaleString('en-IN')}
-                                            </td>
-                                            <td className="px-4 py-3">{new Date(off.joining_date).toLocaleDateString()}</td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                    off.status === 'JOINED' ? 'bg-emerald-100 text-emerald-700' :
-                                                    off.status === 'ACCEPTED' ? 'bg-blue-100 text-blue-700' :
-                                                    off.status === 'OFFERED' ? 'bg-purple-100 text-purple-700' :
-                                                    'bg-slate-100 text-slate-600'
-                                                }`}>
-                                                    {off.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                {off.status !== 'JOINED' && (
-                                                    <button
-                                                        onClick={() => handleConvertToEmployee({ candidate_id: off.candidate_id, full_name: off.candidate_name })}
-                                                        className="px-2.5 py-1 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-[11px]"
-                                                    >
-                                                        Confirm Joining
-                                                    </button>
-                                                )}
-                                                {off.status === 'JOINED' && (
-                                                    <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
-                                                        <CheckCircle2 size={12} /> Onboarded
-                                                    </span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))
+                                    offers.map((off) => {
+                                        const hasDocs = off.aadhaar_number || off.pan_number || off.bank_account_no;
+                                        const isSalaryApproved = !!off.salary_approved_by;
+                                        const isDirectorApproved = !!off.management_approved_by;
+                                        const isEmailSent = off.email_dispatch_status === 'SENT';
+                                        const isAccepted = off.acceptance_status === 'ACCEPTED' || off.status === 'ACCEPTED' || off.status === 'JOINED';
+                                        const isJoined = off.status === 'JOINED';
+                                        const stepInfo = getOfferStep(off);
+
+                                        return (
+                                            <tr key={off.offer_id} className="hover:bg-slate-50/70 transition-colors">
+                                                {/* Candidate & Ref (Step 1 & 4) */}
+                                                <td className="px-4 py-3">
+                                                    <p className="font-bold text-slate-900">{off.candidate_name}</p>
+                                                    <p className="text-[11px] font-mono text-primary-700 font-semibold">{off.offer_code}</p>
+                                                    <p className="text-[11px] text-slate-400">{off.candidate_email}</p>
+
+                                                    {/* Live 10-Step Progress Tracker */}
+                                                    <div className="mt-2 min-w-[180px] max-w-[210px] p-1.5 rounded-lg bg-slate-50 border border-slate-200/70">
+                                                        <div className="flex items-center justify-between text-[10px] mb-1">
+                                                            <span className="font-bold text-slate-700">Step {stepInfo.step}/10</span>
+                                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${stepInfo.badgeColor}`}>
+                                                                {stepInfo.label}
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+                                                            <div className={`h-full rounded-full transition-all duration-500 ${stepInfo.color}`} style={{ width: `${stepInfo.pct}%` }} />
+                                                        </div>
+                                                    </div>
+                                                </td>
+
+                                                {/* Role & CTC */}
+                                                <td className="px-4 py-3">
+                                                    <p className="font-semibold text-slate-900">{off.designation}</p>
+                                                    <p className="text-[11px] text-slate-500">{off.site_name || 'Assigned Site'}</p>
+                                                    <p className="text-xs font-bold text-slate-800 mt-0.5">
+                                                        ₹{Number(off.offered_ctc).toLocaleString('en-IN')}/yr
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                        Joining: {new Date(off.joining_date).toLocaleDateString('en-IN')}
+                                                    </p>
+                                                </td>
+
+                                                {/* Step 2: KYC Docs */}
+                                                <td className="px-4 py-3">
+                                                    <div className="space-y-1">
+                                                        <div className="text-[11px]">
+                                                            {hasDocs ? (
+                                                                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                                                    <Check size={11} /> KYC Added
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] font-medium">
+                                                                    <Clock size={10} /> Pending
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleOpenDocModal({
+                                                                candidate_id: off.candidate_id,
+                                                                full_name: off.candidate_name,
+                                                                aadhaar_number: off.aadhaar_number,
+                                                                pan_number: off.pan_number,
+                                                                bank_name: off.bank_name,
+                                                                bank_account_no: off.bank_account_no,
+                                                                bank_ifsc: off.bank_ifsc,
+                                                                candidate_documents: off.candidate_documents
+                                                            })}
+                                                            className="text-[10px] text-primary-600 hover:text-primary-800 font-semibold underline block"
+                                                        >
+                                                            {hasDocs ? 'View / Edit Docs' : '+ Upload Aadhaar/PAN'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+
+                                                {/* Steps 3 & 5: Approvals */}
+                                                <td className="px-4 py-3">
+                                                    <div className="space-y-1.5">
+                                                        {/* Step 3: HR Salary Approval */}
+                                                        <div>
+                                                            {isSalaryApproved ? (
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded" title={`Approved at ${off.salary_approved_at}`}>
+                                                                    <Check size={10} /> Salary: {off.salary_approved_by}
+                                                                </span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleApproveSalary(off.offer_id)}
+                                                                    className="px-2 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-semibold transition-colors"
+                                                                >
+                                                                    Approve Salary (HR)
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Step 5: Director Approval */}
+                                                        <div>
+                                                            {isDirectorApproved ? (
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded" title={`Approved at ${off.management_approved_at}`}>
+                                                                    <ShieldCheck size={10} /> Director: {off.management_approved_by}
+                                                                </span>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleApproveManagement(off.offer_id)}
+                                                                    className="px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-[10px] font-semibold transition-colors"
+                                                                >
+                                                                    Approve (Director)
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </td>
+
+                                                {/* Steps 6 & 7: PDF Generation & Email Dispatch */}
+                                                <td className="px-4 py-3">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        {/* Step 6: PDF */}
+                                                        <button
+                                                            onClick={() => handleDownloadPdf(off.offer_id)}
+                                                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold shadow-2xs transition-colors"
+                                                            title="Generate and view signed appointment PDF"
+                                                        >
+                                                            <Download size={12} className="text-primary-600" />
+                                                            Download PDF
+                                                        </button>
+
+                                                        {/* Step 7: Email */}
+                                                        {isEmailSent ? (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">
+                                                                <Check size={10} /> Email Sent
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleDispatchEmail(off)}
+                                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-[10px] font-semibold transition-colors"
+                                                            >
+                                                                <Send size={10} /> Send Email
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+
+                                                {/* Step 8: Candidate Acceptance */}
+                                                <td className="px-4 py-3">
+                                                    {isAccepted ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded-full">
+                                                            <CheckCircle2 size={11} /> Accepted
+                                                        </span>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleAcceptOffer(off.offer_id)}
+                                                            className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 font-semibold text-[10px] transition-colors"
+                                                            title="Mark offer as accepted by candidate"
+                                                        >
+                                                            Mark Accepted
+                                                        </button>
+                                                    )}
+                                                </td>
+
+                                                {/* Steps 9 & 10: ID Creation & Joining */}
+                                                <td className="px-4 py-3">
+                                                    {isJoined ? (
+                                                        <div className="space-y-0.5">
+                                                            <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                                                                <CheckCircle2 size={13} /> Active Employee
+                                                            </span>
+                                                            <p className="text-[10px] font-mono text-slate-400">Onboarding Complete</p>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleConvertToEmployee({ candidate_id: off.candidate_id, full_name: off.candidate_name })}
+                                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-[11px] shadow-2xs flex items-center gap-1 transition-colors"
+                                                            title="Generate Employee Code (EMP-XXXXXX) & activate employee record"
+                                                        >
+                                                            <UserCheck size={12} /> Confirm Joining
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
                                 )}
                             </tbody>
                         </table>
@@ -938,6 +1448,132 @@ const Recruitment = () => {
                             <div className="flex justify-end gap-2 pt-2">
                                 <button type="button" onClick={() => setShowOfferModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
                                 <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Extend Offer Letter</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL 5: Step 2 - Candidate KYC & Document Collection */}
+            {showDocModal && selectedCandForDocs && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+                            <div>
+                                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
+                                    Step 2: KYC & Compliance
+                                </span>
+                                <h3 className="font-bold text-slate-900 mt-1">Collect Documents: {selectedCandForDocs.full_name}</h3>
+                                <p className="text-xs text-slate-500">Aadhaar, PAN, and Bank details for verification & payroll activation</p>
+                            </div>
+                            <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                        </div>
+                        <form onSubmit={handleSaveDocuments} className="p-5 space-y-4">
+                            {/* Statutory IDs */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Aadhaar Number (12 Digits)</label>
+                                    <input
+                                        type="text"
+                                        maxLength="12"
+                                        placeholder="e.g. 543210987654"
+                                        value={docForm.aadhaar_number}
+                                        onChange={(e) => setDocForm({ ...docForm, aadhaar_number: e.target.value.replace(/\D/g, '') })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">PAN Number (10 Characters)</label>
+                                    <input
+                                        type="text"
+                                        maxLength="10"
+                                        placeholder="e.g. ABCDE1234F"
+                                        value={docForm.pan_number}
+                                        onChange={(e) => setDocForm({ ...docForm, pan_number: e.target.value.toUpperCase() })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 uppercase font-mono"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Bank Details */}
+                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Bank Account Details (For Salary Credit)</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Bank Name</label>
+                                        <input
+                                            type="text"
+                                            placeholder="SBI, HDFC, etc."
+                                            value={docForm.bank_name}
+                                            onChange={(e) => setDocForm({ ...docForm, bank_name: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Account Number</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Account No."
+                                            value={docForm.bank_account_no}
+                                            onChange={(e) => setDocForm({ ...docForm, bank_account_no: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono bg-white"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">IFSC Code</label>
+                                        <input
+                                            type="text"
+                                            placeholder="SBIN0001234"
+                                            value={docForm.bank_ifsc}
+                                            onChange={(e) => setDocForm({ ...docForm, bank_ifsc: e.target.value.toUpperCase() })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 uppercase font-mono bg-white"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Document File Attachments */}
+                            <div className="space-y-2">
+                                <label className="block text-xs font-semibold text-slate-700">Attach Verified Document Files (PDF / Images)</label>
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                    {['aadhaar_card', 'pan_card', 'bank_passbook'].map((docKey) => {
+                                        const label = docKey === 'aadhaar_card' ? 'Aadhaar Card' : docKey === 'pan_card' ? 'PAN Card' : 'Bank Passbook';
+                                        const uploadedUrl = docForm.documents?.[docKey];
+
+                                        return (
+                                            <div key={docKey} className="p-2.5 rounded-lg border border-slate-200 bg-white flex flex-col justify-between">
+                                                <div>
+                                                    <span className="font-semibold text-slate-800 text-[11px] block">{label}</span>
+                                                    {uploadedUrl ? (
+                                                        <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
+                                                            <Check size={11} /> Uploaded
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-400 mt-0.5 block">Not attached</span>
+                                                    )}
+                                                </div>
+                                                <div className="mt-2">
+                                                    <label className="cursor-pointer inline-flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-800 bg-primary-50 px-2 py-1 rounded">
+                                                        <Upload size={10} />
+                                                        {uploadedUrl ? 'Replace' : 'Upload'}
+                                                        <input
+                                                            type="file"
+                                                            accept=".pdf,image/*"
+                                                            className="hidden"
+                                                            onChange={(e) => handleFileUpload(docKey, e.target.files[0])}
+                                                        />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {uploadingDoc && <p className="text-[11px] text-primary-600 animate-pulse">Uploading file to server...</p>}
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                <button type="button" onClick={() => setShowDocModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 shadow-2xs">Save KYC Details</button>
                             </div>
                         </form>
                     </div>

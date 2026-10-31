@@ -143,6 +143,97 @@ class BenefitService {
         return res.rows[0];
     }
 
+    // 9. Insurance Policies Master (GMC, GPA, GTL)
+    async getInsurancePolicies() {
+        const query = `
+            SELECT policy_id, policy_name, policy_type, provider_name, policy_number, 
+                   sum_insured, start_date, expiry_date, premium_amount, tpa_name, tpa_toll_free, status,
+                   CASE 
+                       WHEN expiry_date < CURRENT_DATE THEN 'EXPIRED'
+                       WHEN expiry_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'RENEWAL_DUE'
+                       ELSE 'ACTIVE'
+                   END as calculated_status,
+                   GREATEST(0, (expiry_date - CURRENT_DATE)) as days_to_expiry
+            FROM insurance_policies
+            ORDER BY policy_type, expiry_date
+        `;
+        const res = await db.query(query);
+        return res.rows;
+    }
+
+    // 10. Employee Dependents Management
+    async getEmployeeDependents(employee_id) {
+        const query = `
+            SELECT * FROM employee_dependents
+            WHERE employee_id = $1
+            ORDER BY created_at
+        `;
+        const res = await db.query(query, [employee_id]);
+        return res.rows;
+    }
+
+    async addEmployeeDependent(data) {
+        const { employee_id, full_name, relationship, date_of_birth, gender, is_covered_under_insurance } = data;
+        const query = `
+            INSERT INTO employee_dependents
+            (employee_id, full_name, relationship, date_of_birth, gender, is_covered_under_insurance)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+        `;
+        const res = await db.query(query, [
+            employee_id, full_name, relationship, date_of_birth || null, gender || 'OTHER', is_covered_under_insurance !== false
+        ]);
+        return res.rows[0];
+    }
+
+    // 11. Benefits & Insurance MIS Reports (Coverage, Pending Claims, Utilization)
+    async getBenefitsMISReports() {
+        // A. Coverage Stats
+        const coverageRes = await db.query(`
+            SELECT 
+                COUNT(DISTINCT eb.employee_id)::int as total_enrolled_employees,
+                COUNT(DISTINCT ed.dependent_id)::int as total_dependents_covered,
+                COUNT(DISTINCT ip.policy_id)::int as total_active_policies,
+                COALESCE(SUM(ip.sum_insured), 0)::numeric as total_insurance_pool
+            FROM insurance_policies ip
+            LEFT JOIN employee_benefits eb ON eb.status = 'ACTIVE'
+            LEFT JOIN employee_dependents ed ON ed.is_covered_under_insurance = TRUE
+        `);
+
+        // B. Pending Claims Summary
+        const pendingClaimsRes = await db.query(`
+            SELECT 
+                COUNT(*)::int as pending_count,
+                COALESCE(SUM(amount), 0)::numeric as pending_amount,
+                COALESCE(SUM(CASE WHEN bt.category = 'REIMBURSEMENT' THEN amount ELSE 0 END), 0)::numeric as reimbursement_pending,
+                COALESCE(SUM(CASE WHEN bt.category = 'INSURANCE' THEN amount ELSE 0 END), 0)::numeric as insurance_pending
+            FROM reimbursements r
+            JOIN benefit_types bt ON r.benefit_type_id = bt.benefit_type_id
+            WHERE r.status = 'PENDING'
+        `);
+
+        // C. Utilization by Category
+        const utilizationRes = await db.query(`
+            SELECT 
+                bt.name as benefit_name,
+                bt.category,
+                COUNT(r.claim_id)::int as total_claims,
+                COALESCE(SUM(r.amount), 0)::numeric as total_claimed_amount,
+                COALESCE(SUM(CASE WHEN r.status IN ('APPROVED', 'PAID') THEN r.amount ELSE 0 END), 0)::numeric as approved_amount,
+                COALESCE(SUM(CASE WHEN r.status = 'PAID' THEN r.amount ELSE 0 END), 0)::numeric as disbursed_amount
+            FROM benefit_types bt
+            LEFT JOIN reimbursements r ON bt.benefit_type_id = r.benefit_type_id
+            GROUP BY bt.benefit_type_id, bt.name, bt.category
+            ORDER BY total_claimed_amount DESC
+        `);
+
+        return {
+            coverage: coverageRes.rows[0] || {},
+            pendingClaims: pendingClaimsRes.rows[0] || {},
+            utilization: utilizationRes.rows || []
+        };
+    }
+
     // Aliases for compatibility
     async getAllBenefitTypes() {
         return this.getBenefitTypes();

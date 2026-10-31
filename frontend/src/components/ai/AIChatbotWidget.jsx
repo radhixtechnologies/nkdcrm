@@ -103,16 +103,16 @@ const AIChatbotWidget = () => {
     };
 
     return (
-        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 font-sans">
+        <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 z-40 font-sans max-w-[calc(100vw-1.5rem)]">
             {/* Floating Trigger Button */}
             {!isOpen && (
                 <button
                     onClick={() => { setIsOpen(true); setIsMinimized(false); }}
-                    className="relative group flex items-center gap-2 bg-gradient-to-r from-primary-600 to-indigo-600 text-white p-3.5 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300"
+                    className="relative group flex items-center gap-2 bg-gradient-to-r from-primary-600 to-indigo-600 text-white p-3 md:p-3.5 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300"
                     title="NKD AI Assistant"
                 >
                     <div className="relative">
-                        <Sparkles className="w-6 h-6 animate-pulse" />
+                        <Sparkles className="w-5 h-5 md:w-6 md:h-6 animate-pulse" />
                         <span className="absolute -top-1 -right-1 flex h-3 w-3">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                             <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
@@ -128,23 +128,25 @@ const AIChatbotWidget = () => {
             {isOpen && (
                 <div
                     className={`bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ${
-                        isMinimized ? 'w-80 h-14' : 'w-96 max-w-[calc(100vw-2rem)] h-[540px]'
+                        isMinimized ? 'w-auto max-w-[220px] md:w-80 h-12 md:h-14' : 'w-[calc(100vw-1.5rem)] md:w-96 h-[480px] md:h-[540px]'
                     }`}
                 >
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-4 py-3 flex items-center justify-between select-none">
-                        <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
-                                <Bot className="w-5 h-5 text-white" />
+                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-3 md:px-4 py-2.5 md:py-3 flex items-center justify-between select-none">
+                        <div className="flex items-center gap-2 md:gap-2.5">
+                            <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm shrink-0">
+                                <Bot className="w-4 h-4 md:w-5 md:h-5 text-white" />
                             </div>
-                            <div>
-                                <h3 className="font-semibold text-sm leading-tight flex items-center gap-1.5">
-                                    NKD AI Assistant
-                                    <span className="text-[10px] bg-emerald-500 text-white font-medium px-1.5 py-0.2 rounded-full">
+                            <div className="min-w-0">
+                                <h3 className="font-semibold text-xs md:text-sm leading-tight flex items-center gap-1.5 truncate">
+                                    <span>NKD AI Assistant</span>
+                                    <span className="text-[9px] md:text-[10px] bg-emerald-500 text-white font-medium px-1.5 py-0.2 rounded-full shrink-0">
                                         Online
                                     </span>
                                 </h3>
-                                <p className="text-[11px] text-white/80 leading-tight">HR, Compliance & Payroll Engine</p>
+                                {!isMinimized && (
+                                    <p className="text-[10px] md:text-[11px] text-white/80 leading-tight truncate">HR, Compliance & Payroll Engine</p>
+                                )}
                             </div>
                         </div>
 

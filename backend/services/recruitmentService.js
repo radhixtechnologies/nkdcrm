@@ -153,6 +153,7 @@ const recruitmentService = {
         const query = `
             SELECT o.*,
                    c.full_name as candidate_name, c.email as candidate_email, c.phone as candidate_phone,
+                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents as candidate_documents,
                    s.site_name, s.site_code
             FROM offer_letters o
             JOIN candidates c ON o.candidate_id = c.candidate_id
@@ -163,13 +164,35 @@ const recruitmentService = {
         return res.rows;
     },
 
+    async getOfferById(offerId) {
+        const query = `
+            SELECT o.*,
+                   c.full_name as candidate_name, c.email as candidate_email, c.phone as candidate_phone,
+                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents as candidate_documents,
+                   s.site_name, s.site_code
+            FROM offer_letters o
+            JOIN candidates c ON o.candidate_id = c.candidate_id
+            LEFT JOIN sites s ON o.site_id = s.site_id
+            WHERE o.offer_id = $1
+        `;
+        const res = await db.query(query, [offerId]);
+        return res.rows[0];
+    },
+
     async createOffer(data) {
         const offerCode = `OFR-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+        const annualCTC = parseFloat(data.offered_ctc) || 0;
+        const monthlyGross = Math.round(annualCTC / 12);
+        const basic = Math.round(monthlyGross * 0.50);
+        const hra = Math.round(monthlyGross * 0.30);
+        const special = Math.max(0, monthlyGross - basic - hra);
+
         const query = `
             INSERT INTO offer_letters (
                 offer_code, candidate_id, designation, department,
-                site_id, offered_ctc, joining_date, status, terms_and_conditions
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                site_id, offered_ctc, basic_salary, hra, special_allowance,
+                joining_date, status, terms_and_conditions
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             RETURNING *
         `;
         const params = [
@@ -178,7 +201,10 @@ const recruitmentService = {
             data.designation,
             data.department,
             data.site_id || null,
-            parseFloat(data.offered_ctc) || 0,
+            annualCTC,
+            basic,
+            hra,
+            special,
             data.joining_date,
             data.status || 'OFFERED',
             data.terms_and_conditions || 'Standard company employment agreement and statutory benefits apply.'
@@ -191,6 +217,117 @@ const recruitmentService = {
             [data.candidate_id]
         );
 
+        return res.rows[0];
+    },
+
+    async approveSalary(offerId, approver = 'HR Manager') {
+        const query = `
+            UPDATE offer_letters SET
+                salary_approved_by = $1,
+                salary_approved_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE offer_id = $2
+            RETURNING *
+        `;
+        const res = await db.query(query, [approver, offerId]);
+        return res.rows[0];
+    },
+
+    async approveManagement(offerId, approver = 'Director') {
+        const query = `
+            UPDATE offer_letters SET
+                management_approved_by = $1,
+                management_approved_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE offer_id = $2
+            RETURNING *
+        `;
+        const res = await db.query(query, [approver, offerId]);
+        return res.rows[0];
+    },
+
+    async markPdfGenerated(offerId) {
+        const query = `
+            UPDATE offer_letters SET
+                pdf_generated_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE offer_id = $1
+            RETURNING *
+        `;
+        const res = await db.query(query, [offerId]);
+        return res.rows[0];
+    },
+
+    async dispatchEmail(offerId) {
+        const offer = await this.getOfferById(offerId);
+        if (!offer) throw new Error('Offer letter not found');
+
+        const pdfService = require('./pdfService');
+        const emailService = require('./emailService');
+        const pdfBuffer = await pdfService.generateAppointmentLetterBuffer(offer);
+
+        const dispatchResult = await emailService.sendAppointmentLetterEmail(offer, pdfBuffer);
+
+        const query = `
+            UPDATE offer_letters SET
+                email_dispatched_at = CURRENT_TIMESTAMP,
+                email_dispatch_status = 'SENT',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE offer_id = $1
+            RETURNING *
+        `;
+        await db.query(query, [offerId]);
+
+        return {
+            ...dispatchResult,
+            offer_id: offerId,
+            offer_code: offer.offer_code
+        };
+    },
+
+    async acceptOffer(offerId) {
+        const query = `
+            UPDATE offer_letters SET
+                acceptance_status = 'ACCEPTED',
+                status = 'ACCEPTED',
+                acceptance_date = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE offer_id = $1
+            RETURNING *
+        `;
+        const res = await db.query(query, [offerId]);
+        const offer = res.rows[0];
+        if (offer?.candidate_id) {
+            await db.query(
+                "UPDATE candidates SET current_stage = 'HIRED', updated_at = CURRENT_TIMESTAMP WHERE candidate_id = $1",
+                [offer.candidate_id]
+            );
+        }
+        return offer;
+    },
+
+    async updateCandidateDocuments(candidateId, data) {
+        const query = `
+            UPDATE candidates SET
+                aadhaar_number = COALESCE($1, aadhaar_number),
+                pan_number = COALESCE($2, pan_number),
+                bank_name = COALESCE($3, bank_name),
+                bank_account_no = COALESCE($4, bank_account_no),
+                bank_ifsc = COALESCE($5, bank_ifsc),
+                documents = COALESCE($6, documents),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE candidate_id = $7
+            RETURNING *
+        `;
+        const res = await db.query(query, [
+            data.aadhaar_number || null,
+            data.pan_number || null,
+            data.bank_name || null,
+            data.bank_account_no || null,
+            data.bank_ifsc || null,
+            data.documents ? JSON.stringify(data.documents) : null,
+            candidateId
+        ]);
         return res.rows[0];
     },
 
@@ -234,14 +371,22 @@ const recruitmentService = {
         const firstName = nameParts[0];
         const lastName = nameParts.slice(1).join(' ') || '';
 
-        const basicSalary = offer.offered_ctc ? Math.round(parseFloat(offer.offered_ctc) / 12) : 25000;
+        const basicSalary = offer.basic_salary ? parseFloat(offer.basic_salary) : (offer.offered_ctc ? Math.round(parseFloat(offer.offered_ctc) / 24) : 25000);
+
+        const panNumber = candidate.pan_number || employeePayload.pan_number || null;
+        const aadhaarNumber = candidate.aadhaar_number || employeePayload.aadhaar_number || null;
+        const bankName = candidate.bank_name || employeePayload.bank_name || null;
+        const accountNumber = candidate.bank_account_no || employeePayload.account_number || null;
+        const ifscCode = candidate.bank_ifsc || employeePayload.ifsc_code || null;
+        const docs = candidate.documents || employeePayload.documents || {};
 
         const insertQuery = `
             INSERT INTO employees (
                 employee_code, first_name, last_name, full_name, email, mobile,
                 designation, department, site_id, basic_salary, date_of_joining,
+                pan_number, aadhaar_number, bank_name, account_number, ifsc_code, documents,
                 employment_status, employment_type, wage_type, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ACTIVE', 'PERMANENT', 'MONTHLY', TRUE)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'ACTIVE', 'PERMANENT', 'MONTHLY', TRUE)
             RETURNING *
         `;
 
@@ -256,13 +401,19 @@ const recruitmentService = {
             offer.department || 'Operations',
             offer.site_id || null,
             basicSalary,
-            offer.joining_date || new Date().toISOString().split('T')[0]
+            offer.joining_date || new Date().toISOString().split('T')[0],
+            panNumber,
+            aadhaarNumber,
+            bankName,
+            accountNumber,
+            ifscCode,
+            JSON.stringify(docs)
         ]);
 
         // Mark candidate as HIRED
         await db.query("UPDATE candidates SET current_stage = 'HIRED', updated_at = CURRENT_TIMESTAMP WHERE candidate_id = $1", [candidateId]);
         if (offer.offer_id) {
-            await db.query("UPDATE offer_letters SET status = 'JOINED', updated_at = CURRENT_TIMESTAMP WHERE offer_id = $1", [offer.offer_id]);
+            await db.query("UPDATE offer_letters SET status = 'JOINED', acceptance_status = 'ACCEPTED', updated_at = CURRENT_TIMESTAMP WHERE offer_id = $1", [offer.offer_id]);
         }
 
         return newEmp.rows[0];

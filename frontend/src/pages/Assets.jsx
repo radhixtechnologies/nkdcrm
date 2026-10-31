@@ -268,36 +268,36 @@ const Assets = () => {
 
             {/* Stat Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Units</div>
                     <div className="text-2xl font-bold text-slate-900 mt-1.5">{stats.total_units || 0}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">Purchased items</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Purchased items</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Allocated</div>
                     <div className="text-2xl font-bold text-indigo-700 mt-1.5">{stats.allocated_units || 0}</div>
-                    <div className="text-xs text-indigo-600 mt-0.5">In use by staff</div>
+                    <div className="text-[11px] text-indigo-600 mt-0.5">In use by staff</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider">In Stock</div>
                     <div className="text-2xl font-bold text-emerald-700 mt-1.5">{stats.available_stock || 0}</div>
-                    <div className="text-xs text-emerald-600 mt-0.5">Ready for issuance</div>
+                    <div className="text-[11px] text-emerald-600 mt-0.5">Ready for issuance</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-rose-600 uppercase tracking-wider">Damaged / Repair</div>
                     <div className="text-2xl font-bold text-rose-700 mt-1.5">{stats.damaged_count || 0}</div>
-                    <div className="text-xs text-rose-600 mt-0.5">Reconciliation needed</div>
+                    <div className="text-[11px] text-rose-600 mt-0.5">Reconciliation needed</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs col-span-2 md:col-span-1">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs col-span-2 md:col-span-1">
                     <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Inventory Value</div>
                     <div className="text-xl font-bold text-amber-700 mt-1.5 truncate">
                         ₹{parseFloat(stats.total_inventory_value || 0).toLocaleString('en-IN')}
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">Total asset capital</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Total asset capital</div>
                 </div>
             </div>
 

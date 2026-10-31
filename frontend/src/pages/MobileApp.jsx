@@ -110,15 +110,17 @@ const MobileApp = () => {
     };
 
     const fetchApprovals = async () => {
-        const isManagerOrAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'HR_ADMIN' || user?.role === 'DEPT_MANAGER';
+        const roleCode = user?.roleCode || user?.role?.roleCode || (typeof user?.role === 'string' ? user.role : '');
+        const isManagerOrAdmin = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(roleCode);
         if (!isManagerOrAdmin) return;
 
         setLoadingApprovals(true);
         try {
             const res = await leaveService.getLeaveRequests();
             const list = res.data?.data || res.data || [];
-            // Filter only pending
-            setPendingLeaves(list.filter(l => l.status === 'PENDING').slice(0, 5));
+            if (Array.isArray(list)) {
+                setPendingLeaves(list.filter(l => l && l.status === 'PENDING').slice(0, 5));
+            }
         } catch (err) {
             console.warn('Approvals fetch note:', err);
         } finally {
@@ -127,21 +129,26 @@ const MobileApp = () => {
     };
 
     const fetchEmployeeStats = async () => {
-        if (!user?.employeeCode) return;
+        const code = user?.employeeCode || user?.employeeId;
+        if (!code) return;
         try {
-            const balRes = await leaveService.getEmployeeBalances(user.employeeCode);
+            const balRes = await leaveService.getEmployeeBalances(code);
             const balances = balRes.data?.data || [];
-            const rem = balances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
-            const tot = balances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
-            setLeaveBalance({ remaining: rem, total: tot });
+            if (Array.isArray(balances)) {
+                const rem = balances.reduce((sum, b) => sum + (parseFloat(b.remaining) || 0), 0);
+                const tot = balances.reduce((sum, b) => sum + (parseFloat(b.total_allocated) || 0), 0);
+                setLeaveBalance({ remaining: rem, total: tot });
+            }
 
             const payRes = await payrollService.getMyPayrollHistory(new Date().getFullYear());
             const slips = payRes.data?.data || [];
-            if (slips.length > 0) {
-                slips.sort((a, b) => b.month - a.month);
+            if (Array.isArray(slips) && slips.length > 0) {
+                slips.sort((a, b) => (b.month || 0) - (a.month || 0));
                 setLatestSalary(slips[0]);
             }
-        } catch (_) {}
+        } catch (error) {
+            console.warn('Failed to fetch employee stats:', error);
+        }
     };
 
     const handlePunch = async (punchType) => {
@@ -198,6 +205,29 @@ const MobileApp = () => {
     const isPunchInDone = Boolean(todayStatus?.in_time);
     const isPunchOutDone = Boolean(todayStatus?.out_time);
 
+    const displayName = (user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.employeeCode || 'Team Member').trim();
+    const displayRole = user?.designation || user?.role?.roleName || user?.roleName || user?.role?.roleCode || user?.roleCode || (typeof user?.role === 'string' ? user.role : 'Staff Member');
+    const initial = displayName.length > 0 ? displayName[0].toUpperCase() : 'N';
+    const roleCode = user?.roleCode || user?.role?.roleCode || (typeof user?.role === 'string' ? user.role : '');
+    const isManagerOrAdmin = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(roleCode);
+
+    const hasGpsCoords = gpsLocation && typeof gpsLocation.latitude === 'number' && !isNaN(gpsLocation.latitude) && typeof gpsLocation.longitude === 'number' && !isNaN(gpsLocation.longitude);
+
+    const formatTime = (timeVal) => {
+        if (!timeVal) return '';
+        if (typeof timeVal === 'string') return timeVal;
+        if (typeof timeVal === 'object') {
+            if (timeVal.hours !== undefined) {
+                const h = String(timeVal.hours).padStart(2, '0');
+                const m = String(timeVal.minutes || 0).padStart(2, '0');
+                const s = String(timeVal.seconds || 0).padStart(2, '0');
+                return `${h}:${m}:${s}`;
+            }
+            return JSON.stringify(timeVal);
+        }
+        return String(timeVal);
+    };
+
     return (
         <div className="max-w-md mx-auto space-y-4 pb-20 pt-2">
             {/* Mobile Header Greeting */}
@@ -209,15 +239,15 @@ const MobileApp = () => {
                             NKD CRM Mobile App
                         </div>
                         <h1 className="text-xl font-bold mt-1 tracking-tight">
-                            Namaste, {user?.fullName || user?.employeeCode || 'Employee'}!
+                            Namaste, {displayName}!
                         </h1>
                         <p className="text-xs text-white/90 mt-0.5 font-medium">
-                            {user?.designation || user?.role || 'Staff Member'}
+                            {displayRole}
                         </p>
                     </div>
 
                     <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center font-bold text-lg backdrop-blur-xs border border-white/30">
-                        {user?.fullName ? user.fullName[0] : 'N'}
+                        {initial}
                     </div>
                 </div>
 
@@ -232,6 +262,30 @@ const MobileApp = () => {
                 </div>
             </div>
 
+            {/* Native Android APK Direct Download Banner */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-3.5 rounded-2xl shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-white/20 rounded-xl backdrop-blur-xs shrink-0">
+                        <Download size={20} className="animate-bounce" />
+                    </div>
+                    <div>
+                        <div className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                            <span>NKD Android App</span>
+                            <span className="bg-emerald-400 text-emerald-950 text-[9px] font-black px-1.5 py-0.2 rounded-full uppercase">APK Ready</span>
+                        </div>
+                        <div className="text-[11px] text-white/90">Install directly on any Android device</div>
+                    </div>
+                </div>
+                <a
+                    href="/api/download/apk"
+                    download="NKD-CRM.apk"
+                    className="px-3 py-1.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-lg text-xs font-bold shadow-xs whitespace-nowrap transition-transform active:scale-95 flex items-center gap-1 shrink-0"
+                >
+                    <Download size={13} />
+                    Download APK
+                </a>
+            </div>
+
             {/* PWA Install App Banner */}
             <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-3.5 rounded-2xl shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -239,7 +293,7 @@ const MobileApp = () => {
                         <Smartphone size={20} />
                     </div>
                     <div>
-                        <div className="text-xs font-bold leading-tight">Install Mobile App</div>
+                        <div className="text-xs font-bold leading-tight">Install Mobile PWA</div>
                         <div className="text-[11px] text-white/90">Add NKD CRM icon directly to phone home screen</div>
                     </div>
                 </div>
@@ -266,13 +320,13 @@ const MobileApp = () => {
                 {/* GPS Location Status Pill */}
                 <div className="mb-4 p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs flex items-center justify-between">
                     <div className="flex items-center gap-2 truncate">
-                        <span className={`w-2.5 h-2.5 rounded-full ${gpsLocation ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                        {gpsLocation ? (
+                        <span className={`w-2.5 h-2.5 rounded-full ${hasGpsCoords ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                        {hasGpsCoords ? (
                             <span className="text-slate-700 font-mono text-[11px] truncate">
-                                GPS: {gpsLocation.latitude.toFixed(4)}, {gpsLocation.longitude.toFixed(4)} (±{Math.round(gpsLocation.accuracy)}m)
+                                GPS: {gpsLocation.latitude.toFixed(4)}, {gpsLocation.longitude.toFixed(4)} {typeof gpsLocation.accuracy === 'number' ? `(±${Math.round(gpsLocation.accuracy)}m)` : ''}
                             </span>
                         ) : (
-                            <span className="text-slate-500">Detecting GPS location...</span>
+                            <span className="text-slate-500">{gpsError || 'Detecting GPS location...'}</span>
                         )}
                     </div>
 
@@ -285,7 +339,7 @@ const MobileApp = () => {
                     </button>
                 </div>
 
-                {gpsLocation && (
+                {hasGpsCoords && (
                     <div className="mb-4 text-[11px] text-slate-500 flex items-center gap-1">
                         <Navigation size={12} className="text-primary-600" />
                         <a
@@ -313,7 +367,7 @@ const MobileApp = () => {
                         <CheckCircle size={18} />
                         <span>{isPunchInDone ? 'Punched IN' : 'Punch IN'}</span>
                         {todayStatus?.in_time && (
-                            <span className="text-[10px] font-mono opacity-80">{todayStatus.in_time}</span>
+                            <span className="text-[10px] font-mono opacity-80">{formatTime(todayStatus.in_time)}</span>
                         )}
                     </button>
 
@@ -331,14 +385,14 @@ const MobileApp = () => {
                         <Clock size={18} />
                         <span>{isPunchOutDone ? 'Punched OUT' : 'Punch OUT'}</span>
                         {todayStatus?.out_time && (
-                            <span className="text-[10px] font-mono opacity-80">{todayStatus.out_time}</span>
+                            <span className="text-[10px] font-mono opacity-80">{formatTime(todayStatus.out_time)}</span>
                         )}
                     </button>
                 </div>
             </div>
 
             {/* SECTION 2: MANAGER APPROVALS (If Manager/Admin) */}
-            {(user?.role === 'SUPER_ADMIN' || user?.role === 'HR_ADMIN' || user?.role === 'DEPT_MANAGER') && (
+            {isManagerOrAdmin && (
                 <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-1.5">
@@ -368,7 +422,7 @@ const MobileApp = () => {
                                             </div>
                                         </div>
                                         <div className="text-[11px] font-mono text-slate-500">
-                                            {new Date(l.start_date).toLocaleDateString()}
+                                            {l.start_date ? new Date(l.start_date).toLocaleDateString('en-IN') : '—'}
                                         </div>
                                     </div>
                                     {l.reason && (

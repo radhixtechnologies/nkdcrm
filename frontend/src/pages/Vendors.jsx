@@ -262,31 +262,31 @@ const Vendors = () => {
 
             {/* Stat Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Vendors</div>
                     <div className="text-2xl font-bold text-slate-900 mt-1.5">{stats.total_vendors || 0}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">Approved contractors</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Approved contractors</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
                         <CheckCircle size={14} />
                         Compliant
                     </div>
                     <div className="text-2xl font-bold text-emerald-700 mt-1.5">{stats.compliant_count || 0}</div>
-                    <div className="text-xs text-emerald-600 mt-0.5">PF & ESIC verified</div>
+                    <div className="text-[11px] text-emerald-600 mt-0.5">PF & ESIC verified</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-rose-600 uppercase tracking-wider flex items-center gap-1">
                         <AlertTriangle size={14} />
                         Non-Compliant
                     </div>
                     <div className="text-2xl font-bold text-rose-700 mt-1.5">{stats.non_compliant_count || 0}</div>
-                    <div className="text-xs text-rose-600 mt-0.5">Audit action needed</div>
+                    <div className="text-[11px] text-rose-600 mt-0.5">Audit action needed</div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="card-hover-effect bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                     <div className="text-xs font-semibold text-amber-600 uppercase tracking-wider flex items-center gap-1">
                         <Star size={14} />
                         Avg Performance
@@ -294,7 +294,7 @@ const Vendors = () => {
                     <div className="text-2xl font-bold text-amber-700 mt-1.5">
                         {stats.average_rating ? `${stats.average_rating} / 5` : '4.0 / 5'}
                     </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
+                    <div className="text-[11px] text-slate-400 mt-0.5">
                         {stats.active_agreements || 0} Active SLAs
                     </div>
                 </div>
