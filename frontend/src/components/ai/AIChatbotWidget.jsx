@@ -118,8 +118,8 @@ const AIChatbotWidget = () => {
                             <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
                         </span>
                     </div>
-                    <span className="hidden group-hover:inline-block pr-2 text-sm font-semibold tracking-wide">
-                        Ask AI Assistant
+                    <span className="hidden sm:group-hover:inline-block pr-2 text-sm font-semibold tracking-wide">
+                        Ask AI
                     </span>
                 </button>
             )}
@@ -127,37 +127,26 @@ const AIChatbotWidget = () => {
             {/* Chat Box Window */}
             {isOpen && (
                 <div
-                    className={`bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 ${
-                        isMinimized ? 'w-auto max-w-[220px] md:w-80 h-12 md:h-14' : 'w-[calc(100vw-1.5rem)] md:w-96 h-[480px] md:h-[540px]'
-                    }`}
+                    className="w-[calc(100vw-1.5rem)] sm:w-96 h-[480px] sm:h-[540px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 animate-slide-up"
                 >
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-3 md:px-4 py-2.5 md:py-3 flex items-center justify-between select-none">
-                        <div className="flex items-center gap-2 md:gap-2.5">
+                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between select-none">
+                        <div className="flex items-center gap-2 sm:gap-2.5">
                             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm shrink-0">
-                                <Bot className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                             </div>
                             <div className="min-w-0">
-                                <h3 className="font-semibold text-xs md:text-sm leading-tight flex items-center gap-1.5 truncate">
+                                <h3 className="font-semibold text-xs sm:text-sm leading-tight flex items-center gap-1.5 truncate">
                                     <span>NKD AI Assistant</span>
-                                    <span className="text-[9px] md:text-[10px] bg-emerald-500 text-white font-medium px-1.5 py-0.2 rounded-full shrink-0">
+                                    <span className="text-[9px] sm:text-[10px] bg-emerald-500 text-white font-medium px-1.5 py-0.2 rounded-full shrink-0">
                                         Online
                                     </span>
                                 </h3>
-                                {!isMinimized && (
-                                    <p className="text-[10px] md:text-[11px] text-white/80 leading-tight truncate">HR, Compliance & Payroll Engine</p>
-                                )}
+                                <p className="text-[10px] sm:text-[11px] text-white/80 leading-tight truncate">HR, Compliance & Payroll Engine</p>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-1">
-                            <button
-                                onClick={() => setIsMinimized(!isMinimized)}
-                                className="p-1 hover:bg-white/20 rounded text-white/90 hover:text-white transition-colors"
-                                title={isMinimized ? 'Expand' : 'Minimize'}
-                            >
-                                {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                            </button>
                             <button
                                 onClick={() => setIsOpen(false)}
                                 className="p-1 hover:bg-white/20 rounded text-white/90 hover:text-white transition-colors"

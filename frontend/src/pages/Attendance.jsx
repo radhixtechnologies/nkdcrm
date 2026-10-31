@@ -13,11 +13,11 @@ const Attendance = () => {
     const isManager = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(user?.roleCode);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 pt-1 sm:pt-2">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Attendance Management</h1>
-                    <p className="text-slate-500">Track real-time attendance, configure shifts, biometric sync & muster register</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Attendance Management</h1>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Track real-time attendance, configure shifts, biometric sync & muster register</p>
                 </div>
             </div>
 

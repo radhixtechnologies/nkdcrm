@@ -166,7 +166,7 @@ const DPRReports = () => {
     const todayCompletedTasks = (activeDpr?.today_activities || []).filter(a => a.status === 'complete').length;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-16">
+        <div className="space-y-6 max-w-7xl mx-auto pb-16 pt-1 sm:pt-2">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>

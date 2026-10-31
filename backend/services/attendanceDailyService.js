@@ -89,12 +89,26 @@ class AttendanceDailyService {
     async getAttendanceByDateRange(startDate, endDate, employeeId = null) {
         let query = `
             SELECT 
-                a.*, 
+                a.attendance_id,
+                a.employee_id,
+                TO_CHAR(a.date, 'YYYY-MM-DD') as date,
+                TO_CHAR(a.date, 'DD/MM/YYYY') as date_formatted,
+                a.status,
+                a.source,
+                TO_CHAR(a.check_in, 'HH24:MI:SS') as check_in,
+                TO_CHAR(a.check_out, 'HH24:MI:SS') as check_out,
+                TO_CHAR(a.check_in, 'HH24:MI:SS') as check_in_fmt,
+                TO_CHAR(a.check_out, 'HH24:MI:SS') as check_out_fmt,
+                a.remarks,
+                a.latitude,
+                a.longitude,
+                a.location_accuracy,
+                a.punch_address,
+                a.created_at,
+                a.updated_at,
                 e.employee_code, 
                 e.first_name, 
                 e.last_name,
-                TO_CHAR(a.check_in, 'HH24:MI:SS') as check_in_fmt,
-                TO_CHAR(a.check_out, 'HH24:MI:SS') as check_out_fmt,
                 CASE 
                     WHEN a.check_in IS NOT NULL AND a.check_out IS NOT NULL 
                     THEN (a.check_out - a.check_in) 
@@ -107,7 +121,7 @@ class AttendanceDailyService {
                 END as total_seconds
             FROM attendance_daily a
             JOIN employees e ON a.employee_id = e.employee_id
-            WHERE a.date BETWEEN $1 AND $2
+            WHERE a.date >= $1 AND a.date <= $2
         `;
         const params = [startDate, endDate];
 

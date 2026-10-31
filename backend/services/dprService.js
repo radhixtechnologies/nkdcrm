@@ -3,9 +3,98 @@ const PDFDocument = require('pdfkit');
 
 class DprService {
     /**
+     * Ensure DPR table and sample records exist (Self-healing schema)
+     */
+    async ensureDprTable() {
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS daily_progress_reports (
+                    dpr_id SERIAL PRIMARY KEY,
+                    report_no VARCHAR(100) UNIQUE NOT NULL,
+                    site_id INTEGER REFERENCES sites(site_id) ON DELETE SET NULL,
+                    report_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                    client_name VARCHAR(200) NOT NULL,
+                    contractor_name VARCHAR(200) DEFAULT 'NKD POWER SOLUTIONS PVT LTD',
+                    po_number VARCHAR(100),
+                    po_value NUMERIC(15,2) DEFAULT 0,
+                    current_billing_value NUMERIC(15,2) DEFAULT 0,
+                    billing_progress_pct NUMERIC(5,2) DEFAULT 0,
+                    start_date DATE,
+                    completion_date DATE,
+                    today_activities JSONB DEFAULT '[]'::jsonb,
+                    next_day_activities JSONB DEFAULT '[]'::jsonb,
+                    show_stoppers JSONB DEFAULT '[]'::jsonb,
+                    manpower_data JSONB DEFAULT '[]'::jsonb,
+                    photos JSONB DEFAULT '[]'::jsonb,
+                    created_by INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_dpr_site ON daily_progress_reports(site_id);
+                CREATE INDEX IF NOT EXISTS idx_dpr_date ON daily_progress_reports(report_date);
+            `);
+
+            // Seed sample GTPL LUMINA/124 report if table is empty
+            const cnt = await pool.query("SELECT COUNT(*) FROM daily_progress_reports");
+            if (parseInt(cnt.rows[0]?.count || 0) === 0) {
+                let siteId = null;
+                const siteRes = await pool.query("SELECT site_id FROM sites WHERE site_name ILIKE '%Lumina%' OR site_code = 'GTPL-LUMINA'");
+                if (siteRes.rows.length > 0) {
+                    siteId = siteRes.rows[0].site_id;
+                } else {
+                    const s = await pool.query(`
+                        INSERT INTO sites (site_code, site_name, address, city, state, pincode, is_active, nature_of_work)
+                        VALUES ('GTPL-LUMINA', 'GTPL LUMINA Data Center', 'Airoli Knowledge Park', 'Airoli, Navi Mumbai', 'Maharashtra', '400708', TRUE, '11kV Substation & Power Infrastructure')
+                        RETURNING site_id
+                    `);
+                    siteId = s.rows[0].site_id;
+                }
+
+                await pool.query(`
+                    INSERT INTO daily_progress_reports (
+                        report_no, site_id, report_date, client_name, contractor_name,
+                        po_number, po_value, current_billing_value, billing_progress_pct,
+                        start_date, completion_date,
+                        today_activities, next_day_activities, show_stoppers, manpower_data, photos
+                    ) VALUES (
+                        'GTPL LUMINA/124', $1, '2026-10-23', 'LUMINA', 'NKD POWER SOLUTIONS PVT LTD',
+                        '600190', 48374200.00, 0.00, 0.00, '2026-04-16', '2026-07-24',
+                        $2, $3, $4, $5, $6
+                    )
+                `, [
+                    siteId,
+                    JSON.stringify([{ id: 1, description: 'Roxtec material unloading and shifting work, [Engaged Manpower: 07]', status: 'complete', dependencies: 'NKD', photo_ref: 'Photo 1' }]),
+                    JSON.stringify([{ id: 1, description: '11 kV trench core cutting (cellar room) and 11KV cable pulling in cellar.', dependencies: 'Civil Clearance' }]),
+                    JSON.stringify([{ id: 1, concern_area: 'Substation cellar water seepage clearance from Lumina civil team', intimation_date: '2026-10-20' }]),
+                    JSON.stringify([
+                        { trade: 'Site Manager', required: 1, available: 1 },
+                        { trade: 'EHS Officer', required: 1, available: 1 },
+                        { trade: 'Electrician', required: 2, available: 0 },
+                        { trade: 'Engineer', required: 1, available: 0 },
+                        { trade: 'Fitter', required: 1, available: 0 },
+                        { trade: 'Welder', required: 1, available: 0 },
+                        { trade: 'Helper', required: 7, available: 7 },
+                        { trade: 'Supervisor', required: 1, available: 0 },
+                        { trade: 'Testing Engineer', required: 1, available: 0 },
+                        { trade: 'Cable Jointer', required: 2, available: 0 },
+                        { trade: 'Scaffolding Team', required: 4, available: 0 }
+                    ]),
+                    JSON.stringify([
+                        { id: 1, caption: 'Roxtec Material Unloading at Cellar Room', url: '/uploads/sample_dpr_1.jpg' },
+                        { id: 2, caption: '11kV Trench Alignment & Shifting', url: '/uploads/sample_dpr_2.jpg' }
+                    ])
+                ]);
+            }
+        } catch (err) {
+            console.warn('ensureDprTable auto-recovery notice:', err.message);
+        }
+    }
+
+    /**
      * Get list of all DPRs with optional filters
      */
     async getAllDprs({ site_id, search, start_date, end_date } = {}) {
+        await this.ensureDprTable();
         let query = `
             SELECT
                 d.*,
@@ -49,6 +138,7 @@ class DprService {
      * Get single DPR by ID
      */
     async getDprById(id) {
+        await this.ensureDprTable();
         const query = `
             SELECT
                 d.*,
@@ -71,6 +161,7 @@ class DprService {
      * Create new DPR
      */
     async createDpr(data, userId = null) {
+        await this.ensureDprTable();
         // Auto-generate report_no if not provided
         let reportNo = data.report_no;
         if (!reportNo) {

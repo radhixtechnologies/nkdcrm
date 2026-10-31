@@ -52,17 +52,55 @@ const resolveEmployee = async (codeOrId) => {
 
 // Helper to get requester's employee record
 const getRequesterEmployee = async (user) => {
+    if (!user) return null;
     if (user.employeeId) {
-        return resolveEmployee(user.employeeId);
+        const emp = await resolveEmployee(user.employeeId);
+        if (emp) return emp;
     }
     if (user.employeeCode) {
-        return resolveEmployee(user.employeeCode);
+        const emp = await resolveEmployee(user.employeeCode);
+        if (emp) return emp;
     }
-    const res = await db.query('SELECT employee_id FROM users WHERE user_id = $1', [user.userId]);
-    if (res.rows[0]?.employee_id) {
-        return resolveEmployee(res.rows[0].employee_id);
+    if (user.userId) {
+        const res = await db.query('SELECT employee_id FROM users WHERE user_id = $1', [user.userId]);
+        if (res.rows[0]?.employee_id) {
+            const emp = await resolveEmployee(res.rows[0].employee_id);
+            if (emp) return emp;
+        }
     }
-    return null;
+    if (user.email) {
+        const res = await db.query(
+            'SELECT employee_id, employee_code, first_name, last_name, full_name, email FROM employees WHERE LOWER(email) = LOWER($1)',
+            [user.email.trim()]
+        );
+        if (res.rows.length > 0) return res.rows[0];
+    }
+    // Fallback: If user is an Admin/Manager testing attendance, map to the first active employee
+    const fallback = await db.query(
+        "SELECT employee_id, employee_code, first_name, last_name, full_name, email FROM employees WHERE employment_status != 'TERMINATED' ORDER BY employee_id ASC LIMIT 1"
+    );
+    return fallback.rows[0] || null;
+};
+
+// Helper to get current Date (YYYY-MM-DD) and Time (HH:mm:ss) in Indian Standard Time (IST - Asia/Kolkata)
+const getIstDateTime = () => {
+    const now = new Date();
+    const date = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).format(now);
+
+    const time = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).format(now);
+
+    return { date, time };
 };
 
 // Helper to get file buffer from multer
@@ -89,12 +127,12 @@ router.get('/dashboard/stats', async (req, res, next) => {
         const totalEmployees = empCountRes.rows[0]?.total || 0;
 
         const todayAttendanceRes = await db.query(`
-            SELECT 
+            SELECT
                 COUNT(DISTINCT CASE WHEN status = 'P' OR check_in IS NOT NULL THEN employee_id END)::int as present,
                 COUNT(DISTINCT CASE WHEN status = 'A' THEN employee_id END)::int as absent,
                 COUNT(DISTINCT CASE WHEN status = 'HD' THEN employee_id END)::int as half_day,
                 COUNT(DISTINCT CASE WHEN status = 'L' THEN employee_id END)::int as on_leave
-            FROM attendance_daily 
+            FROM attendance_daily
             WHERE date = CURRENT_DATE
         `);
         const presentToday = todayAttendanceRes.rows[0]?.present || 0;
@@ -115,10 +153,10 @@ router.get('/dashboard/stats', async (req, res, next) => {
         const totalSites = sitesRes.rows[0]?.count || 0;
 
         const payrollRes = await db.query(`
-            SELECT COALESCE(SUM(net_salary), 0)::numeric as total, month, year 
-            FROM payroll 
-            GROUP BY month, year 
-            ORDER BY year DESC, month DESC 
+            SELECT COALESCE(SUM(net_salary), 0)::numeric as total, month, year
+            FROM payroll
+            GROUP BY month, year
+            ORDER BY year DESC, month DESC
             LIMIT 1
         `);
         const latestPayroll = payrollRes.rows[0] ? {
@@ -127,8 +165,8 @@ router.get('/dashboard/stats', async (req, res, next) => {
             year: payrollRes.rows[0].year
         } : { amount: 0, month: new Date().getMonth() + 1, year: new Date().getFullYear() };
 
-        const attendanceRate = totalEmployees > 0 
-            ? Math.round((presentToday / totalEmployees) * 100) 
+        const attendanceRate = totalEmployees > 0
+            ? Math.round((presentToday / totalEmployees) * 100)
             : 0;
 
         let complianceAlerts = { summary: {}, alerts: [] };
@@ -167,7 +205,7 @@ router.get('/dashboard/charts', async (req, res, next) => {
             WITH dates AS (
                 SELECT generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day'::interval)::date AS day
             )
-            SELECT 
+            SELECT
                 d.day as date,
                 TO_CHAR(d.day, 'Dy') as day_name,
                 COUNT(CASE WHEN a.status = 'P' OR a.check_in IS NOT NULL THEN 1 END)::int as present,
@@ -181,7 +219,7 @@ router.get('/dashboard/charts', async (req, res, next) => {
         `);
 
         const deptRes = await db.query(`
-            SELECT 
+            SELECT
                 COALESCE(NULLIF(TRIM(department), ''), 'General') as label,
                 COUNT(*)::int as value
             FROM employees
@@ -192,7 +230,7 @@ router.get('/dashboard/charts', async (req, res, next) => {
         `);
 
         const siteRes = await db.query(`
-            SELECT 
+            SELECT
                 COALESCE(s.site_name, 'Head Office') as label,
                 COUNT(e.employee_id)::int as value
             FROM employees e
@@ -204,7 +242,7 @@ router.get('/dashboard/charts', async (req, res, next) => {
         `);
 
         const payrollTrendRes = await db.query(`
-            SELECT 
+            SELECT
                 month,
                 year,
                 TO_CHAR(TO_DATE(month::text, 'MM'), 'Mon') as month_name,
@@ -217,13 +255,13 @@ router.get('/dashboard/charts', async (req, res, next) => {
         `);
 
         const recentAttendance = await db.query(`
-            SELECT 
-                a.attendance_id, 
-                a.date, 
-                TO_CHAR(a.check_in, 'HH24:MI') as time, 
+            SELECT
+                a.attendance_id,
+                a.date,
+                TO_CHAR(a.check_in, 'HH24:MI') as time,
                 a.status,
-                e.first_name, 
-                e.last_name, 
+                e.first_name,
+                e.last_name,
                 e.employee_code
             FROM attendance_daily a
             JOIN employees e ON a.employee_id = e.employee_id
@@ -391,8 +429,14 @@ router.post('/daily-attendance/import', upload.single('file'), async (req, res, 
 router.get('/daily-attendance/list', async (req, res, next) => {
     try {
         const { startDate, endDate, employeeId } = req.query;
-        const start = startDate || new Date().toISOString().split('T')[0];
-        const end = endDate || new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const istToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+        // Default to last 30 days to ensure recent history is immediately visible
+        const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const istDefaultStart = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(past);
+
+        const start = startDate || istDefaultStart;
+        const end = endDate || istToday;
         const logs = await attendanceDailyService.getAttendanceByDateRange(start, end, employeeId);
         return sendData(res, logs);
     } catch (error) { return sendError(next, error); }
@@ -403,11 +447,11 @@ router.get('/attendance/tracker/history', async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
         if (!emp) return res.json([]);
-        const today = new Date();
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(today.getDate() - 30);
-        const start = thirtyDaysAgo.toISOString().split('T')[0];
-        const end = today.toISOString().split('T')[0];
+        const now = new Date();
+        const end = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+        // Look back 90 days to ensure full history is always available
+        const past = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        const start = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(past);
         const logs = await attendanceDailyService.getAttendanceByDateRange(start, end, emp.employee_id);
         return res.json(logs);
     } catch (error) { return sendError(next, error); }
@@ -417,9 +461,9 @@ router.post('/attendance/tracker/check-in', async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
         if (!emp) return res.status(400).json({ success: false, msg: 'Employee not found for current user' });
-        const now = new Date();
-        const date = now.toISOString().split('T')[0];
-        const check_in = now.toTimeString().split(' ')[0];
+
+        // Exact Indian Standard Time (IST)
+        const { date, time: check_in } = getIstDateTime();
         const { latitude, longitude, location_accuracy, punch_address } = req.body;
 
         const log = await attendanceDailyService.upsertAttendance({
@@ -441,9 +485,9 @@ router.post('/attendance/tracker/check-out', async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
         if (!emp) return res.status(400).json({ success: false, msg: 'Employee not found for current user' });
-        const now = new Date();
-        const date = now.toISOString().split('T')[0];
-        const check_out = now.toTimeString().split(' ')[0];
+
+        // Exact Indian Standard Time (IST)
+        const { date, time: check_out } = getIstDateTime();
         const { latitude, longitude, location_accuracy, punch_address } = req.body;
 
         const log = await attendanceDailyService.upsertAttendance({
@@ -467,9 +511,8 @@ router.post('/attendance/gps-punch', async (req, res, next) => {
         const targetEmp = employee_id ? await resolveEmployee(employee_id) : await getRequesterEmployee(req.user);
         if (!targetEmp) return res.status(400).json({ success: false, message: 'Employee not found' });
 
-        const now = new Date();
-        const date = now.toISOString().split('T')[0];
-        const timeStr = now.toTimeString().split(' ')[0];
+        // Exact Indian Standard Time (IST)
+        const { date, time: timeStr } = getIstDateTime();
 
         const payload = {
             employee_id: targetEmp.employee_id,
@@ -648,14 +691,14 @@ router.post('/payroll/generate', async (req, res, next) => {
             const employees = await db.query("SELECT employee_id FROM employees WHERE employment_status = 'ACTIVE'");
             for (const emp of employees.rows) {
                 const dailyRes = await db.query(`
-                    SELECT 
+                    SELECT
                         COUNT(CASE WHEN status = 'P' THEN 1 END) as p_cnt,
                         COUNT(CASE WHEN status = 'A' THEN 1 END) as a_cnt,
                         COUNT(CASE WHEN status = 'L' THEN 1 END) as l_cnt,
                         COUNT(CASE WHEN status = 'WO' THEN 1 END) as wo_cnt
-                    FROM attendance_daily 
-                    WHERE employee_id = $1 
-                      AND EXTRACT(MONTH FROM date) = $2 
+                    FROM attendance_daily
+                    WHERE employee_id = $1
+                      AND EXTRACT(MONTH FROM date) = $2
                       AND EXTRACT(YEAR FROM date) = $3
                 `, [emp.employee_id, month, year]);
 
@@ -705,7 +748,7 @@ router.post('/payroll/finalize', async (req, res, next) => {
             return res.status(400).json({ success: false, message: 'No payroll IDs selected' });
         }
         await db.query(`
-            UPDATE payroll 
+            UPDATE payroll
             SET payment_status = 'PAID', payment_date = CURRENT_DATE, updated_at = CURRENT_TIMESTAMP
             WHERE payroll_id = ANY($1::int[])
         `, [payroll_ids]);

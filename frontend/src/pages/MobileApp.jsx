@@ -96,12 +96,13 @@ const MobileApp = () => {
         try {
             const res = await api.get('/attendance/tracker/history');
             const history = res.data?.data || res.data || [];
-            const today = new Date().toISOString().split('T')[0];
+            // Match in Indian Standard Time (IST)
+            const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
             const todayLog = history.find(l => (l.date || '').split('T')[0] === today);
             if (todayLog) {
                 setTodayStatus({
-                    in_time: todayLog.check_in || todayLog.in_time,
-                    out_time: todayLog.check_out || todayLog.out_time
+                    in_time: todayLog.check_in_fmt || todayLog.check_in || todayLog.in_time,
+                    out_time: todayLog.check_out_fmt || todayLog.check_out || todayLog.out_time
                 });
             }
         } catch (err) {

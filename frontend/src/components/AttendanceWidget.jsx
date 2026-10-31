@@ -70,21 +70,36 @@ const AttendanceWidget = () => {
         return () => clearInterval(interval);
     }, [status, checkInTime]);
 
+    const formatTimeDisplay = (timeStr) => {
+        if (!timeStr) return '-';
+        const parts = String(timeStr).split(':');
+        if (parts.length >= 2) {
+            let h = parseInt(parts[0], 10);
+            const m = parts[1];
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            return `${h}:${m} ${ampm}`;
+        }
+        return timeStr;
+    };
+
     const fetchHistory = async () => {
         try {
             const res = await api.get(`${API_ENDPOINT}/history`);
-            const history = res.data;
+            const history = Array.isArray(res.data) ? res.data : (res.data?.data || []);
             setLogs(history);
 
             // Determine current status based on today's record
             const today = dayjs().format('YYYY-MM-DD');
-            const todayLog = history.find(log => dayjs(log.date).format('YYYY-MM-DD') === today);
+            const todayLog = history.find(log => {
+                const lDate = log.date ? (typeof log.date === 'string' ? log.date.split('T')[0] : dayjs(log.date).format('YYYY-MM-DD')) : '';
+                return lDate === today;
+            });
 
             console.log('Today Log:', todayLog);
 
             if (todayLog) {
                 // If checked in but not checked out
-                // Check for null, undefined, or empty string
                 const hasCheckOut = todayLog.check_out !== null &&
                     todayLog.check_out !== undefined &&
                     todayLog.check_out !== '';
@@ -92,18 +107,14 @@ const AttendanceWidget = () => {
                 if (todayLog.check_in && !hasCheckOut) {
                     console.log('Setting status to CHECKED_IN');
                     setStatus('CHECKED_IN');
-                    // Construct full date-time for check-in
-                    // The backend returns 'HH:MM:SS' string for time.
-                    // We need to combine with date.
-                    const [h, m, s] = todayLog.check_in.split(':');
-                    const fullDate = dayjs(todayLog.date).hour(h).minute(m).second(s);
+                    const [h, m, s] = String(todayLog.check_in).split(':');
+                    const fullDate = dayjs().hour(parseInt(h) || 0).minute(parseInt(m) || 0).second(parseInt(s) || 0);
                     setCheckInTime(fullDate);
                 } else if (hasCheckOut) {
                     console.log('Setting status to CHECKED_OUT (has check_out)');
                     setStatus('CHECKED_OUT');
                     setCheckInTime(null);
                 } else {
-                    // exists but no check_in time
                     console.log('Setting status to CHECKED_OUT (no check_in)');
                     setStatus('CHECKED_OUT');
                 }
@@ -113,7 +124,6 @@ const AttendanceWidget = () => {
             }
         } catch (err) {
             console.error('Error fetching history:', err);
-            // If 401, handle auth but assume auth middleware allows for now
             setStatus('CHECKED_OUT'); // Fallback on error
         }
     };
@@ -246,46 +256,48 @@ const AttendanceWidget = () => {
                 <h3 className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
                     <History size={16} /> Recent History
                 </h3>
-                <div className="border border-slate-100 rounded-lg overflow-hidden">
+                <div className="border border-slate-100 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
                     <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-medium">
+                        <thead className="bg-slate-50 text-slate-500 font-medium sticky top-0 z-10">
                             <tr>
-                                <th className="px-3 py-2">Date</th>
-                                <th className="px-3 py-2">In</th>
-                                <th className="px-3 py-2">Out</th>
-                                <th className="px-3 py-2 text-right">Dur</th>
+                                <th className="px-3 py-2 text-xs">Date</th>
+                                <th className="px-3 py-2 text-xs">In</th>
+                                <th className="px-3 py-2 text-xs">Out</th>
+                                <th className="px-3 py-2 text-right text-xs">Dur</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {logs.length === 0 ? (
                                 <tr>
-                                    <td colSpan="4" className="px-3 py-4 text-center text-slate-400 text-xs">
-                                        No logs found
+                                    <td colSpan="4" className="px-3 py-6 text-center text-slate-400 text-xs">
+                                        No recent logs found. Punch in to record your attendance.
                                     </td>
                                 </tr>
-                            ) : logs.slice(0, 5).map((log, i) => (
+                            ) : logs.slice(0, 15).map((log, i) => (
                                 <tr key={i} className="hover:bg-slate-50">
                                     <td className="px-3 py-2 text-slate-700">
                                         <div className="flex items-center gap-1">
-                                            <span>{dayjs(log.date).format('DD MMM')}</span>
+                                            <span className="font-medium text-xs">
+                                                {log.date_formatted || (log.date ? dayjs(log.date).format('DD MMM') : '-')}
+                                            </span>
                                             {log.latitude && (
                                                 <a
                                                     href={`https://maps.google.com/?q=${log.latitude},${log.longitude}`}
                                                     target="_blank"
                                                     rel="noreferrer"
                                                     title={`GPS Location: ${log.latitude}, ${log.longitude}`}
-                                                    className="text-emerald-600 hover:text-emerald-700 inline-flex items-center"
+                                                    className="text-emerald-600 hover:text-emerald-700 inline-flex items-center ml-0.5"
                                                 >
                                                     <MapPin size={12} />
                                                 </a>
                                             )}
                                         </div>
                                     </td>
-                                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">
-                                        {log.check_in ? log.check_in.slice(0, 5) : '-'}
+                                    <td className="px-3 py-2 text-slate-700 font-mono text-xs font-semibold">
+                                        {formatTimeDisplay(log.check_in_fmt || log.check_in)}
                                     </td>
                                     <td className="px-3 py-2 text-slate-600 font-mono text-xs">
-                                        {log.check_out ? log.check_out.slice(0, 5) : '-'}
+                                        {formatTimeDisplay(log.check_out_fmt || log.check_out)}
                                     </td>
                                     <td className="px-3 py-2 text-right font-medium text-slate-600 text-xs">
                                         {formatDuration(log)}
