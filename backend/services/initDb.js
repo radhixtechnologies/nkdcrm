@@ -333,6 +333,30 @@ const runSqlMigrations = async () => {
                 ])
             ]);
         }
+
+        // 11kV Trench Dewatering & Cleaning register guarantee & seeding
+        try {
+            const trenchDewateringService = require('./trenchDewateringService');
+            await trenchDewateringService.ensureTable();
+        } catch (tErr) {
+            console.warn('trenchDewateringService init note:', tErr.message);
+        }
+
+        // Project Procurement & Material Supply Chain Pipeline
+        try {
+            const procurementService = require('./procurementService');
+            await procurementService.ensureTable();
+        } catch (pErr) {
+            console.warn('procurementService init note:', pErr.message);
+        }
+
+        // Site Operations & DPR Hub (Concerns, Measurement Sheets, Tools & Tackles, Vendor Mapping)
+        try {
+            const siteOperationsService = require('./siteOperationsService');
+            await siteOperationsService.ensureTables();
+        } catch (soErr) {
+            console.warn('siteOperationsService init note:', soErr.message);
+        }
     } catch (err) {
         console.warn('Note on recruitment & invoice tables fallback:', err.message);
     }
@@ -432,7 +456,8 @@ const runAuthMigration = async () => {
         ['Client Master & Invoices', 'INVOICES', 'Clients, Billing & Invoices', 12],
         ['Vendor Management', 'VENDORS', 'Vendor compliance, agreements & ratings', 13],
         ['Asset Management', 'ASSETS', 'Uniforms, helmets, laptops & gear tracking', 14],
-        ['Daily Progress Reports', 'DPR', 'Daily Site Progress Reports (DPR)', 15]
+        ['Daily Progress Reports', 'DPR', 'Daily Site Progress Reports (DPR)', 15],
+        ['Procurement Tracker', 'PROCUREMENT', 'Project material supply chain and manufacturing tracker', 16]
     ];
     for (const [mName, mCode, desc, order] of modules) {
         await pool.query(`

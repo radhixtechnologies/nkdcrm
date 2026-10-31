@@ -20,6 +20,7 @@ import {
     Truck,
     Smartphone,
     ClipboardList,
+    Boxes,
     X
 } from 'lucide-react';
 
@@ -38,7 +39,8 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
         { title: 'Assets & PPE', path: '/assets', icon: <Package size={20} />, moduleCode: 'ASSETS' },
         { title: 'Site & Shift', path: '/site-shift', icon: <Clock size={20} />, moduleCode: 'SITES' },
         { title: 'Sites & Branches', path: '/sites', icon: <Building size={20} />, moduleCode: 'SITES' },
-        { title: 'Site Progress (DPR)', path: '/dpr', icon: <ClipboardList size={20} />, moduleCode: 'DPR' },
+        { title: 'DPR Management', path: '/dpr', icon: <ClipboardList size={20} />, moduleCode: 'DPR', badge: 'Hub' },
+        { title: 'Procurement Tracker', path: '/procurement', icon: <Boxes size={20} />, moduleCode: 'PROCUREMENT', badge: 'GTPL' },
         { title: 'Employees', path: '/employees', icon: <Users size={20} />, moduleCode: 'EMPLOYEES' },
         { title: 'Attendance', path: '/attendance', icon: <CalendarCheck size={20} />, moduleCode: 'ATTENDANCE' },
         { title: 'Leave', path: '/leaves', icon: <Briefcase size={20} />, moduleCode: 'LEAVES' },
@@ -130,9 +132,14 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
                             title={!isOpen ? item.title : ''}
                         >
                             <div className="min-w-[20px] shrink-0 transition-transform duration-200 group-hover:scale-110">{item.icon}</div>
-                            <span className={`transition-opacity duration-200 truncate ${isOpen ? 'opacity-100' : 'md:opacity-0 md:w-0 md:hidden opacity-100'}`}>
+                            <span className={`transition-opacity duration-200 truncate flex-1 ${isOpen ? 'opacity-100' : 'md:opacity-0 md:w-0 md:hidden opacity-100'}`}>
                                 {item.title}
                             </span>
+                            {item.badge && isOpen && (
+                                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 tracking-wide border border-emerald-200 shrink-0">
+                                    {item.badge}
+                                </span>
+                            )}
                         </NavLink>
                     ))}
                 </nav>

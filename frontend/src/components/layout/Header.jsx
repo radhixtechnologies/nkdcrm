@@ -35,7 +35,7 @@ const Header = ({ toggleMobileSidebar }) => {
     }, []);
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between bg-white/98 md:bg-white/90 backdrop-blur-md border-b border-slate-200/90 px-4 md:px-8 shadow-xs transition-all duration-200">
+        <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between bg-white border-b border-slate-200/90 px-4 md:px-8 shadow-xs transition-all duration-200">
             {/* Left Side: Mobile Hamburger & Logo */}
             <div className="flex items-center gap-3">
                 <button

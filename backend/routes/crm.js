@@ -26,6 +26,9 @@ const vendorService = require('../services/vendorService');
 const assetService = require('../services/assetService');
 const aiService = require('../services/aiService');
 const dprService = require('../services/dprService');
+const trenchDewateringService = require('../services/trenchDewateringService');
+const procurementService = require('../services/procurementService');
+const siteOperationsService = require('../services/siteOperationsService');
 
 const router = express.Router();
 router.use(authenticate);
@@ -799,6 +802,10 @@ router.get('/payroll/export/excel', async (req, res, next) => {
 // ==========================================
 // 8. BENEFITS & REIMBURSEMENTS
 // ==========================================
+router.get('/benefits', async (req, res, next) => {
+    try { return sendData(res, await benefitService.getBenefitTypes()); } catch (error) { return sendError(next, error); }
+});
+
 router.get('/benefits/types', async (req, res, next) => {
     try { return sendData(res, await benefitService.getBenefitTypes()); } catch (error) { return sendError(next, error); }
 });
@@ -1335,7 +1342,7 @@ router.get('/dpr', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dpr/:id', async (req, res, next) => {
+router.get('/dpr/:id(\\d+)', async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);
         if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
@@ -1350,24 +1357,229 @@ router.post('/dpr', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/dpr/:id', async (req, res, next) => {
+router.put('/dpr/:id(\\d+)', async (req, res, next) => {
     try {
         return sendData(res, await dprService.updateDpr(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/dpr/:id', async (req, res, next) => {
+router.delete('/dpr/:id(\\d+)', async (req, res, next) => {
     try {
         return sendData(res, await dprService.deleteDpr(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dpr/:id/pdf', async (req, res, next) => {
+router.get('/dpr/:id(\\d+)/pdf', async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);
         if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
         await dprService.generateDprPdf(dpr, res);
     } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// TRENCH DEWATERING & SPECIAL SITE LOGS
+// ==========================================
+router.get('/dpr/trench-logs/export-pdf', async (req, res, next) => {
+    try {
+        const { site_id, month, year, search, start_date, end_date } = req.query;
+        await trenchDewateringService.generatePdf({ site_id, month, year, search, start_date, end_date }, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/trench-logs', async (req, res, next) => {
+    try {
+        const { site_id, month, year, search, start_date, end_date } = req.query;
+        return sendData(res, await trenchDewateringService.getLogs({ site_id, month, year, search, start_date, end_date }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/trench-logs/stats', async (req, res, next) => {
+    try {
+        const { site_id, month, year } = req.query;
+        return sendData(res, await trenchDewateringService.getStats({ site_id, month, year }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/dpr/trench-logs', async (req, res, next) => {
+    try {
+        const log = await trenchDewateringService.createLog(req.body, req.user?.userId);
+        return sendData(res, log, 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/dpr/trench-logs/:id', async (req, res, next) => {
+    try {
+        const log = await trenchDewateringService.updateLog(req.params.id, req.body);
+        return sendData(res, log);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/dpr/trench-logs/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await trenchDewateringService.deleteLog(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// PROCUREMENT & MATERIAL TRACKER ROUTES
+// ==========================================
+router.get('/procurement/export-pdf', async (req, res, next) => {
+    try {
+        const { site_id, po_status, vendor, search, stage } = req.query;
+        await procurementService.generatePdf({ site_id, po_status, vendor, search, stage }, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/procurement', async (req, res, next) => {
+    try {
+        const { site_id, po_status, vendor, search, stage } = req.query;
+        return sendData(res, await procurementService.getAllItems({ site_id, po_status, vendor, search, stage }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/procurement/stats', async (req, res, next) => {
+    try {
+        const { site_id } = req.query;
+        return sendData(res, await procurementService.getStats({ site_id }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/procurement', async (req, res, next) => {
+    try {
+        return sendData(res, await procurementService.createItem(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/procurement/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await procurementService.updateItem(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/procurement/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await procurementService.deleteItem(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// SITE OPERATIONS & DPR HUB ROUTES
+// ==========================================
+router.get('/site-operations/stats', async (req, res, next) => {
+    try {
+        const { site_id } = req.query;
+        return sendData(res, await siteOperationsService.getOperationsStats(site_id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// Concerns / Issues
+router.get('/site-operations/concerns', async (req, res, next) => {
+    try {
+        const { site_id, status, severity, search } = req.query;
+        return sendData(res, await siteOperationsService.getConcerns({ site_id, status, severity, search }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/site-operations/concerns', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.createConcern(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/site-operations/concerns/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.updateConcern(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/site-operations/concerns/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.deleteConcern(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// Measurements (M-Book)
+router.get('/site-operations/measurements', async (req, res, next) => {
+    try {
+        const { site_id, search, start_date, end_date, status } = req.query;
+        return sendData(res, await siteOperationsService.getMeasurements({ site_id, search, start_date, end_date, status }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/site-operations/measurements', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.createMeasurement(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/site-operations/measurements/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.updateMeasurement(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/site-operations/measurements/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.deleteMeasurement(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// Vendor Mapping with Scope of Work
+router.get('/site-operations/vendors', async (req, res, next) => {
+    try {
+        const { site_id, category, search } = req.query;
+        return sendData(res, await siteOperationsService.getVendorsWithScope({ site_id, category, search }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/site-operations/vendors/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.updateVendorScope(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+// Tools & Tackles / TPI Calibration
+router.get('/site-operations/tools', async (req, res, next) => {
+    try {
+        const { site_id, status, category, search } = req.query;
+        return sendData(res, await siteOperationsService.getToolsAndTackles({ site_id, status, category, search }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/site-operations/tools', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.createTool(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/site-operations/tools/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.updateTool(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/site-operations/tools/:id', async (req, res, next) => {
+    try {
+        return sendData(res, await siteOperationsService.deleteTool(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/site-operations/tools/upload-certificate', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No certificate file uploaded' });
+        }
+        const fileUrl = `/uploads/${req.file.filename}`;
+        return res.json({
+            success: true,
+            url: fileUrl,
+            message: 'Certificate uploaded successfully',
+            filename: req.file.originalname
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 router.get('/health/db', async (req, res, next) => {

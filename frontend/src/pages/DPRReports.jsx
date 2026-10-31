@@ -3,13 +3,15 @@ import {
     ClipboardList, Plus, Search, Filter, Download,
     Calendar, Building2, Users, AlertTriangle, CheckCircle2,
     Clock, ArrowRight, FileText, ChevronRight, Eye, Trash2,
-    X, Camera, Briefcase, DollarSign, Layers, Check
+    X, Camera, Briefcase, DollarSign, Layers, Check, Droplets
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dprService from '../services/dprService';
 import siteService from '../services/siteService';
+import TrenchDewateringRegister from '../components/dpr/TrenchDewateringRegister';
 
 const DPRReports = () => {
+    const [activeMainTab, setActiveMainTab] = useState('dpr'); // 'dpr' | 'trench'
     const [dprs, setDprs] = useState([]);
     const [sites, setSites] = useState([]);
     const [selectedSiteId, setSelectedSiteId] = useState('ALL');
@@ -184,17 +186,56 @@ const DPRReports = () => {
                 </div>
 
                 <div className="flex items-center gap-2.5 flex-wrap">
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs sm:text-sm font-bold text-white shadow-md hover:shadow-primary-500/20 transition-all active:scale-95"
-                    >
-                        <Plus size={16} /> New Daily Report
-                    </button>
+                    {activeMainTab === 'dpr' && (
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs sm:text-sm font-bold text-white shadow-md hover:shadow-primary-500/20 transition-all active:scale-95"
+                        >
+                            <Plus size={16} /> New Daily Report
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Filter Bar */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Primary Module Navigation Tabs */}
+            <div className="flex border-b border-slate-200 gap-2 sm:gap-4 overflow-x-auto no-scrollbar">
+                <button
+                    onClick={() => setActiveMainTab('dpr')}
+                    className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold transition-all whitespace-nowrap btn-press ${
+                        activeMainTab === 'dpr'
+                            ? 'border-primary-600 text-primary-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <ClipboardList size={17} />
+                    <span>Daily Progress Reports (DPR)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-700 font-mono">
+                        {dprs.length}
+                    </span>
+                </button>
+
+                <button
+                    onClick={() => setActiveMainTab('trench')}
+                    className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold transition-all whitespace-nowrap btn-press ${
+                        activeMainTab === 'trench'
+                            ? 'border-primary-600 text-primary-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <Droplets size={17} className={activeMainTab === 'trench' ? 'text-primary-600' : 'text-slate-400'} />
+                    <span>11kV Trench Dewatering Register</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-primary-50 text-primary-700 font-mono font-bold border border-primary-200">
+                        96 Logs
+                    </span>
+                </button>
+            </div>
+
+            {activeMainTab === 'trench' ? (
+                <TrenchDewateringRegister />
+            ) : (
+                <>
+                    {/* Filter Bar */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                 <div className="flex items-center gap-2 flex-1 max-w-md">
                     <div className="relative w-full">
                         <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
@@ -536,6 +577,8 @@ const DPRReports = () => {
                     )}
                 </div>
             </div>
+            </>
+            )}
 
             {/* MODAL: CREATE NEW DAILY PROGRESS REPORT */}
             {showCreateModal && (

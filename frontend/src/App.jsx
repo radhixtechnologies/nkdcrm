@@ -22,6 +22,8 @@ import Vendors from './pages/Vendors';
 import Assets from './pages/Assets';
 import MobileApp from './pages/MobileApp';
 import DPRReports from './pages/DPRReports';
+import DPRManagementHub from './pages/DPRManagementHub';
+import ProcurementTracker from './pages/ProcurementTracker';
 
 function App() {
   return (
@@ -49,7 +51,8 @@ function App() {
           <Route path="invoices" element={<ProtectedRoute requiredPermission="INVOICES.can_view"><Invoices /></ProtectedRoute>} />
           <Route path="vendors" element={<ProtectedRoute requiredPermission="VENDORS.can_view"><Vendors /></ProtectedRoute>} />
           <Route path="assets" element={<ProtectedRoute requiredPermission="ASSETS.can_view"><Assets /></ProtectedRoute>} />
-          <Route path="dpr" element={<ProtectedRoute><DPRReports /></ProtectedRoute>} />
+          <Route path="dpr" element={<ProtectedRoute><DPRManagementHub /></ProtectedRoute>} />
+          <Route path="procurement" element={<ProtectedRoute><ProcurementTracker /></ProtectedRoute>} />
           <Route path="mobile" element={<ProtectedRoute><MobileApp /></ProtectedRoute>} />
 
           <Route
