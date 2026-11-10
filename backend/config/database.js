@@ -8,12 +8,48 @@ const path = require('path');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
+// Helper to safely parse and sanitize connection strings (handles '@' in passwords & quotes)
+const sanitizeConnectionString = (urlStr) => {
+  if (!urlStr) return null;
+  let trimmed = String(urlStr).trim().replace(/^['"]|['"]$/g, '');
+  if (!trimmed) return null;
+
+  if (!trimmed.startsWith('postgres://') && !trimmed.startsWith('postgresql://')) {
+    trimmed = `postgresql://${trimmed}`;
+  }
+
+  const protoMatch = trimmed.match(/^(postgres(?:ql)?:\/\/)(.*)$/);
+  if (!protoMatch) return trimmed;
+
+  const body = protoMatch[2];
+  const lastAt = body.lastIndexOf('@');
+  if (lastAt === -1) return trimmed;
+
+  const authPart = body.slice(0, lastAt);
+  const hostAndRest = body.slice(lastAt + 1);
+
+  const firstColon = authPart.indexOf(':');
+  if (firstColon === -1) return trimmed;
+
+  const user = authPart.slice(0, firstColon);
+  const rawPass = authPart.slice(firstColon + 1);
+
+  let cleanPass = rawPass;
+  try {
+    cleanPass = encodeURIComponent(decodeURIComponent(rawPass));
+  } catch (_) {
+    cleanPass = encodeURIComponent(rawPass);
+  }
+
+  return `${protoMatch[1]}${encodeURIComponent(decodeURIComponent(user))}:${cleanPass}@${hostAndRest}`;
+};
+
 // Detect if connection string is in DATABASE_URL or inadvertently placed in DB_HOST
 const rawConnectionString = process.env.DATABASE_URL ||
   (process.env.DB_HOST && (process.env.DB_HOST.startsWith('postgres://') || process.env.DB_HOST.startsWith('postgresql://')) ? process.env.DB_HOST : null);
 
 const isUrlLike = rawConnectionString || (process.env.DB_HOST && process.env.DB_HOST.includes('@'));
-const finalConnectionString = rawConnectionString || (isUrlLike ? `postgresql://${process.env.DB_HOST}` : null);
+const finalConnectionString = sanitizeConnectionString(rawConnectionString || (isUrlLike ? `postgresql://${process.env.DB_HOST}` : null));
 
 // Debug: Show what database we're connecting to
 console.log('🔍 Database Configuration:');

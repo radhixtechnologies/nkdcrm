@@ -265,10 +265,24 @@ app.use((err, req, res, next) => {
         });
     }
 
-    if (err.code === 'ENOTFOUND' || err.message?.includes('getaddrinfo') || err.message?.includes('password authentication failed')) {
+    if (err.message?.includes('password authentication failed') || err.code === '28P01') {
         return res.status(503).json({
             success: false,
-            message: 'Database connection failed. Please check your database environment settings.'
+            message: 'Database password is incorrect. Please verify your Supabase database password in Hostinger Environment Variables.'
+        });
+    }
+
+    if (err.code === 'ENOTFOUND' || err.message?.includes('getaddrinfo')) {
+        return res.status(503).json({
+            success: false,
+            message: `Database host could not be reached (${err.hostname || 'DNS lookup failed'}). In Supabase, please use the Connection Pooler (Port 6543) instead of Direct connection.`
+        });
+    }
+
+    if (databaseConnectionFailed) {
+        return res.status(503).json({
+            success: false,
+            message: `Database connection failed (${err.message || 'connection refused'}). Please check your Supabase connection string in Hostinger.`
         });
     }
 
