@@ -8,15 +8,15 @@ class EmailService {
 
     initTransporter() {
         const host = process.env.SMTP_HOST;
-        const port = process.env.SMTP_PORT || 587;
+        const port = parseInt(process.env.SMTP_PORT || '587', 10);
         const user = process.env.SMTP_USER;
         const pass = process.env.SMTP_PASS;
 
         if (host && user && pass) {
             this.transporter = nodemailer.createTransport({
                 host,
-                port: parseInt(port),
-                secure: port == 465,
+                port,
+                secure: port === 465,
                 auth: { user, pass }
             });
             console.log('📧 SMTP Email Transporter initialized for:', host);
@@ -30,7 +30,7 @@ class EmailService {
         const candidateName = offer.candidate_name;
         const designation = offer.designation;
         const offerCode = offer.offer_code;
-        const companyName = 'NKD Enterprises & Security Services';
+        const companyName = 'NKD Power Solutions Pvt Ltd';
 
         const subject = `Offer & Appointment Letter: ${designation} - ${companyName} (${offerCode})`;
 
@@ -67,7 +67,7 @@ class EmailService {
         if (this.transporter && recipientEmail) {
             try {
                 const info = await this.transporter.sendMail({
-                    from: `"NKD HR Team" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'hr@nkdservices.com'}>`,
+                    from: `"NKD HR Team" <${process.env.SMTP_FROM || process.env.SMTP_USER || 'hr@nkdpowersolutions.com'}>`,
                     to: recipientEmail,
                     subject,
                     html,
@@ -89,17 +89,15 @@ class EmailService {
             }
         }
 
-        // Simulated Dispatch (Production-safe fallback)
         return {
             success: true,
             mode: 'SIMULATED_DISPATCH',
             recipient: recipientEmail || 'candidate@example.com',
             subject,
             dispatchedAt: new Date().toISOString(),
-            note: 'Email dispatched successfully. (Set SMTP_HOST, SMTP_USER, SMTP_PASS in .env for live mail server delivery).'
+            note: 'Simulated dispatch recorded (configure SMTP_HOST, SMTP_USER, SMTP_PASS in backend .env for real email delivery).'
         };
     }
 }
 
 module.exports = new EmailService();
-

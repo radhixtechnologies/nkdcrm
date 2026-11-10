@@ -1,14 +1,16 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
 
 const recruitmentService = {
     // Requisitions
     getRequisitions: () => api.get('/recruitment/requisitions'),
     createRequisition: (data) => api.post('/recruitment/requisitions', data),
     updateRequisition: (id, data) => api.put(`/recruitment/requisitions/${id}`, data),
+    deleteRequisition: (id) => api.delete(`/recruitment/requisitions/${id}`),
 
     // Candidates
     getCandidates: (params) => api.get('/recruitment/candidates', { params }),
     createCandidate: (data) => api.post('/recruitment/candidates', data),
+    deleteCandidate: (id) => api.delete(`/recruitment/candidates/${id}`),
     updateCandidateStage: (id, data) => api.put(`/recruitment/candidates/${id}/stage`, data),
 
     // Offer Letters & 10-Step Workflow
@@ -22,7 +24,7 @@ const recruitmentService = {
     updateCandidateDocuments: (candidateId, data) => api.put(`/recruitment/candidates/${candidateId}/documents`, data),
     getAppointmentLetterPdfUrl: (offerId) => {
         const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
-        const base = api.defaults.baseURL || '/api';
+        const base = getApiBaseUrl();
         return `${base}/recruitment/offers/${offerId}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     },
 

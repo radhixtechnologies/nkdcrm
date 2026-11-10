@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
@@ -11,44 +11,88 @@ export const useAuth = () => {
     return context;
 };
 
+const clearAuthStorage = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('permissions');
+    delete api.defaults.headers.common['Authorization'];
+};
+
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(null);
     const [permissions, setPermissions] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Initialize auth state from localStorage
-    useEffect(() => {
+    const resetSessionState = useCallback(() => {
+        setToken(null);
+        setUser(null);
+        setPermissions([]);
+        clearAuthStorage();
+    }, []);
+
+    const refreshSession = useCallback(async () => {
         try {
-            const storedToken = localStorage.getItem('token');
-            const storedUser = localStorage.getItem('user');
-            const storedPermissions = localStorage.getItem('permissions');
-
-            if (storedToken && storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
-                const parsedUser = JSON.parse(storedUser);
-                const parsedPermissions = (storedPermissions && storedPermissions !== 'undefined' && storedPermissions !== 'null')
-                    ? JSON.parse(storedPermissions)
-                    : [];
-
-                setToken(storedToken);
-                setUser(parsedUser);
-                setPermissions(parsedPermissions);
-
-                // Set default axios header
-                api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+            const res = await api.get('/auth/me');
+            if (res.data?.success && res.data?.data?.user) {
+                const freshUser = res.data.data.user;
+                const freshPerms = res.data.data.permissions || [];
+                setUser(freshUser);
+                setPermissions(freshPerms);
+                localStorage.setItem('user', JSON.stringify(freshUser));
+                localStorage.setItem('permissions', JSON.stringify(freshPerms));
             }
         } catch (err) {
-            console.error('Error restoring session from localStorage:', err);
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('permissions');
-            setToken(null);
-            setUser(null);
-            setPermissions([]);
-        } finally {
-            setLoading(false);
+            if (err?.response?.status === 401 || err?.response?.status === 403) {
+                resetSessionState();
+            }
         }
-    }, []);
+    }, [resetSessionState]);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const initAuth = async () => {
+            try {
+                const storedToken = localStorage.getItem('token');
+                const storedUser = localStorage.getItem('user');
+                const storedPermissions = localStorage.getItem('permissions');
+
+                if (storedToken && storedUser && storedUser !== 'undefined' && storedUser !== 'null') {
+                    const parsedUser = JSON.parse(storedUser);
+                    const parsedPermissions = (storedPermissions && storedPermissions !== 'undefined' && storedPermissions !== 'null')
+                        ? JSON.parse(storedPermissions)
+                        : [];
+
+                    if (mounted) {
+                        setToken(storedToken);
+                        setUser(parsedUser);
+                        setPermissions(parsedPermissions);
+                        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+                    }
+
+                    // Hydrate live role/permissions from DB on boot
+                    await refreshSession();
+                } else {
+                    clearAuthStorage();
+                }
+            } catch (err) {
+                console.error('Error restoring session from localStorage:', err);
+                if (mounted) resetSessionState();
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        };
+
+        initAuth();
+
+        const handleExpired = () => resetSessionState();
+        window.addEventListener('nkd-auth-expired', handleExpired);
+        return () => {
+            mounted = false;
+            window.removeEventListener('nkd-auth-expired', handleExpired);
+        };
+    }, [refreshSession, resetSessionState]);
 
     const login = async (email, password) => {
         try {
@@ -58,20 +102,17 @@ export const AuthProvider = ({ children }) => {
             });
 
             if (response.data && response.data.success) {
-                const { token, user, permissions } = response.data.data;
+                const { token: newToken, user: newUser, permissions: newPermissions } = response.data.data;
 
-                // Store in state
-                setToken(token);
-                setUser(user);
-                setPermissions(permissions || []);
+                setToken(newToken);
+                setUser(newUser);
+                setPermissions(newPermissions || []);
 
-                // Store in localStorage
-                localStorage.setItem('token', token);
-                localStorage.setItem('user', JSON.stringify(user));
-                localStorage.setItem('permissions', JSON.stringify(permissions || []));
+                localStorage.setItem('token', newToken);
+                localStorage.setItem('user', JSON.stringify(newUser));
+                localStorage.setItem('permissions', JSON.stringify(newPermissions || []));
 
-                // Set default axios header
-                api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+                api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
 
                 return { success: true };
             }
@@ -91,45 +132,37 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            // Call logout endpoint (optional)
             await api.post('/auth/logout');
         } catch (error) {
             console.error('Logout error:', error);
         } finally {
-            // Clear state
-            setToken(null);
-            setUser(null);
-            setPermissions([]);
-
-            // Clear localStorage
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            localStorage.removeItem('permissions');
-
-            // Clear axios header
-            delete api.defaults.headers.common['Authorization'];
+            resetSessionState();
         }
     };
 
-    const hasPermission = (moduleCode, action = 'can_view') => {
+    const getRoleCode = useCallback(() => {
+        if (!user) return '';
+        const raw = user.roleCode || user.role?.roleCode || (typeof user.role === 'string' ? user.role : '');
+        return String(raw || '').toUpperCase();
+    }, [user]);
+
+    const hasPermission = useCallback((moduleCode, action = 'can_view') => {
         if (!user) return false;
-
-        // Super Admin has all permissions
-        if (user.role?.roleCode === 'SUPER_ADMIN') return true;
-
-        // Check specific permission
+        if (getRoleCode() === 'SUPER_ADMIN') return true;
         const permission = permissions.find(p => p.module_code === moduleCode);
-        return permission ? permission[action] : false;
-    };
+        return permission ? Boolean(permission[action]) : false;
+    }, [user, permissions, getRoleCode]);
 
-    const hasRole = (...roles) => {
-        if (!user || !user.role) return false;
-        return roles.includes(user.role.roleCode);
-    };
+    const hasRole = useCallback((...roles) => {
+        const currentRole = getRoleCode();
+        if (!currentRole) return false;
+        const flattened = roles.flat().map(r => String(r).toUpperCase());
+        return flattened.includes(currentRole);
+    }, [getRoleCode]);
 
-    const isAuthenticated = () => {
+    const isAuthenticated = useCallback(() => {
         return !!token && !!user;
-    };
+    }, [token, user]);
 
     const value = {
         user,
@@ -138,8 +171,10 @@ export const AuthProvider = ({ children }) => {
         loading,
         login,
         logout,
+        refreshSession,
         hasPermission,
         hasRole,
+        getRoleCode,
         isAuthenticated
     };
 

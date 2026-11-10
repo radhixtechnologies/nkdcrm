@@ -5,32 +5,35 @@ const aiService = {
     async handleChatMessage(message, context = {}) {
         const text = (message || '').toLowerCase().trim();
 
-        // 1A. Optional Live Cloud LLM Call (if GEMINI_API_KEY or OPENAI_API_KEY is configured in .env)
+        // 1A. Optional Live Cloud LLM Call (if GEMINI_API_KEY is configured in .env)
         if (process.env.GEMINI_API_KEY) {
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+                const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: [{
                             parts: [{
-                                text: `You are the NKD CRM AI Smart Assistant for an Indian Facilities & Manpower company. Answer concisely with bullet points.\nContext: User asked: "${message}". Indian compliance: EPF 12%, ESIC 0.75%/3.25%, PT ₹200, 194C TDS 1%/2%, 15th monthly ECR deadline.`
+                                text: `You are the NKD CRM AI Smart Assistant for NKD Power Solutions (Indian Facilities, Substation & Manpower company). Answer concisely with bullet points.\nUser role: ${context.role || 'User'}\nUser asked: "${message}". Indian compliance: EPF 12%, ESIC 0.75%/3.25%, PT ₹200, 194C TDS 1%/2%, 15th monthly ECR deadline. Modules: Attendance, Leaves, Payroll, Benefits, DPR & Site Operations (/dpr), Procurement Tracker (/procurement), Invoices, Vendors, Assets.`
                             }]
                         }]
                     })
                 });
-                const data = await response.json();
-                const geminiReply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (geminiReply) {
-                    return {
-                        reply: geminiReply,
-                        category: 'LIVE_AI',
-                        suggestedActions: [
-                            { label: 'Attendance', link: '/attendance' },
-                            { label: 'Leaves', link: '/leaves' },
-                            { label: 'Payroll', link: '/payroll' }
-                        ]
-                    };
+                if (response.ok) {
+                    const data = await response.json();
+                    const geminiReply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (geminiReply) {
+                        return {
+                            reply: geminiReply,
+                            category: 'LIVE_AI',
+                            suggestedActions: [
+                                { label: 'Attendance', link: '/attendance' },
+                                { label: 'DPR Hub', link: '/dpr' },
+                                { label: 'Leaves', link: '/leaves' }
+                            ]
+                        };
+                    }
                 }
             } catch (err) {
                 console.warn('Gemini API call note, fallback to built-in knowledge base:', err.message);
@@ -38,6 +41,28 @@ const aiService = {
         }
 
         // 1B. Built-in Standalone Knowledge Base (100% Free, Zero API cost, Instant)
+        if (text.includes('dpr') || text.includes('daily progress') || text.includes('trench') || text.includes('dewater') || text.includes('measurement') || text.includes('concern') || text.includes('tool')) {
+            return {
+                reply: "📋 **DPR & Site Operations Hub (`/dpr`):**\n- **Daily Progress Reports:** Create site-wise & backdated DPRs with PO billing, today/next-day activities, manpower table, show stoppers, and PDF export.\n- **Concern / Issue Reporting:** Log site blockers & safety issues with severity and responsible agency.\n- **Measurement Sheets:** Track item-wise quantity execution (`L x B x D = Qty`) and billing progress.\n- **Vendor Mapping & Inventory Register:** Manage site vendors plus tools/tackles calibration & TPI validity.",
+                category: 'SITE_OPERATIONS',
+                suggestedActions: [
+                    { label: 'Open DPR Hub', link: '/dpr' },
+                    { label: 'Procurement Tracker', link: '/procurement' }
+                ]
+            };
+        }
+
+        if (text.includes('procurement') || text.includes('material') || text.includes('td') || text.includes('dispatch') || text.includes('polycab') || text.includes('cable')) {
+            return {
+                reply: "📦 **Procurement Tracker (`/procurement`):**\n- Track GTPL & site material lifecycle across **9 stages**: PO Placement, TDS Submission, Approval, Mfg Clearance, Mfg Start/End, Inspection, Dispatch & Site Receipt.\n- Export full Excel supply chain trackers or update Planned vs Actual milestones site-wise.",
+                category: 'PROCUREMENT',
+                suggestedActions: [
+                    { label: 'Procurement Tracker', link: '/procurement' },
+                    { label: 'DPR Hub', link: '/dpr' }
+                ]
+            };
+        }
+
         if (text.includes('pf') || text.includes('provident fund') || text.includes('uan')) {
             return {
                 reply: "📌 **EPF (Provident Fund) Compliance Rules:**\n- **Employee Contribution:** 12% of Basic + DA (capped at ₹15,000 basic = ₹1,800/month).\n- **Employer Contribution:** 12% (3.67% to EPF, 8.33% to EPS).\n- **Filing Deadline:** 15th of every month on the EPFO Unified Portal.\n- Employees must have an active 12-digit UAN linked to Aadhaar & Bank Account.",
@@ -51,17 +76,18 @@ const aiService = {
 
         if (text.includes('esic') || text.includes('esi') || text.includes('insurance')) {
             return {
-                reply: "🏥 **ESIC (Employee State Insurance) Rules:**\n- **Eligibility:** Employees earning up to ₹21,000 gross monthly wage.\n- **Employee Contribution:** 0.75% of Gross Wage.\n- **Employer Contribution:** 3.25% of Gross Wage.\n- **Filing Deadline:** 15th of every month. Benefits include medical care, sickness benefit, and maternity relief.",
+                reply: "🏥 **ESIC & Corporate Insurance:**\n- **Eligibility:** Employees earning up to ₹21,000 gross monthly wage.\n- **Employee Contribution:** 0.75% of Gross Wage.\n- **Employer Contribution:** 3.25% of Gross Wage.\n- **Filing Deadline:** 15th of every month. Manage GMC/GPA/GTL insurance & dependents under `/benefits`.",
                 category: 'COMPLIANCE',
                 suggestedActions: [
-                    { label: 'View ESI Report', link: '/reports' }
+                    { label: 'View ESI Report', link: '/reports' },
+                    { label: 'Benefits & Insurance', link: '/benefits' }
                 ]
             };
         }
 
         if (text.includes('leave') || text.includes('holiday') || text.includes('balance') || text.includes('apply leave')) {
             return {
-                reply: "🏖️ **Leave Management Guidelines:**\n- **Casual Leave (CL):** 12 days per year for personal errands.\n- **Sick Leave (SL):** Up to 10 days upon medical intimation.\n- **Earned Leave (EL/PL):** Accrued on continuous working days.\n- To apply, go to the **Leave** module or click your balance on the Employee Dashboard. Approvals are processed by your site manager.",
+                reply: "🏖️ **Leave Management Guidelines:**\n- **Casual Leave (CL):** 12 days per year for personal errands.\n- **Sick Leave (SL):** Up to 12 days upon medical intimation.\n- **Privilege Leave (PL):** 15 days earned leave.\n- Apply directly from the **Leaves** page (`/leaves`); approvals automatically update Daily Attendance.",
                 category: 'LEAVE',
                 suggestedActions: [
                     { label: 'Apply Leave Now', link: '/leaves' },
@@ -72,7 +98,7 @@ const aiService = {
 
         if (text.includes('salary') || text.includes('payslip') || text.includes('payroll') || text.includes('payout')) {
             return {
-                reply: "💰 **Salary & Payroll Processing:**\n- Salaries are calculated based on monthly attendance days and shift timings.\n- Proration formula: `(Basic + Allowances) * (Present Days / 26)`.\n- Deductions: PF (12%), ESI (0.75%), PT (₹200), and TDS (if applicable).\n- You can download your official PDF Payslip from the **Payroll** tab.",
+                reply: "💰 **Salary & Payroll Processing:**\n- Salaries prorate based on paid days against monthly working days (default 26).\n- Standard statutory deductions: PF (12% up to ₹15k basic), ESI (0.75% up to ₹21k gross), PT (₹200), and TDS.\n- Download official PDF Payslips or Excel bank registers from `/payroll`.",
                 category: 'PAYROLL',
                 suggestedActions: [
                     { label: 'View Payslips', link: '/payroll' },
@@ -81,20 +107,20 @@ const aiService = {
             };
         }
 
-        if (text.includes('attendance') || text.includes('punch') || text.includes('gps') || text.includes('biometric')) {
+        if (text.includes('attendance') || text.includes('punch') || text.includes('gps') || text.includes('biometric') || text.includes('check')) {
             return {
-                reply: "📍 **Attendance & Punching:**\n- **GPS Punch:** Use the Time Tracker on your Dashboard to Punch-In and Punch-Out with live coordinates.\n- **Biometric Sync:** Site biometric devices upload logs automatically or via excel upload in `/attendance`.\n- Overtime is calculated at 2x hourly rate for hours worked beyond shift timings.",
+                reply: "📍 **Attendance & GPS Punching:**\n- **GPS Punch:** Use Smart Check-In on your Dashboard or `/mobile` to record live IST check-in & check-out with GPS coordinates.\n- **Overnight Shifts:** Checking out next morning automatically closes yesterday's open shift.\n- **Biometric & Muster Import:** Upload Excel registers in `/attendance`.",
                 category: 'ATTENDANCE',
                 suggestedActions: [
-                    { label: 'Daily Attendance Register', link: '/attendance' },
-                    { label: 'Shift Configuration', link: '/site-shift' }
+                    { label: 'Daily Attendance', link: '/attendance' },
+                    { label: 'Mobile Punch', link: '/mobile' }
                 ]
             };
         }
 
         if (text.includes('invoice') || text.includes('bill') || text.includes('client') || text.includes('gst') || text.includes('tds')) {
             return {
-                reply: "📑 **Billing & Invoicing:**\n- Generate deployment invoices in `/invoices` with auto-calculated 18% GST (CGST/SGST/IGST).\n- Section 194C TDS (1% for Individual/HUF, 2% for Corporate) is deducted from base value to calculate Net Receivable.\n- Track pending and overdue receivables with aging reports.",
+                reply: "📑 **Billing & Invoicing:**\n- Generate deployment invoices in `/invoices` with GST (CGST+SGST or IGST) and Section 194C TDS (1% or 2%).\n- Track pending and overdue receivables across client sites.",
                 category: 'BILLING',
                 suggestedActions: [
                     { label: 'Open Invoices', link: '/invoices' }
@@ -104,7 +130,7 @@ const aiService = {
 
         if (text.includes('asset') || text.includes('uniform') || text.includes('helmet') || text.includes('laptop')) {
             return {
-                reply: "🦺 **Asset Management:**\n- Track company property including Uniforms, Safety Helmets (PPE), Laptops, and Security Gear.\n- Issue assets to employees and record returns, condition checks, and replacements in `/assets`.",
+                reply: "🦺 **Asset Management:**\n- Track Uniforms, Safety Helmets (PPE), Laptops, and Security Gear.\n- Issue assets to employees and log returns/lost/damaged items in `/assets`.",
                 category: 'ASSETS',
                 suggestedActions: [
                     { label: 'Manage Assets', link: '/assets' }
@@ -114,7 +140,7 @@ const aiService = {
 
         if (text.includes('vendor') || text.includes('contractor') || text.includes('supplier')) {
             return {
-                reply: "🤝 **Vendor Management:**\n- Manage manpower, security, uniform and hardware vendors.\n- Track contract agreements, statutory compliance certifications, and SLA performance ratings in `/vendors`.",
+                reply: "🤝 **Vendor Management:**\n- Manage manpower, security, uniform, and electrical contractors.\n- Track agreements, expiry alerts, PF/ESIC compliance, and SLA ratings in `/vendors`.",
                 category: 'VENDORS',
                 suggestedActions: [
                     { label: 'Vendor Directory', link: '/vendors' }
@@ -122,14 +148,13 @@ const aiService = {
             };
         }
 
-        // Default friendly AI Response
         return {
-            reply: `👋 Hello! I am the **NKD CRM Smart AI Assistant**.\n\nI can help you with:\n1. **Attendance & GPS Punching**\n2. **Leave Balance & Applications**\n3. **Salary & PDF Payslips**\n4. **Statutory PF, ESIC & Labour License Compliance**\n5. **Client Invoicing & 194C TDS**\n6. **Assets & Vendor Agreements**\n\nWhat would you like assistance with today?`,
+            reply: "👋 Hello! I am the **NKD CRM Smart AI Assistant**.\n\nI can help you with:\n1. **Attendance & GPS Punching**\n2. **DPR, Concerns, Measurement & Tools Register**\n3. **GTPL Material Procurement Tracker**\n4. **Leaves, Salary & PDF Payslips**\n5. **PF, ESIC, Client Invoicing & Vendors**\n\nWhat would you like help with?",
             category: 'GENERAL',
             suggestedActions: [
                 { label: 'My Dashboard', link: '/' },
-                { label: 'Attendance', link: '/attendance' },
-                { label: 'Leaves', link: '/leaves' }
+                { label: 'DPR Hub', link: '/dpr' },
+                { label: 'Attendance', link: '/attendance' }
             ]
         };
     },
@@ -137,18 +162,21 @@ const aiService = {
     // --- 2. AI Resume Screening Engine ---
     async screenCandidate(candidateId) {
         const candRes = await db.query(`
-            SELECT c.*, r.title as req_title, r.department as req_dept,
+            SELECT c.*, r.title AS req_title, r.department AS req_dept,
                    r.experience_required, r.job_description
             FROM candidates c
             LEFT JOIN job_requisitions r ON c.requisition_id = r.requisition_id
             WHERE c.candidate_id = $1
         `, [candidateId]);
 
-        if (candRes.rows.length === 0) throw new Error('Candidate not found');
+        if (candRes.rows.length === 0) {
+            const err = new Error('Candidate not found');
+            err.status = 404;
+            throw err;
+        }
         const cand = candRes.rows[0];
 
-        // Intelligent Screening Heuristics
-        let matchScore = 65; // Base score
+        let matchScore = 65;
         const strengths = [];
         const gaps = [];
 
@@ -170,10 +198,9 @@ const aiService = {
 
         if (cand.current_company) {
             matchScore += 5;
-            strengths.push(`Currently active with ${cand.current_company}`);
+            strengths.push(`Previously worked with ${cand.current_company}`);
         }
 
-        // Cap score between 30 and 96
         matchScore = Math.min(96, Math.max(35, matchScore));
 
         let recommendation = 'CONSIDER';
@@ -182,7 +209,6 @@ const aiService = {
 
         const summary = `AI Candidate Evaluation:\n• ${strengths.join('\n• ')}${gaps.length ? '\n• ' + gaps.join('\n• ') : ''}`;
 
-        // Save AI screening result into candidate record
         await db.query(`
             UPDATE candidates SET
                 ai_match_score = $1,
@@ -204,33 +230,33 @@ const aiService = {
     async getPredictiveCompliance() {
         const today = new Date();
         const currentDay = today.getDate();
-        const daysTo15th = 15 >= currentDay ? 15 - currentDay : (30 - currentDay + 15);
+        const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+        const daysTo15th = 15 >= currentDay ? (15 - currentDay) : (daysInMonth - currentDay + 15);
 
-        // Fetch counts
         const empRes = await db.query(`
             SELECT
-                COUNT(*)::int as total_active,
-                COUNT(CASE WHEN uan_number IS NULL OR uan_number = '' THEN 1 END)::int as missing_uan,
-                COUNT(CASE WHEN esi_number IS NULL OR esi_number = '' THEN 1 END)::int as missing_esi,
-                COUNT(CASE WHEN account_number IS NULL OR account_number = '' THEN 1 END)::int as missing_bank
+                COUNT(*)::int AS total_active,
+                COUNT(CASE WHEN uan_number IS NULL OR uan_number = '' THEN 1 END)::int AS missing_uan,
+                COUNT(CASE WHEN esi_number IS NULL OR esi_number = '' THEN 1 END)::int AS missing_esi,
+                COUNT(CASE WHEN account_number IS NULL OR account_number = '' THEN 1 END)::int AS missing_bank
             FROM employees
             WHERE employment_status = 'ACTIVE'
         `);
         const stats = empRes.rows[0];
 
         const licenseRes = await db.query(`
-            SELECT COUNT(*)::int as expired_licenses
+            SELECT COUNT(*)::int AS expired_licenses
             FROM sites
             WHERE labour_license_expiry IS NOT NULL AND labour_license_expiry < CURRENT_DATE
         `);
         const expiredLicenses = licenseRes.rows[0]?.expired_licenses || 0;
 
-        let riskScore = 95; // Start with healthy 95%
+        let riskScore = 95;
         const riskFactors = [];
 
         if (daysTo15th <= 3) {
             riskScore -= 20;
-            riskFactors.push(`Critical deadline: Only ${daysTo15th} days remaining for monthly PF/ESIC ECR filing.`);
+            riskFactors.push(`Critical deadline: Only ${daysTo15th} day(s) remaining for monthly PF/ESIC ECR filing.`);
         } else if (daysTo15th <= 7) {
             riskScore -= 8;
             riskFactors.push(`${daysTo15th} days to PF/ESIC monthly statutory deadline.`);
@@ -270,4 +296,3 @@ const aiService = {
 };
 
 module.exports = aiService;
-

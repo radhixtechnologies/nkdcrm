@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { FileText, Download, Eye, Calendar, X, AlertCircle, Sparkles, ShieldCheck, AlertTriangle, ShieldAlert } from 'lucide-react';
-import api from '../services/api';
+import { FileText, Download, Eye, Calendar, X, AlertCircle, Sparkles, AlertTriangle } from 'lucide-react';
+import api, { extractApiError } from '../services/api';
 import aiService from '../services/aiService';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import ModalPortal from '../components/common/ModalPortal';
 
 const reportConfigs = [
     { key: 'pf', title: 'PF Report', desc: 'Provident Fund compliance report' },
@@ -30,6 +32,9 @@ const months = [
 ];
 
 const Reports = () => {
+    const { hasPermission } = useAuth();
+    const canExport = hasPermission('REPORTS', 'can_export');
+
     const now = new Date();
     const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
     const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -62,7 +67,7 @@ const Reports = () => {
             setPreviewData(data);
             setPreviewTitle(report.title);
         } catch (error) {
-            toast.error(error.response?.data?.message || `Failed to fetch ${report.title}`);
+            toast.error(extractApiError(error, `Failed to fetch ${report.title}`));
         } finally {
             setLoadingKey(null);
         }
@@ -102,7 +107,7 @@ const Reports = () => {
             URL.revokeObjectURL(url);
             toast.success(`${report.title} downloaded successfully!`);
         } catch (error) {
-            toast.error(error.response?.data?.message || `Failed to download ${report.title}`);
+            toast.error(extractApiError(error, `Failed to download ${report.title}`));
         } finally {
             setLoadingKey(null);
         }
@@ -114,20 +119,20 @@ const Reports = () => {
     const previewTotals = previewData ? (previewData.totals || previewData.grandTotals || null) : null;
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10">
+        <div className="space-y-6 max-w-7xl mx-auto pb-20">
             {/* Header with Filters */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Reports & Analytics</h1>
-                    <p className="text-slate-500">Generate statutory and company compliance reports</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Reports & Analytics</h1>
+                    <p className="text-xs sm:text-sm text-slate-500">Generate statutory and company compliance reports</p>
                 </div>
 
-                <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-                    <Calendar size={18} className="text-slate-400 ml-1" />
+                <div className="flex items-center gap-2 sm:gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto">
+                    <Calendar size={18} className="text-slate-400 ml-1 shrink-0" />
                     <select
                         value={selectedMonth}
                         onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                        className="rounded-lg border-0 bg-transparent py-1.5 text-sm font-medium text-slate-700 focus:ring-0 cursor-pointer"
+                        className="flex-1 sm:flex-none rounded-lg border-0 bg-transparent py-1.5 text-sm font-medium text-slate-700 focus:ring-0 cursor-pointer"
                     >
                         {months.map(m => (
                             <option key={m.value} value={m.value}>{m.label}</option>
@@ -148,32 +153,32 @@ const Reports = () => {
 
             {/* AI Predictive Compliance Health Card */}
             {aiCompliance && (
-                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-5 shadow-lg border border-indigo-900/40">
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-lg border border-indigo-900/40">
                     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                        <div className="flex items-center gap-3.5">
-                            <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
-                                <Sparkles size={24} />
+                        <div className="flex items-start sm:items-center gap-3.5">
+                            <div className="p-2.5 sm:p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300 shrink-0">
+                                <Sparkles size={22} />
                             </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h2 className="text-base font-bold text-white tracking-wide">
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="text-sm sm:text-base font-bold text-white tracking-wide">
                                         AI Compliance Risk & Statutory Health Predictor
                                     </h2>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                                         aiCompliance.risk_level === 'LOW_RISK' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
                                         aiCompliance.risk_level === 'MODERATE_RISK' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
                                         'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                                     }`}>
-                                        {aiCompliance.risk_level?.replace('_', ' ')}
+                                        {aiCompliance.risk_level?.replace(/_/g, ' ')}
                                     </span>
                                 </div>
-                                <p className="text-xs text-slate-300 mt-0.5">
+                                <p className="text-xs text-slate-300 mt-1">
                                     Predictive compliance score based on UAN linkage, bank records, CLRA capacity & 15th monthly ECR deadlines.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-6 self-stretch md:self-auto justify-between border-t md:border-t-0 pt-3 md:pt-0 border-white/10">
+                        <div className="flex items-center gap-6 self-stretch md:self-auto justify-between border-t md:border-t-0 pt-3 md:pt-0 border-white/10 shrink-0">
                             <div className="text-left md:text-right">
                                 <div className="text-[11px] text-slate-400 font-semibold uppercase">Days to ECR Deadline</div>
                                 <div className="text-xl font-bold text-amber-400 font-mono">
@@ -196,9 +201,9 @@ const Reports = () => {
                     {aiCompliance.risk_factors && aiCompliance.risk_factors.length > 0 && (
                         <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                             {aiCompliance.risk_factors.map((factor, idx) => (
-                                <div key={idx} className="flex items-center gap-2 text-amber-200/90 bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5">
-                                    <AlertTriangle size={13} className="text-amber-400 shrink-0" />
-                                    <span className="truncate">{factor}</span>
+                                <div key={idx} className="flex items-start gap-2 text-amber-200/90 bg-white/5 px-2.5 py-1.5 rounded-lg border border-white/5">
+                                    <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                                    <span className="break-words">{factor}</span>
                                 </div>
                             ))}
                         </div>
@@ -207,11 +212,11 @@ const Reports = () => {
             )}
 
             {/* Reports Grid */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {reportConfigs.map((report) => (
                     <div
                         key={report.key}
-                        className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-6 shadow-sm hover:border-primary-200 hover:shadow-md transition-all group"
+                        className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm hover:border-primary-200 hover:shadow-md transition-all group"
                     >
                         <div>
                             <div className="mb-4 inline-flex rounded-lg bg-primary-50 p-3 text-primary-600 group-hover:bg-primary-600 group-hover:text-white transition-colors">
@@ -233,14 +238,16 @@ const Reports = () => {
                                 {loadingKey === `preview-${report.key}` ? 'Loading...' : 'Preview'}
                             </button>
 
-                            <button
-                                onClick={() => handleDownloadCSV(report)}
-                                disabled={loadingKey === `download-${report.key}`}
-                                className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-primary-600 py-2 text-xs font-semibold text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50"
-                            >
-                                <Download size={15} />
-                                {loadingKey === `download-${report.key}` ? 'Exporting...' : 'Export CSV'}
-                            </button>
+                            {canExport && (
+                                <button
+                                    onClick={() => handleDownloadCSV(report)}
+                                    disabled={loadingKey === `download-${report.key}`}
+                                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-primary-600 py-2 text-xs font-semibold text-white hover:bg-primary-700 shadow-sm transition-colors disabled:opacity-50"
+                                >
+                                    <Download size={15} />
+                                    {loadingKey === `download-${report.key}` ? 'Exporting...' : 'Export CSV'}
+                                </button>
+                            )}
                         </div>
                     </div>
                 ))}
@@ -248,87 +255,89 @@ const Reports = () => {
 
             {/* Preview Modal */}
             {previewData && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        {/* Modal Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800">{previewTitle} Preview</h2>
-                                <p className="text-xs text-slate-500">
-                                    Period: {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
-                                </p>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3 sm:p-4">
+                        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 shrink-0">
+                                <div>
+                                    <h2 className="text-base sm:text-lg font-bold text-slate-800">{previewTitle} Preview</h2>
+                                    <p className="text-xs text-slate-500">
+                                        Period: {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setPreviewData(null)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                                >
+                                    <X size={20} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setPreviewData(null)}
-                                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
 
-                        {/* Modal Body */}
-                        <div className="p-6 overflow-y-auto space-y-6">
-                            {/* Totals Summary */}
-                            {previewTotals && (
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                    {Object.entries(previewTotals).map(([k, v]) => (
-                                        <div key={k}>
-                                            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                                                {k.replace(/_/g, ' ')}
-                                            </span>
-                                            <span className="text-base font-bold text-slate-800">
-                                                {typeof v === 'number' ? (k.includes('amount') || k.includes('gross') || k.includes('salary') || k.includes('pf') || k.includes('esi') || k.includes('pt') || k.includes('pay') ? `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : v) : v}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            {/* Modal Body */}
+                            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+                                {/* Totals Summary */}
+                                {previewTotals && (
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        {Object.entries(previewTotals).map(([k, v]) => (
+                                            <div key={k}>
+                                                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                                                    {k.replace(/_/g, ' ')}
+                                                </span>
+                                                <span className="text-sm sm:text-base font-bold text-slate-800">
+                                                    {typeof v === 'number' ? (k.includes('amount') || k.includes('gross') || k.includes('salary') || k.includes('pf') || k.includes('esi') || k.includes('pt') || k.includes('pay') ? `₹${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : v) : v}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
 
-                            {/* Records Table */}
-                            {previewRows.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400">
-                                    <AlertCircle size={36} className="mx-auto mb-2 opacity-50" />
-                                    <p className="text-sm font-medium">No records found for this period.</p>
-                                </div>
-                            ) : (
-                                <div className="overflow-x-auto rounded-lg border border-slate-200">
-                                    <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                                        <thead className="bg-slate-50 font-semibold text-slate-700">
-                                            <tr>
-                                                {Object.keys(previewRows[0]).map(h => (
-                                                    <th key={h} className="px-4 py-3 capitalize whitespace-nowrap">
-                                                        {h.replace(/_/g, ' ')}
-                                                    </th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 bg-white text-slate-600">
-                                            {previewRows.map((r, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-50">
-                                                    {Object.values(r).map((v, cIdx) => (
-                                                        <td key={cIdx} className="px-4 py-2.5 whitespace-nowrap">
-                                                            {v !== null && v !== undefined ? String(v) : '-'}
-                                                        </td>
+                                {/* Records Table */}
+                                {previewRows.length === 0 ? (
+                                    <div className="text-center py-12 text-slate-400">
+                                        <AlertCircle size={36} className="mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm font-medium">No records found for this period.</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                        <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                                            <thead className="bg-slate-50 font-semibold text-slate-700">
+                                                <tr>
+                                                    {Object.keys(previewRows[0]).map(h => (
+                                                        <th key={h} className="px-4 py-3 capitalize whitespace-nowrap">
+                                                            {h.replace(/_/g, ' ')}
+                                                        </th>
                                                     ))}
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 bg-white text-slate-600">
+                                                {previewRows.map((r, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50">
+                                                        {Object.values(r).map((v, cIdx) => (
+                                                            <td key={cIdx} className="px-4 py-2.5 whitespace-nowrap">
+                                                                {v !== null && v !== undefined ? String(v) : '-'}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
 
-                        {/* Modal Footer */}
-                        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
-                            <button
-                                onClick={() => setPreviewData(null)}
-                                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-                            >
-                                Close
-                            </button>
+                            {/* Modal Footer */}
+                            <div className="flex flex-wrap justify-end gap-3 px-4 sm:px-6 py-4 border-t border-slate-200 bg-slate-50 shrink-0">
+                                <button
+                                    onClick={() => setPreviewData(null)}
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </ModalPortal>
             )}
         </div>
     );

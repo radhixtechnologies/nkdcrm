@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "node scripts/sync-frontend.js --build-if-available",
     "dev": "nodemon server.js",
     "setup:local": "node scripts/setup-local.js",
     "setup:prod": "node scripts/run-migrations.js && node scripts/run_auth_migration.js && node scripts/create_super_admin.js",

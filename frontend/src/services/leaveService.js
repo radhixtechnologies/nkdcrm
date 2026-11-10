@@ -22,6 +22,8 @@ const leaveService = {
 
     rejectLeave: (id, approverCode, reason) => api.post(`/leaves/${id}/reject`, { approved_by_code: approverCode, rejection_reason: reason }),
 
+    cancelLeave: (id) => api.post(`/leaves/${id}/cancel`),
+
     // Initialize - Backend currently supports per-employee. 
     // If we need bulk, we need backend update. For now mapping to single usage or error.
     // Let's assume frontend calls this loop or backend adds bulk.

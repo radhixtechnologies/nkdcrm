@@ -3,12 +3,24 @@ import { Plus, Edit, Trash, MapPin } from 'lucide-react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import siteService from '../services/siteService';
+import { extractApiError } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import ModalPortal from '../components/common/ModalPortal';
+
+const formatDateInput = (val) => {
+    if (!val) return '';
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+};
 
 const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
     const isEdit = !!initialData;
 
     const formik = useFormik({
+        enableReinitialize: true,
         initialValues: {
             site_code: initialData?.site_code || '',
             site_name: initialData?.site_name || '',
@@ -23,7 +35,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
             main_contractor_address: initialData?.main_contractor_address || '',
             nature_of_work: initialData?.nature_of_work || '',
             labour_license_no: initialData?.labour_license_no || '',
-            labour_license_expiry: initialData?.labour_license_expiry ? new Date(initialData.labour_license_expiry).toISOString().split('T')[0] : '',
+            labour_license_expiry: formatDateInput(initialData?.labour_license_expiry),
             max_labour_capacity: initialData?.max_labour_capacity || '',
             license_authority: initialData?.license_authority || '',
         },
@@ -32,7 +44,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
             site_name: Yup.string().required('Required').max(100, 'Max 100 chars'),
             city: Yup.string().required('Required'),
             state: Yup.string().required('Required'),
-            pincode: Yup.string().matches(/^\d{6}$/, "Must be 6 digits"),
+            pincode: Yup.string().nullable().test('pincode-format', 'Must be 6 digits', val => !val || /^\d{6}$/.test(String(val).trim())),
             principal_employer_name: Yup.string(),
             principal_employer_address: Yup.string(),
             main_contractor_name: Yup.string(),
@@ -52,20 +64,20 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                 onClose();
             } catch (err) {
                 console.error(err);
-                toast.error(err.response?.data?.message || "Failed to save site");
+                toast.error(extractApiError(err, "Failed to save site"));
             }
         },
     });
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40 overflow-y-auto">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40">
             <div className="w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
+                <div className="bg-slate-50 px-5 sm:px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
                     <h3 className="font-bold text-slate-800">{isEdit ? 'Edit Site' : 'Add New Site'}</h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
                 </div>
-                <form onSubmit={formik.handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={formik.handleSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <label className="text-xs font-semibold text-slate-600 uppercase">Site Code *</label>
                             <input
@@ -98,7 +110,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                         ></textarea>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div className="space-y-1">
                             <label className="text-xs font-semibold text-slate-600 uppercase">City *</label>
                             <input
@@ -135,7 +147,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                             <p className="text-[11px] text-slate-500">Required for Form XIII, Form B/D Register generation</p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 mb-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                             <div className="space-y-1">
                                 <label className="text-xs font-medium text-slate-600">Principal Employer Name</label>
                                 <input
@@ -166,7 +178,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1">
                                 <label className="text-xs font-medium text-slate-600">Principal Employer Address</label>
                                 <textarea
@@ -194,7 +206,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                                 <p className="text-[11px] text-slate-500">Contract Labour statutory license & permitted strength</p>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-slate-600">Labour License No.</label>
                                     <input
@@ -214,7 +226,7 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-xs font-medium text-slate-600">Max Permitted Workmen</label>
                                     <input
@@ -254,6 +266,11 @@ const SiteFormModal = ({ onClose, onSuccess, initialData = null }) => {
 };
 
 const Sites = () => {
+    const { hasPermission } = useAuth();
+    const canCreate = hasPermission('SITES', 'can_create');
+    const canUpdate = hasPermission('SITES', 'can_update');
+    const canDelete = hasPermission('SITES', 'can_delete');
+
     const [sites, setSites] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -262,11 +279,11 @@ const Sites = () => {
     const fetchSites = useCallback(async () => {
         try {
             const res = await siteService.getAllSites();
-            setSites(res.data.data || res.data); // Handle wrapper logic if any
+            setSites(res.data.data || res.data || []);
             setLoading(false);
         } catch (err) {
             console.error(err);
-            toast.error("Failed to load sites");
+            toast.error(extractApiError(err, "Failed to load sites"));
             setLoading(false);
         }
     }, []);
@@ -275,15 +292,18 @@ const Sites = () => {
         if (!site.labour_license_no) {
             return <span className="text-[11px] text-slate-400 italic">Not Registered</span>;
         }
-        if (!site.labour_license_expiry) {
+        const expiryStr = formatDateInput(site.labour_license_expiry);
+        if (!expiryStr) {
             return <span className="text-xs font-mono font-semibold text-slate-700">{site.labour_license_no}</span>;
         }
-        const diffDays = Math.ceil((new Date(site.labour_license_expiry) - new Date()) / (1000 * 60 * 60 * 24));
+        const todayIst = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+        const diffDays = Math.ceil((new Date(`${expiryStr}T00:00:00+05:30`) - new Date(`${todayIst}T00:00:00+05:30`)) / (1000 * 60 * 60 * 24));
+        const displayExpiry = `${expiryStr.slice(8, 10)}/${expiryStr.slice(5, 7)}/${expiryStr.slice(0, 4)}`;
         if (diffDays < 0) {
             return (
                 <div>
                     <span className="text-xs font-mono font-bold text-slate-800">{site.labour_license_no}</span>
-                    <span className="block text-[10px] font-bold text-rose-600">Expired ({new Date(site.labour_license_expiry).toLocaleDateString()})</span>
+                    <span className="block text-[10px] font-bold text-rose-600">Expired ({displayExpiry})</span>
                 </div>
             );
         }
@@ -298,7 +318,7 @@ const Sites = () => {
         return (
             <div>
                 <span className="text-xs font-mono font-semibold text-slate-800">{site.labour_license_no}</span>
-                <span className="block text-[10px] text-emerald-600">Valid till {new Date(site.labour_license_expiry).toLocaleDateString()}</span>
+                <span className="block text-[10px] text-emerald-600">Valid till {displayExpiry}</span>
             </div>
         );
     };
@@ -314,23 +334,25 @@ const Sites = () => {
             toast.success("Site deleted");
             fetchSites();
         } catch (err) {
-            toast.error(err.response?.data?.message || "Delete failed");
+            toast.error(extractApiError(err, "Delete failed"));
         }
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
+        <div className="space-y-6 pb-16">
+            <div className="flex flex-wrap justify-between items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Site Management</h1>
-                    <p className="text-slate-500">Manage multiple business locations and branches</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Site Management</h1>
+                    <p className="text-xs sm:text-sm text-slate-500">Manage multiple business locations and branches</p>
                 </div>
-                <button
-                    onClick={() => { setEditingSite(null); setShowForm(true); }}
-                    className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition shadow-sm font-medium text-sm"
-                >
-                    <Plus size={16} /> Add Site
-                </button>
+                {canCreate && (
+                    <button
+                        onClick={() => { setEditingSite(null); setShowForm(true); }}
+                        className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition shadow-sm font-medium text-xs sm:text-sm"
+                    >
+                        <Plus size={16} /> Add Site
+                    </button>
+                )}
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -341,71 +363,128 @@ const Sites = () => {
                         <MapPin size={48} className="mx-auto text-slate-300 mb-4" />
                         <h3 className="text-lg font-medium text-slate-900">No Sites Found</h3>
                         <p className="text-slate-500 mb-6">Create your first site location to assign employees.</p>
-                        <button
-                            onClick={() => { setEditingSite(null); setShowForm(true); }}
-                            className="text-primary-600 font-medium hover:underline"
-                        >
-                            Create First Site
-                        </button>
+                        {canCreate && (
+                            <button
+                                onClick={() => { setEditingSite(null); setShowForm(true); }}
+                                className="text-primary-600 font-medium hover:underline"
+                            >
+                                Create First Site
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 font-medium">
-                            <tr>
-                                <th className="px-6 py-3">Code</th>
-                                <th className="px-6 py-3">Site Name</th>
-                                <th className="px-6 py-3">Location</th>
-                                <th className="px-6 py-3">Labour License (CLRA)</th>
-                                <th className="px-6 py-3">Status</th>
-                                <th className="px-6 py-3 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
+                    <>
+                        {/* Mobile Cards View */}
+                        <div className="block md:hidden divide-y divide-slate-100">
                             {sites.map(site => (
-                                <tr key={site.site_id} className="hover:bg-slate-50/50">
-                                    <td className="px-6 py-4 font-mono text-slate-500 text-xs">{site.site_code}</td>
-                                    <td className="px-6 py-4 font-medium text-slate-900">{site.site_name}</td>
-                                    <td className="px-6 py-4 text-slate-600">
-                                        {site.city}, {site.state}
-                                        <div className="text-xs text-slate-400 truncate max-w-[200px]">{site.address}</div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {getLicenseBadge(site)}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${site.is_active ? 'bg-green-50 text-green-700 ring-1 ring-green-600/20' : 'bg-slate-100 text-slate-600'}`}>
+                                <div key={site.site_id} className="p-4 space-y-2.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <span className="text-[11px] font-mono text-slate-500">{site.site_code}</span>
+                                            <h3 className="font-bold text-slate-900 text-sm truncate">{site.site_name}</h3>
+                                            <p className="text-xs text-slate-600">{site.city}, {site.state}</p>
+                                            {site.address && <p className="text-[11px] text-slate-400 line-clamp-1">{site.address}</p>}
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 ${site.is_active ? 'bg-green-50 text-green-700 ring-1 ring-green-600/20' : 'bg-slate-100 text-slate-600'}`}>
                                             {site.is_active ? 'Active' : 'Inactive'}
                                         </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button
-                                                onClick={() => { setEditingSite(site); setShowForm(true); }}
-                                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
-                                            >
-                                                <Edit size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(site.site_id)}
-                                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                                            >
-                                                <Trash size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-1">
+                                        <div>{getLicenseBadge(site)}</div>
+                                        {(canUpdate || canDelete) && (
+                                            <div className="flex gap-1.5">
+                                                {canUpdate && (
+                                                    <button
+                                                        onClick={() => { setEditingSite(site); setShowForm(true); }}
+                                                        className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-200"
+                                                    >
+                                                        <Edit size={15} />
+                                                    </button>
+                                                )}
+                                                {canDelete && (
+                                                    <button
+                                                        onClick={() => handleDelete(site.site_id)}
+                                                        className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg border border-slate-200"
+                                                    >
+                                                        <Trash size={15} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
+                        </div>
+
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 font-medium">
+                                    <tr>
+                                        <th className="px-6 py-3">Code</th>
+                                        <th className="px-6 py-3">Site Name</th>
+                                        <th className="px-6 py-3">Location</th>
+                                        <th className="px-6 py-3">Labour License (CLRA)</th>
+                                        <th className="px-6 py-3">Status</th>
+                                        {(canUpdate || canDelete) && <th className="px-6 py-3 text-right">Actions</th>}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {sites.map(site => (
+                                        <tr key={site.site_id} className="hover:bg-slate-50/50">
+                                            <td className="px-6 py-4 font-mono text-slate-500 text-xs">{site.site_code}</td>
+                                            <td className="px-6 py-4 font-medium text-slate-900">{site.site_name}</td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                {site.city}, {site.state}
+                                                <div className="text-xs text-slate-400 truncate max-w-[200px]">{site.address}</div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {getLicenseBadge(site)}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${site.is_active ? 'bg-green-50 text-green-700 ring-1 ring-green-600/20' : 'bg-slate-100 text-slate-600'}`}>
+                                                    {site.is_active ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </td>
+                                            {(canUpdate || canDelete) && (
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                        {canUpdate && (
+                                                            <button
+                                                                onClick={() => { setEditingSite(site); setShowForm(true); }}
+                                                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                                                            >
+                                                                <Edit size={16} />
+                                                            </button>
+                                                        )}
+                                                        {canDelete && (
+                                                            <button
+                                                                onClick={() => handleDelete(site.site_id)}
+                                                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                            >
+                                                                <Trash size={16} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            )}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
 
             {showForm && (
-                <SiteFormModal
-                    initialData={editingSite}
-                    onClose={() => setShowForm(false)}
-                    onSuccess={fetchSites}
-                />
+                <ModalPortal>
+                    <SiteFormModal
+                        initialData={editingSite}
+                        onClose={() => setShowForm(false)}
+                        onSuccess={fetchSites}
+                    />
+                </ModalPortal>
             )}
         </div>
     );

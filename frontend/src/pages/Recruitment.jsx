@@ -1,28 +1,87 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Briefcase, Users, FileCheck, UserPlus, Plus,
     CheckCircle2, Clock, Calendar, Star, ArrowRight,
-    Search, Filter, Eye, AlertCircle, X, ChevronRight,
-    Mail, Phone, MapPin, Building2, UserCheck, Sparkles,
-    Download, Send, FileText, Check, ShieldCheck, CheckSquare,
-    Paperclip, ExternalLink, RefreshCw, Upload,
+    Search, Filter, X, Trash2,
+    Mail, Phone, UserCheck, Sparkles,
+    Download, Send, FileText, Check, ShieldCheck,
+    ExternalLink, Upload,
     ChevronDown, ChevronUp, Layers, ListOrdered
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import recruitmentService from '../services/recruitmentService';
 import siteService from '../services/siteService';
 import aiService from '../services/aiService';
-import api from '../services/api';
+import api, { extractApiError, getFileUrl } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+import ModalPortal from '../components/common/ModalPortal';
+
+const getIstOffsetDate = (days) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(
+        new Date(Date.now() + days * 86400000)
+    );
+
+const toIstDateTimeLocal = (d) => {
+    if (!d) return '';
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return '';
+    return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    })
+        .format(dt)
+        .replace(' ', 'T')
+        .slice(0, 16);
+};
+
+const formatIstDate = (d) => {
+    if (!d) return '—';
+    const s = String(d).trim();
+    const parsed = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T00:00:00+05:30`) : new Date(d);
+    if (Number.isNaN(parsed.getTime())) return String(d);
+    return parsed.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+    });
+};
+
+const formatIstDateTime = (d) => {
+    if (!d) return '—';
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return String(d);
+    return dt.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+    });
+};
 
 const Recruitment = () => {
-    const [activeTab, setActiveTab] = useState('pipeline'); // 'pipeline', 'requisitions', 'offers'
+    const { hasPermission } = useAuth();
+    const canCreate = hasPermission('RECRUITMENT', 'can_create');
+    const canUpdate = hasPermission('RECRUITMENT', 'can_update');
+    const canDelete = hasPermission('RECRUITMENT', 'can_delete');
+    const canApprove = hasPermission('RECRUITMENT', 'can_approve');
+    const canConvertEmployee = canApprove || hasPermission('EMPLOYEES', 'can_create');
+
+    const [activeTab, setActiveTab] = useState('pipeline');
     const [loading, setLoading] = useState(true);
     const [requisitions, setRequisitions] = useState([]);
     const [candidates, setCandidates] = useState([]);
     const [offers, setOffers] = useState([]);
     const [sites, setSites] = useState([]);
 
-    // Filters
     const [searchTerm, setSearchTerm] = useState('');
     const [stageFilter, setStageFilter] = useState('ALL');
 
@@ -34,7 +93,7 @@ const Recruitment = () => {
     const [showScheduleModal, setShowScheduleModal] = useState(false);
     const [screeningId, setScreeningId] = useState(null);
 
-    // 10-Step Workflow: Document Collection Modal State
+    // Document Collection Modal
     const [showDocModal, setShowDocModal] = useState(false);
     const [selectedCandForDocs, setSelectedCandForDocs] = useState(null);
     const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -47,8 +106,7 @@ const Recruitment = () => {
         documents: {}
     });
 
-    // 10-Step Interactive Lifecycle Controls
-    const [workflowView, setWorkflowView] = useState('milestones'); // 'milestones' | 'timeline'
+    const [workflowView, setWorkflowView] = useState('milestones');
     const [isWorkflowExpanded, setIsWorkflowExpanded] = useState(true);
 
     const workflowMilestones = [
@@ -140,119 +198,6 @@ const Recruitment = () => {
         return { step: 1, label: 'Candidate Selected', pct: 10, color: 'bg-slate-500', badgeColor: 'bg-slate-50 text-slate-700 border-slate-200' };
     };
 
-    const handleOpenDocModal = (cand) => {
-        setSelectedCandForDocs(cand);
-        setDocForm({
-            aadhaar_number: cand.aadhaar_number || '',
-            pan_number: cand.pan_number || '',
-            bank_name: cand.bank_name || '',
-            bank_account_no: cand.bank_account_no || '',
-            bank_ifsc: cand.bank_ifsc || '',
-            documents: cand.documents || cand.candidate_documents || {}
-        });
-        setShowDocModal(true);
-    };
-
-    const handleFileUpload = async (docType, file) => {
-        if (!file) return;
-        const formData = new FormData();
-        formData.append('file', file);
-        setUploadingDoc(true);
-        try {
-            const res = await api.post('/employees/upload-document', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            const fileUrl = res.data?.url || res.data?.data?.url;
-            setDocForm(prev => ({
-                ...prev,
-                documents: { ...prev.documents, [docType]: fileUrl }
-            }));
-            toast.success(`${docType.toUpperCase()} file uploaded!`);
-        } catch (err) {
-            toast.error('Failed to upload document file');
-        } finally {
-            setUploadingDoc(false);
-        }
-    };
-
-    const handleSaveDocuments = async (e) => {
-        e.preventDefault();
-        if (!selectedCandForDocs) return;
-        try {
-            await recruitmentService.updateCandidateDocuments(selectedCandForDocs.candidate_id, docForm);
-            toast.success(`Documents & Bank details saved for ${selectedCandForDocs.full_name}!`);
-            setShowDocModal(false);
-            loadData();
-        } catch (err) {
-            toast.error('Failed to update candidate documents');
-        }
-    };
-
-    const handleApproveSalary = async (offerId) => {
-        try {
-            await recruitmentService.approveSalary(offerId, { approver: 'HR Manager' });
-            toast.success('✅ Step 3: Salary structure approved by HR Manager!');
-            loadData();
-        } catch (err) {
-            toast.error('Failed to approve salary structure');
-        }
-    };
-
-    const handleApproveManagement = async (offerId) => {
-        try {
-            await recruitmentService.approveManagement(offerId, { approver: 'Director' });
-            toast.success('✅ Step 5: Letter approved by Management/Director!');
-            loadData();
-        } catch (err) {
-            toast.error('Failed to approve letter by Director');
-        }
-    };
-
-    const handleDispatchEmail = async (offer) => {
-        const loadingToast = toast.loading(`Sending appointment letter to ${offer.candidate_email}...`);
-        try {
-            await recruitmentService.dispatchEmail(offer.offer_id);
-            toast.dismiss(loadingToast);
-            toast.success(`✅ Step 7: Appointment Letter email dispatched to ${offer.candidate_email}!`);
-            loadData();
-        } catch (err) {
-            toast.dismiss(loadingToast);
-            toast.error('Email dispatch failed');
-        }
-    };
-
-    const handleAcceptOffer = async (offerId) => {
-        try {
-            await recruitmentService.acceptOffer(offerId);
-            toast.success('✅ Step 8: Employee offer acceptance confirmed!');
-            loadData();
-        } catch (err) {
-            toast.error('Failed to record acceptance');
-        }
-    };
-
-    const handleDownloadPdf = (offerId) => {
-        const url = recruitmentService.getAppointmentLetterPdfUrl(offerId);
-        window.open(url, '_blank');
-        toast.success('✅ Step 6: Opening official signed Appointment Letter PDF...');
-        setTimeout(() => loadData(), 2000);
-    };
-
-    const handleAiScreen = async (candId) => {
-        setScreeningId(candId);
-        try {
-            const res = await aiService.screenCandidate(candId);
-            const data = res.data?.data || res.data || {};
-            toast.success(`AI Match Score: ${data.match_score}% (${data.recommendation})`);
-            loadData();
-        } catch (err) {
-            toast.error('AI Screening failed');
-        } finally {
-            setScreeningId(null);
-        }
-    };
-
-    // Form states
     const [reqForm, setReqForm] = useState({
         title: '',
         department: 'Operations',
@@ -294,13 +239,13 @@ const Recruitment = () => {
         terms_and_conditions: 'Standard employment agreement with provident fund & statutory insurance benefits.'
     });
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
             const [reqRes, candRes, offRes, siteRes] = await Promise.all([
-                recruitmentService.getRequisitions().catch(() => ({ data: { data: [] } })),
-                recruitmentService.getCandidates().catch(() => ({ data: { data: [] } })),
-                recruitmentService.getOffers().catch(() => ({ data: { data: [] } })),
+                recruitmentService.getRequisitions(),
+                recruitmentService.getCandidates(),
+                recruitmentService.getOffers(),
                 (siteService.getAllSites ? siteService.getAllSites() : siteService.getSites()).catch(() => ({ data: { data: [] } }))
             ]);
             setRequisitions(reqRes.data?.data || []);
@@ -309,17 +254,128 @@ const Recruitment = () => {
             setSites(siteRes.data?.data || []);
         } catch (err) {
             console.error('Error fetching recruitment data:', err);
-            toast.error('Failed to load recruitment data');
+            toast.error(extractApiError(err, 'Failed to load recruitment data'));
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         loadData();
-    }, []);
+    }, [loadData]);
 
-    // Handlers
+    const handleOpenDocModal = (cand) => {
+        setSelectedCandForDocs(cand);
+        setDocForm({
+            aadhaar_number: cand.aadhaar_number || '',
+            pan_number: cand.pan_number || '',
+            bank_name: cand.bank_name || '',
+            bank_account_no: cand.bank_account_no || '',
+            bank_ifsc: cand.bank_ifsc || '',
+            documents: cand.documents || cand.candidate_documents || {}
+        });
+        setShowDocModal(true);
+    };
+
+    const handleFileUpload = async (docType, file) => {
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        setUploadingDoc(true);
+        try {
+            const res = await api.post('/employees/upload-document', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            const fileUrl = res.data?.url || res.data?.data?.url;
+            setDocForm(prev => ({
+                ...prev,
+                documents: { ...prev.documents, [docType]: fileUrl }
+            }));
+            toast.success(`${docType.replace('_', ' ').toUpperCase()} uploaded!`);
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to upload document file'));
+        } finally {
+            setUploadingDoc(false);
+        }
+    };
+
+    const handleSaveDocuments = async (e) => {
+        e.preventDefault();
+        if (!selectedCandForDocs) return;
+        try {
+            await recruitmentService.updateCandidateDocuments(selectedCandForDocs.candidate_id, docForm);
+            toast.success(`Documents & Bank details saved for ${selectedCandForDocs.full_name}!`);
+            setShowDocModal(false);
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to update candidate documents'));
+        }
+    };
+
+    const handleApproveSalary = async (offerId) => {
+        try {
+            await recruitmentService.approveSalary(offerId, { approver: 'HR Manager' });
+            toast.success('Step 3: Salary structure approved!');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to approve salary structure'));
+        }
+    };
+
+    const handleApproveManagement = async (offerId) => {
+        try {
+            await recruitmentService.approveManagement(offerId, { approver: 'Director' });
+            toast.success('Step 5: Letter approved by Management/Director!');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to approve letter by Director'));
+        }
+    };
+
+    const handleDispatchEmail = async (offer) => {
+        const loadingToast = toast.loading(`Sending appointment letter to ${offer.candidate_email}...`);
+        try {
+            await recruitmentService.dispatchEmail(offer.offer_id);
+            toast.dismiss(loadingToast);
+            toast.success(`Step 7: Appointment Letter email dispatched to ${offer.candidate_email}!`);
+            loadData();
+        } catch (err) {
+            toast.dismiss(loadingToast);
+            toast.error(extractApiError(err, 'Email dispatch failed'));
+        }
+    };
+
+    const handleAcceptOffer = async (offerId) => {
+        try {
+            await recruitmentService.acceptOffer(offerId);
+            toast.success('Step 8: Employee offer acceptance confirmed!');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to record acceptance'));
+        }
+    };
+
+    const handleDownloadPdf = (offerId) => {
+        const url = recruitmentService.getAppointmentLetterPdfUrl(offerId);
+        window.open(url, '_blank');
+        toast.success('Opening official signed Appointment Letter PDF...');
+        setTimeout(() => loadData(), 2000);
+    };
+
+    const handleAiScreen = async (candId) => {
+        setScreeningId(candId);
+        try {
+            const res = await aiService.screenCandidate(candId);
+            const data = res.data?.data || res.data || {};
+            toast.success(`AI Match Score: ${data.match_score}% (${data.recommendation})`);
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'AI Screening failed'));
+        } finally {
+            setScreeningId(null);
+        }
+    };
+
     const handleCreateRequisition = async (e) => {
         e.preventDefault();
         try {
@@ -339,7 +395,18 @@ const Recruitment = () => {
             });
             loadData();
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to create requisition');
+            toast.error(extractApiError(err, 'Failed to create requisition'));
+        }
+    };
+
+    const handleDeleteRequisition = async (req) => {
+        if (!window.confirm(`Delete requisition "${req.title}"?`)) return;
+        try {
+            await recruitmentService.deleteRequisition(req.requisition_id);
+            toast.success('Requisition deleted');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to delete requisition'));
         }
     };
 
@@ -361,7 +428,18 @@ const Recruitment = () => {
             });
             loadData();
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to register candidate');
+            toast.error(extractApiError(err, 'Failed to register candidate'));
+        }
+    };
+
+    const handleDeleteCandidate = async (cand) => {
+        if (!window.confirm(`Delete candidate "${cand.full_name}" from pipeline?`)) return;
+        try {
+            await recruitmentService.deleteCandidate(cand.candidate_id);
+            toast.success('Candidate removed');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to delete candidate'));
         }
     };
 
@@ -375,7 +453,7 @@ const Recruitment = () => {
             setSelectedCandidate(null);
             loadData();
         } catch (err) {
-            toast.error('Failed to update candidate status');
+            toast.error(extractApiError(err, 'Failed to update candidate status'));
         }
     };
 
@@ -387,7 +465,7 @@ const Recruitment = () => {
             setShowOfferModal(false);
             loadData();
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to generate offer letter');
+            toast.error(extractApiError(err, 'Failed to generate offer letter'));
         }
     };
 
@@ -395,16 +473,16 @@ const Recruitment = () => {
         if (!window.confirm(`Confirm onboarding ${cand.full_name} as an active employee in NKD CRM Employee Master?`)) return;
         try {
             const res = await recruitmentService.convertToEmployee(cand.candidate_id);
-            toast.success(`🎉 ${cand.full_name} onboarded! Assigned Employee Code: ${res.data?.data?.employee_code}`);
+            toast.success(`${cand.full_name} onboarded! Assigned Employee Code: ${res.data?.data?.employee_code}`);
             loadData();
         } catch (err) {
-            toast.error(err.response?.data?.message || 'Failed to onboard candidate');
+            toast.error(extractApiError(err, 'Failed to onboard candidate'));
         }
     };
 
     const filteredCandidates = candidates.filter(cand => {
-        const matchesSearch = cand.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            cand.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        const matchesSearch = (cand.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (cand.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (cand.phone && cand.phone.includes(searchTerm));
         const matchesStage = stageFilter === 'ALL' || cand.current_stage === stageFilter;
         return matchesSearch && matchesStage;
@@ -414,12 +492,14 @@ const Recruitment = () => {
         { key: 'APPLIED', label: 'Applied', color: 'bg-slate-100 text-slate-700' },
         { key: 'SHORTLISTED', label: 'Shortlisted', color: 'bg-blue-100 text-blue-700' },
         { key: 'INTERVIEW_SCHEDULED', label: 'Interview Scheduled', color: 'bg-amber-100 text-amber-700' },
+        { key: 'INTERVIEW_COMPLETED', label: 'Interview Done', color: 'bg-indigo-100 text-indigo-700' },
         { key: 'OFFER_EXTENDED', label: 'Offer Extended', color: 'bg-purple-100 text-purple-700' },
         { key: 'HIRED', label: 'Hired & Joined', color: 'bg-emerald-100 text-emerald-700' },
+        { key: 'REJECTED', label: 'Rejected', color: 'bg-rose-100 text-rose-700' },
     ];
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-12">
+        <div className="space-y-6 max-w-7xl mx-auto pb-20">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -427,25 +507,26 @@ const Recruitment = () => {
                     <p className="text-sm text-slate-500 mt-0.5">Manage job requisitions, candidate interviews, offer letters, and 1-click joining</p>
                 </div>
 
-                <div className="flex items-center gap-2.5 flex-wrap">
-                    <button
-                        onClick={() => setShowReqModal(true)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
-                    >
-                        <Plus size={15} /> New Requisition
-                    </button>
-                    <button
-                        onClick={() => setShowCandModal(true)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs font-semibold text-white shadow-xs transition-colors"
-                    >
-                        <UserPlus size={15} /> Add Candidate
-                    </button>
-                </div>
+                {canCreate && (
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                            onClick={() => setShowReqModal(true)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+                        >
+                            <Plus size={15} /> New Requisition
+                        </button>
+                        <button
+                            onClick={() => setShowCandModal(true)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs font-semibold text-white shadow-xs transition-colors"
+                        >
+                            <UserPlus size={15} /> Add Candidate
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* 10-Step Candidate Selection to Joining Lifecycle Engine */}
             <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden transition-all duration-300">
-                {/* Header Bar */}
                 <div className="p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-primary-50/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center shadow-xs shrink-0">
@@ -462,14 +543,12 @@ const Recruitment = () => {
                                 </span>
                             </div>
                             <p className="text-xs text-slate-500 mt-0.5">
-                                End-to-end recruitment workflow: KYC ➔ Multi-Tier Approvals ➔ Signed PDF ➔ Email Dispatch ➔ Joining
+                                End-to-end recruitment workflow: KYC → Multi-Tier Approvals → Signed PDF → Email Dispatch → Joining
                             </p>
                         </div>
                     </div>
 
-                    {/* View Controls & Action Counters */}
                     <div className="flex items-center gap-2 flex-wrap sm:shrink-0">
-                        {/* Quick Counters */}
                         <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-slate-100/80 rounded-xl text-xs font-semibold text-slate-700 border border-slate-200/60">
                             <span className="text-primary-700 font-bold">{candidates.length}</span> Candidates
                             <span className="text-slate-300">•</span>
@@ -478,7 +557,6 @@ const Recruitment = () => {
                             <span className="text-emerald-700 font-bold">{candidates.filter(c => c.current_stage === 'HIRED').length}</span> Onboarded
                         </div>
 
-                        {/* View Switcher: 4 Phases vs 10-Step Timeline */}
                         <div className="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200 text-xs">
                             <button
                                 onClick={() => setWorkflowView('milestones')}
@@ -487,7 +565,6 @@ const Recruitment = () => {
                                         ? 'bg-white text-primary-700 shadow-2xs font-bold'
                                         : 'text-slate-600 hover:text-slate-900'
                                 }`}
-                                title="Grouped by 4 Enterprise Phases"
                             >
                                 <Layers size={13} />
                                 <span className="hidden sm:inline">4 Phases</span>
@@ -499,28 +576,24 @@ const Recruitment = () => {
                                         ? 'bg-white text-primary-700 shadow-2xs font-bold'
                                         : 'text-slate-600 hover:text-slate-900'
                                 }`}
-                                title="View continuous 10-step timeline track"
                             >
                                 <ListOrdered size={13} />
                                 <span className="hidden sm:inline">10 Steps</span>
                             </button>
                         </div>
 
-                        {/* Collapse / Expand Button */}
                         <button
                             onClick={() => setIsWorkflowExpanded(!isWorkflowExpanded)}
                             className="p-1.5 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition-colors"
-                            title={isWorkflowExpanded ? "Collapse workflow guide" : "Expand workflow guide"}
+                            title={isWorkflowExpanded ? 'Collapse workflow guide' : 'Expand workflow guide'}
                         >
                             {isWorkflowExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
                     </div>
                 </div>
 
-                {/* Workflow Body */}
                 {isWorkflowExpanded && (
                     <div className="p-4 sm:p-5 bg-white">
-                        {/* VIEW 1: 4 Logical Milestone Phases (Spacious, Elegant, No Text Clipping) */}
                         {workflowView === 'milestones' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
                                 {workflowMilestones.map((phase, pIdx) => (
@@ -583,7 +656,6 @@ const Recruitment = () => {
                             </div>
                         )}
 
-                        {/* VIEW 2: Continuous 10-Step Timeline Track (Horizontal Connected Stepper) */}
                         {workflowView === 'timeline' && (
                             <div className="overflow-x-auto pb-3 pt-1 scrollbar-thin">
                                 <div className="flex items-center gap-2 min-w-max">
@@ -598,18 +670,13 @@ const Recruitment = () => {
                                                         {st.phase}
                                                     </span>
                                                 </div>
-                                                <h4 className="font-bold text-slate-900 text-xs leading-snug">
-                                                    {st.title}
-                                                </h4>
-                                                <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                                                    {st.sub}
-                                                </p>
+                                                <h4 className="font-bold text-slate-900 text-xs leading-snug">{st.title}</h4>
+                                                <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{st.sub}</p>
                                                 <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px]">
                                                     <span className="text-slate-400">Owner:</span>
                                                     <span className="font-bold text-primary-700">{st.role}</span>
                                                 </div>
                                             </div>
-
                                             {sIdx < workflowSteps.length - 1 && (
                                                 <div className="flex items-center justify-center text-slate-300 shrink-0 px-0.5">
                                                     <ArrowRight size={16} className="text-slate-400" />
@@ -625,22 +692,22 @@ const Recruitment = () => {
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex border-b border-slate-200 gap-6 text-sm font-semibold">
+            <div className="flex border-b border-slate-200 gap-6 text-sm font-semibold overflow-x-auto no-scrollbar">
                 <button
                     onClick={() => setActiveTab('pipeline')}
-                    className={`pb-3 transition-colors flex items-center gap-2 ${activeTab === 'pipeline' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`pb-3 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'pipeline' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                     <Users size={16} /> Candidates & Pipeline ({candidates.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('requisitions')}
-                    className={`pb-3 transition-colors flex items-center gap-2 ${activeTab === 'requisitions' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`pb-3 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'requisitions' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                     <Briefcase size={16} /> Job Requisitions ({requisitions.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('offers')}
-                    className={`pb-3 transition-colors flex items-center gap-2 ${activeTab === 'offers' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`pb-3 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'offers' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                     <FileCheck size={16} /> Offer Letters ({offers.length})
                 </button>
@@ -649,8 +716,7 @@ const Recruitment = () => {
             {/* TAB 1: CANDIDATES & PIPELINE */}
             {activeTab === 'pipeline' && (
                 <div className="space-y-4">
-                    {/* Controls */}
-                    <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-white p-4 rounded-xl border border-slate-200">
+                    <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center bg-white p-4 rounded-xl border border-slate-200">
                         <div className="relative w-full sm:w-80">
                             <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                             <input
@@ -663,29 +729,30 @@ const Recruitment = () => {
                         </div>
 
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Filter size={15} className="text-slate-500" />
+                            <Filter size={15} className="text-slate-500 shrink-0" />
                             <select
                                 value={stageFilter}
                                 onChange={(e) => setStageFilter(e.target.value)}
-                                className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                className="w-full sm:w-auto text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
                             >
                                 <option value="ALL">All Pipeline Stages</option>
                                 <option value="APPLIED">Applied</option>
                                 <option value="SHORTLISTED">Shortlisted</option>
                                 <option value="INTERVIEW_SCHEDULED">Interview Scheduled</option>
+                                <option value="INTERVIEW_COMPLETED">Interview Completed</option>
                                 <option value="OFFER_EXTENDED">Offer Extended</option>
                                 <option value="HIRED">Hired / Joined</option>
+                                <option value="REJECTED">Rejected</option>
                             </select>
                         </div>
                     </div>
 
-                    {/* Candidate Cards Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {loading ? (
-                            <div className="col-span-3 text-center py-12 text-slate-400 text-sm">Loading candidates...</div>
+                            <div className="col-span-full text-center py-12 text-slate-400 text-sm">Loading candidates...</div>
                         ) : filteredCandidates.length === 0 ? (
-                            <div className="col-span-3 text-center py-12 text-slate-400 text-sm bg-white rounded-xl border border-dashed border-slate-200">
-                                No candidates found matching your criteria. Click "Add Candidate" to begin.
+                            <div className="col-span-full text-center py-12 text-slate-400 text-sm bg-white rounded-xl border border-dashed border-slate-200">
+                                No candidates found matching your criteria.
                             </div>
                         ) : (
                             filteredCandidates.map((cand) => {
@@ -693,42 +760,52 @@ const Recruitment = () => {
                                 return (
                                     <div key={cand.candidate_id} className="card-hover-effect bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between group">
                                         <div>
-                                            <div className="flex items-start justify-between">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-900 text-sm">{cand.full_name}</h3>
-                                                    <p className="text-xs text-slate-500">{cand.current_designation || 'Candidate'} {cand.current_company ? `@ ${cand.current_company}` : ''}</p>
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <h3 className="font-bold text-slate-900 text-sm truncate">{cand.full_name}</h3>
+                                                    <p className="text-xs text-slate-500 truncate">{cand.current_designation || 'Candidate'} {cand.current_company ? `@ ${cand.current_company}` : ''}</p>
                                                 </div>
-                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${stageObj.color}`}>
-                                                    {stageObj.label}
-                                                </span>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${stageObj.color}`}>
+                                                        {stageObj.label}
+                                                    </span>
+                                                    {canDelete && (
+                                                        <button
+                                                            onClick={() => handleDeleteCandidate(cand)}
+                                                            title="Delete Candidate"
+                                                            className="p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-slate-100"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             <div className="mt-3 space-y-1 text-xs text-slate-600">
                                                 <div className="flex items-center gap-2">
-                                                    <Mail size={13} className="text-slate-400" />
+                                                    <Mail size={13} className="text-slate-400 shrink-0" />
                                                     <span className="truncate">{cand.email}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <Phone size={13} className="text-slate-400" />
+                                                    <Phone size={13} className="text-slate-400 shrink-0" />
                                                     <span>{cand.phone}</span>
                                                 </div>
                                                 {cand.requisition_title && (
                                                     <div className="flex items-center gap-2">
-                                                        <Briefcase size={13} className="text-slate-400" />
-                                                        <span className="font-medium text-primary-700">{cand.requisition_title}</span>
+                                                        <Briefcase size={13} className="text-slate-400 shrink-0" />
+                                                        <span className="font-medium text-primary-700 truncate">{cand.requisition_title}</span>
                                                     </div>
                                                 )}
                                                 {cand.interview_date && (
                                                     <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-100 text-[11px] text-amber-800">
                                                         <p className="font-semibold flex items-center gap-1">
-                                                            <Calendar size={12} /> Interview: {new Date(cand.interview_date).toLocaleString()}
+                                                            <Calendar size={12} /> Interview: {formatIstDateTime(cand.interview_date)}
                                                         </p>
                                                         {cand.interviewer_name && <p>Interviewer: {cand.interviewer_name}</p>}
                                                         {cand.interview_feedback && <p className="italic mt-0.5">"{cand.interview_feedback}"</p>}
                                                     </div>
                                                 )}
 
-                                                {/* AI Resume Screening Result or Action */}
                                                 {cand.ai_match_score ? (
                                                     <div className="mt-2.5 p-2 rounded-lg bg-indigo-50/80 border border-indigo-100 text-[11px] text-indigo-900">
                                                         <div className="font-semibold flex items-center justify-between">
@@ -750,7 +827,7 @@ const Recruitment = () => {
                                                             </p>
                                                         )}
                                                     </div>
-                                                ) : (
+                                                ) : (canUpdate || canCreate) && (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleAiScreen(cand.candidate_id)}
@@ -765,61 +842,67 @@ const Recruitment = () => {
                                         </div>
 
                                         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5 flex-wrap">
-                                            <div className="flex items-center gap-1.5">
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedCandidate(cand);
-                                                        setInterviewForm({
-                                                            stage: cand.current_stage,
-                                                            interview_date: cand.interview_date ? new Date(cand.interview_date).toISOString().slice(0, 16) : '',
-                                                            interviewer_name: cand.interviewer_name || '',
-                                                            interview_feedback: cand.interview_feedback || '',
-                                                            rating: cand.rating || 4
-                                                        });
-                                                        setShowScheduleModal(true);
-                                                    }}
-                                                    className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-                                                >
-                                                    Interview
-                                                </button>
-                                                <button
-                                                    onClick={() => handleOpenDocModal(cand)}
-                                                    className={`text-xs font-semibold px-2 py-1.5 rounded-lg border transition-colors flex items-center gap-1 ${
-                                                        cand.aadhaar_number || cand.pan_number ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                                                    }`}
-                                                    title="Step 2: Collect Aadhaar, PAN & Bank Details"
-                                                >
-                                                    <FileText size={12} />
-                                                    {cand.aadhaar_number || cand.pan_number ? 'Docs ✓' : 'KYC Docs'}
-                                                </button>
-                                            </div>
+                                            {canUpdate && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedCandidate(cand);
+                                                            setInterviewForm({
+                                                                stage: cand.current_stage,
+                                                                interview_date: toIstDateTimeLocal(cand.interview_date),
+                                                                interviewer_name: cand.interviewer_name || '',
+                                                                interview_feedback: cand.interview_feedback || '',
+                                                                rating: cand.rating || 4
+                                                            });
+                                                            setShowScheduleModal(true);
+                                                        }}
+                                                        className="text-xs font-semibold px-2 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                                                    >
+                                                        Interview
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleOpenDocModal(cand)}
+                                                        className={`text-xs font-semibold px-2 py-1.5 rounded-lg border transition-colors flex items-center gap-1 ${
+                                                            cand.aadhaar_number || cand.pan_number ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                                                        }`}
+                                                        title="Step 2: Collect Aadhaar, PAN & Bank Details"
+                                                    >
+                                                        <FileText size={12} />
+                                                        {cand.aadhaar_number || cand.pan_number ? 'Docs ✓' : 'KYC Docs'}
+                                                    </button>
+                                                </div>
+                                            )}
 
                                             {cand.current_stage !== 'HIRED' && (
                                                 <div className="flex items-center gap-1">
-                                                    <button
-                                                        onClick={() => {
-                                                            setOfferForm({
-                                                                candidate_id: cand.candidate_id,
-                                                                designation: cand.current_designation || 'Field Staff',
-                                                                department: cand.department || 'Operations',
-                                                                site_id: '',
-                                                                offered_ctc: '300000',
-                                                                joining_date: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-                                                                terms_and_conditions: 'Standard terms.'
-                                                            });
-                                                            setShowOfferModal(true);
-                                                        }}
-                                                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
-                                                    >
-                                                        Make Offer
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleConvertToEmployee(cand)}
-                                                        className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                                                        title="1-Click Onboard to Employee Master"
-                                                    >
-                                                        Join Now
-                                                    </button>
+                                                    {canCreate && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setOfferForm({
+                                                                    candidate_id: cand.candidate_id,
+                                                                    designation: cand.current_designation || 'Field Staff',
+                                                                    department: cand.department || 'Operations',
+                                                                    site_id: '',
+                                                                    offered_ctc: '300000',
+                                                                    joining_date: getIstOffsetDate(7),
+                                                                    terms_and_conditions: 'Standard terms.'
+                                                                });
+                                                                setShowOfferModal(true);
+                                                            }}
+                                                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors"
+                                                        >
+                                                            Make Offer
+                                                        </button>
+                                                    )}
+                                                    {canConvertEmployee && (
+                                                        <button
+                                                            onClick={() => handleConvertToEmployee(cand)}
+                                                            className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                                            title="1-Click Onboard to Employee Master"
+                                                        >
+                                                            Join Now
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
 
@@ -840,20 +923,23 @@ const Recruitment = () => {
             {/* TAB 2: JOB REQUISITIONS */}
             {activeTab === 'requisitions' && (
                 <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
-                    <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+                    <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                             <h2 className="text-sm font-bold text-slate-800">Active Job Requisitions</h2>
                             <p className="text-xs text-slate-500">Staffing demands raised by site managers & departments</p>
                         </div>
-                        <button
-                            onClick={() => setShowReqModal(true)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700"
-                        >
-                            <Plus size={14} /> New Opening
-                        </button>
+                        {canCreate && (
+                            <button
+                                onClick={() => setShowReqModal(true)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 self-start sm:self-auto"
+                            >
+                                <Plus size={14} /> New Opening
+                            </button>
+                        )}
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left text-xs text-slate-600">
                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                                 <tr>
@@ -863,13 +949,14 @@ const Recruitment = () => {
                                     <th className="px-4 py-3">Vacancies</th>
                                     <th className="px-4 py-3">Candidates</th>
                                     <th className="px-4 py-3">Status</th>
+                                    {canDelete && <th className="px-4 py-3 text-right">Action</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {requisitions.length === 0 ? (
                                     <tr>
-                                        <td colSpan="6" className="py-8 text-center text-slate-400">
-                                            No job requisitions found. Click "New Opening" to post one.
+                                        <td colSpan="7" className="py-8 text-center text-slate-400">
+                                            No job requisitions found.
                                         </td>
                                     </tr>
                                 ) : (
@@ -895,11 +982,58 @@ const Recruitment = () => {
                                                     {req.status}
                                                 </span>
                                             </td>
+                                            {canDelete && (
+                                                <td className="px-4 py-3 text-right">
+                                                    <button
+                                                        onClick={() => handleDeleteRequisition(req)}
+                                                        title="Delete Requisition"
+                                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-md"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Mobile Requisitions Cards */}
+                    <div className="block md:hidden divide-y divide-slate-100">
+                        {requisitions.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400">No job requisitions found.</div>
+                        ) : (
+                            requisitions.map((req) => (
+                                <div key={req.requisition_id} className="p-4 text-xs space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <div className="font-bold text-slate-900 text-sm">{req.title}</div>
+                                            <div className="text-[11px] font-mono text-slate-400">{req.requisition_code} • {req.department}</div>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                                            req.status === 'OPEN' ? 'bg-emerald-100 text-emerald-700' :
+                                            req.status === 'FILLED' ? 'bg-blue-100 text-blue-700' :
+                                            'bg-slate-100 text-slate-600'
+                                        }`}>
+                                            {req.status}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-slate-600">
+                                        <span>Location: {req.job_location} • {req.vacancies} vac.</span>
+                                        <span className="font-semibold text-primary-600">{req.total_candidates || 0} applied ({req.hired_count || 0} hired)</span>
+                                    </div>
+                                    {canDelete && (
+                                        <div className="flex justify-end pt-1">
+                                            <button onClick={() => handleDeleteRequisition(req)} className="px-2.5 py-1 rounded-lg border border-rose-200 text-rose-600 font-semibold">
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
                     </div>
                 </div>
             )}
@@ -912,12 +1046,13 @@ const Recruitment = () => {
                             <h2 className="text-sm font-bold text-slate-800">10-Step Onboarding & Appointment Letters</h2>
                             <p className="text-xs text-slate-500">Track KYC documents, multi-tier approvals, signed PDF generation, email dispatch and joining</p>
                         </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg">
+                        <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg self-start sm:self-auto">
                             {offers.length} Active Candidates in Onboarding Pipeline
                         </span>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left text-xs text-slate-600">
                             <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                                 <tr>
@@ -949,13 +1084,11 @@ const Recruitment = () => {
 
                                         return (
                                             <tr key={off.offer_id} className="hover:bg-slate-50/70 transition-colors">
-                                                {/* Candidate & Ref (Step 1 & 4) */}
                                                 <td className="px-4 py-3">
                                                     <p className="font-bold text-slate-900">{off.candidate_name}</p>
                                                     <p className="text-[11px] font-mono text-primary-700 font-semibold">{off.offer_code}</p>
                                                     <p className="text-[11px] text-slate-400">{off.candidate_email}</p>
 
-                                                    {/* Live 10-Step Progress Tracker */}
                                                     <div className="mt-2 min-w-[180px] max-w-[210px] p-1.5 rounded-lg bg-slate-50 border border-slate-200/70">
                                                         <div className="flex items-center justify-between text-[10px] mb-1">
                                                             <span className="font-bold text-slate-700">Step {stepInfo.step}/10</span>
@@ -969,7 +1102,6 @@ const Recruitment = () => {
                                                     </div>
                                                 </td>
 
-                                                {/* Role & CTC */}
                                                 <td className="px-4 py-3">
                                                     <p className="font-semibold text-slate-900">{off.designation}</p>
                                                     <p className="text-[11px] text-slate-500">{off.site_name || 'Assigned Site'}</p>
@@ -977,11 +1109,10 @@ const Recruitment = () => {
                                                         ₹{Number(off.offered_ctc).toLocaleString('en-IN')}/yr
                                                     </p>
                                                     <p className="text-[10px] text-slate-400">
-                                                        Joining: {new Date(off.joining_date).toLocaleDateString('en-IN')}
+                                                        Joining: {formatIstDate(off.joining_date)}
                                                     </p>
                                                 </td>
 
-                                                {/* Step 2: KYC Docs */}
                                                 <td className="px-4 py-3">
                                                     <div className="space-y-1">
                                                         <div className="text-[11px]">
@@ -995,80 +1126,79 @@ const Recruitment = () => {
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <button
-                                                            onClick={() => handleOpenDocModal({
-                                                                candidate_id: off.candidate_id,
-                                                                full_name: off.candidate_name,
-                                                                aadhaar_number: off.aadhaar_number,
-                                                                pan_number: off.pan_number,
-                                                                bank_name: off.bank_name,
-                                                                bank_account_no: off.bank_account_no,
-                                                                bank_ifsc: off.bank_ifsc,
-                                                                candidate_documents: off.candidate_documents
-                                                            })}
-                                                            className="text-[10px] text-primary-600 hover:text-primary-800 font-semibold underline block"
-                                                        >
-                                                            {hasDocs ? 'View / Edit Docs' : '+ Upload Aadhaar/PAN'}
-                                                        </button>
+                                                        {canUpdate && (
+                                                            <button
+                                                                onClick={() => handleOpenDocModal({
+                                                                    candidate_id: off.candidate_id,
+                                                                    full_name: off.candidate_name,
+                                                                    aadhaar_number: off.aadhaar_number,
+                                                                    pan_number: off.pan_number,
+                                                                    bank_name: off.bank_name,
+                                                                    bank_account_no: off.bank_account_no,
+                                                                    bank_ifsc: off.bank_ifsc,
+                                                                    candidate_documents: off.candidate_documents
+                                                                })}
+                                                                className="text-[10px] text-primary-600 hover:text-primary-800 font-semibold underline block"
+                                                            >
+                                                                {hasDocs ? 'View / Edit Docs' : '+ Upload Aadhaar/PAN'}
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
 
-                                                {/* Steps 3 & 5: Approvals */}
                                                 <td className="px-4 py-3">
                                                     <div className="space-y-1.5">
-                                                        {/* Step 3: HR Salary Approval */}
                                                         <div>
                                                             {isSalaryApproved ? (
-                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded" title={`Approved at ${off.salary_approved_at}`}>
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
                                                                     <Check size={10} /> Salary: {off.salary_approved_by}
                                                                 </span>
-                                                            ) : (
+                                                            ) : canApprove ? (
                                                                 <button
                                                                     onClick={() => handleApproveSalary(off.offer_id)}
                                                                     className="px-2 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-semibold transition-colors"
                                                                 >
                                                                     Approve Salary (HR)
                                                                 </button>
+                                                            ) : (
+                                                                <span className="text-[10px] text-slate-400">Pending HR Salary</span>
                                                             )}
                                                         </div>
 
-                                                        {/* Step 5: Director Approval */}
                                                         <div>
                                                             {isDirectorApproved ? (
-                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded" title={`Approved at ${off.management_approved_at}`}>
+                                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
                                                                     <ShieldCheck size={10} /> Director: {off.management_approved_by}
                                                                 </span>
-                                                            ) : (
+                                                            ) : canApprove ? (
                                                                 <button
                                                                     onClick={() => handleApproveManagement(off.offer_id)}
                                                                     className="px-2 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-[10px] font-semibold transition-colors"
                                                                 >
                                                                     Approve (Director)
                                                                 </button>
+                                                            ) : (
+                                                                <span className="text-[10px] text-slate-400">Pending Director</span>
                                                             )}
                                                         </div>
                                                     </div>
                                                 </td>
 
-                                                {/* Steps 6 & 7: PDF Generation & Email Dispatch */}
                                                 <td className="px-4 py-3">
                                                     <div className="flex flex-col gap-1.5">
-                                                        {/* Step 6: PDF */}
                                                         <button
                                                             onClick={() => handleDownloadPdf(off.offer_id)}
                                                             className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[11px] font-semibold shadow-2xs transition-colors"
-                                                            title="Generate and view signed appointment PDF"
                                                         >
                                                             <Download size={12} className="text-primary-600" />
                                                             Download PDF
                                                         </button>
 
-                                                        {/* Step 7: Email */}
                                                         {isEmailSent ? (
                                                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">
                                                                 <Check size={10} /> Email Sent
                                                             </span>
-                                                        ) : (
+                                                        ) : (canCreate || canUpdate) && (
                                                             <button
                                                                 onClick={() => handleDispatchEmail(off)}
                                                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-[10px] font-semibold transition-colors"
@@ -1079,24 +1209,23 @@ const Recruitment = () => {
                                                     </div>
                                                 </td>
 
-                                                {/* Step 8: Candidate Acceptance */}
                                                 <td className="px-4 py-3">
                                                     {isAccepted ? (
                                                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded-full">
                                                             <CheckCircle2 size={11} /> Accepted
                                                         </span>
-                                                    ) : (
+                                                    ) : canUpdate ? (
                                                         <button
                                                             onClick={() => handleAcceptOffer(off.offer_id)}
                                                             className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 font-semibold text-[10px] transition-colors"
-                                                            title="Mark offer as accepted by candidate"
                                                         >
                                                             Mark Accepted
                                                         </button>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-400">Awaiting</span>
                                                     )}
                                                 </td>
 
-                                                {/* Steps 9 & 10: ID Creation & Joining */}
                                                 <td className="px-4 py-3">
                                                     {isJoined ? (
                                                         <div className="space-y-0.5">
@@ -1105,14 +1234,15 @@ const Recruitment = () => {
                                                             </span>
                                                             <p className="text-[10px] font-mono text-slate-400">Onboarding Complete</p>
                                                         </div>
-                                                    ) : (
+                                                    ) : canConvertEmployee ? (
                                                         <button
                                                             onClick={() => handleConvertToEmployee({ candidate_id: off.candidate_id, full_name: off.candidate_name })}
                                                             className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-[11px] shadow-2xs flex items-center gap-1 transition-colors"
-                                                            title="Generate Employee Code (EMP-XXXXXX) & activate employee record"
                                                         >
                                                             <UserCheck size={12} /> Confirm Joining
                                                         </button>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-400">Pending Joining</span>
                                                     )}
                                                 </td>
                                             </tr>
@@ -1122,466 +1252,575 @@ const Recruitment = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Mobile Offers Cards */}
+                    <div className="block md:hidden divide-y divide-slate-100">
+                        {offers.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400">No offer letters generated yet.</div>
+                        ) : (
+                            offers.map((off) => {
+                                const hasDocs = off.aadhaar_number || off.pan_number || off.bank_account_no;
+                                const isSalaryApproved = !!off.salary_approved_by;
+                                const isDirectorApproved = !!off.management_approved_by;
+                                const isEmailSent = off.email_dispatch_status === 'SENT';
+                                const isAccepted = off.acceptance_status === 'ACCEPTED' || off.status === 'ACCEPTED' || off.status === 'JOINED';
+                                const isJoined = off.status === 'JOINED';
+                                const stepInfo = getOfferStep(off);
+
+                                return (
+                                    <div key={off.offer_id} className="p-4 text-xs space-y-2.5">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <div className="font-bold text-slate-900 text-sm">{off.candidate_name}</div>
+                                                <div className="font-mono text-[11px] text-primary-700">{off.offer_code}</div>
+                                            </div>
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${stepInfo.badgeColor}`}>
+                                                Step {stepInfo.step}/10 • {stepInfo.label}
+                                            </span>
+                                        </div>
+
+                                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                            <div className={`h-full rounded-full ${stepInfo.color}`} style={{ width: `${stepInfo.pct}%` }} />
+                                        </div>
+
+                                        <div className="flex justify-between text-slate-600 p-2 bg-slate-50 rounded-lg">
+                                            <div>
+                                                <div className="font-semibold text-slate-800">{off.designation}</div>
+                                                <div className="text-[11px]">Joining: {formatIstDate(off.joining_date)}</div>
+                                            </div>
+                                            <div className="text-right font-bold text-slate-900">
+                                                ₹{Number(off.offered_ctc).toLocaleString('en-IN')}/yr
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {canUpdate && (
+                                                <button
+                                                    onClick={() => handleOpenDocModal({
+                                                        candidate_id: off.candidate_id,
+                                                        full_name: off.candidate_name,
+                                                        aadhaar_number: off.aadhaar_number,
+                                                        pan_number: off.pan_number,
+                                                        bank_name: off.bank_name,
+                                                        bank_account_no: off.bank_account_no,
+                                                        bank_ifsc: off.bank_ifsc,
+                                                        candidate_documents: off.candidate_documents
+                                                    })}
+                                                    className="px-2 py-1 rounded border border-slate-200 text-primary-700 font-semibold text-[11px]"
+                                                >
+                                                    {hasDocs ? 'KYC Docs ✓' : '+ KYC Docs'}
+                                                </button>
+                                            )}
+                                            {!isSalaryApproved && canApprove && (
+                                                <button onClick={() => handleApproveSalary(off.offer_id)} className="px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold text-[11px]">
+                                                    Approve Salary
+                                                </button>
+                                            )}
+                                            {!isDirectorApproved && canApprove && (
+                                                <button onClick={() => handleApproveManagement(off.offer_id)} className="px-2 py-1 rounded bg-purple-50 border border-purple-200 text-purple-700 font-semibold text-[11px]">
+                                                    Approve Director
+                                                </button>
+                                            )}
+                                            <button onClick={() => handleDownloadPdf(off.offer_id)} className="px-2 py-1 rounded border border-slate-300 text-slate-700 font-semibold text-[11px] inline-flex items-center gap-1">
+                                                <Download size={11} /> PDF
+                                            </button>
+                                            {!isEmailSent && (canCreate || canUpdate) && (
+                                                <button onClick={() => handleDispatchEmail(off)} className="px-2 py-1 rounded bg-teal-50 border border-teal-200 text-teal-700 font-semibold text-[11px]">
+                                                    Send Email
+                                                </button>
+                                            )}
+                                            {!isAccepted && canUpdate && (
+                                                <button onClick={() => handleAcceptOffer(off.offer_id)} className="px-2 py-1 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                                                    Mark Accepted
+                                                </button>
+                                            )}
+                                            {!isJoined && canConvertEmployee && (
+                                                <button onClick={() => handleConvertToEmployee({ candidate_id: off.candidate_id, full_name: off.candidate_name })} className="px-2.5 py-1 rounded bg-emerald-600 text-white font-semibold text-[11px]">
+                                                    Confirm Joining
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
             )}
 
             {/* MODAL 1: Create Requisition */}
             {showReqModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center">
-                            <h3 className="font-bold text-slate-900">New Job Requisition</h3>
-                            <button onClick={() => setShowReqModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
+                                <h3 className="font-bold text-slate-900">New Job Requisition</h3>
+                                <button onClick={() => setShowReqModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                            </div>
+                            <form onSubmit={handleCreateRequisition} className="p-5 space-y-4 overflow-y-auto">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Job Title *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. Site Security Supervisor, Field Officer"
+                                        value={reqForm.title}
+                                        onChange={(e) => setReqForm({ ...reqForm, title: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-1 focus:ring-primary-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                                        <select
+                                            value={reqForm.department}
+                                            onChange={(e) => setReqForm({ ...reqForm, department: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        >
+                                            <option value="Operations">Operations</option>
+                                            <option value="Security">Security</option>
+                                            <option value="Housekeeping">Housekeeping</option>
+                                            <option value="Administration">Administration</option>
+                                            <option value="Accounts">Accounts</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Location</label>
+                                        <input
+                                            type="text"
+                                            placeholder="City or Site"
+                                            value={reqForm.job_location}
+                                            onChange={(e) => setReqForm({ ...reqForm, job_location: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Number of Vacancies</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={reqForm.vacancies}
+                                            onChange={(e) => setReqForm({ ...reqForm, vacancies: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Experience Required</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. 1-3 Years"
+                                            value={reqForm.experience_required}
+                                            onChange={(e) => setReqForm({ ...reqForm, experience_required: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setShowReqModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Create Opening</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleCreateRequisition} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Job Title *</label>
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="e.g. Site Security Supervisor, Field Officer"
-                                    value={reqForm.title}
-                                    onChange={(e) => setReqForm({ ...reqForm, title: e.target.value })}
-                                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:ring-1 focus:ring-primary-500"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
-                                    <select
-                                        value={reqForm.department}
-                                        onChange={(e) => setReqForm({ ...reqForm, department: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    >
-                                        <option value="Operations">Operations</option>
-                                        <option value="Security">Security</option>
-                                        <option value="Housekeeping">Housekeeping</option>
-                                        <option value="Administration">Administration</option>
-                                        <option value="Accounts">Accounts</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Location</label>
-                                    <input
-                                        type="text"
-                                        placeholder="City or Site"
-                                        value={reqForm.job_location}
-                                        onChange={(e) => setReqForm({ ...reqForm, job_location: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Number of Vacancies</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={reqForm.vacancies}
-                                        onChange={(e) => setReqForm({ ...reqForm, vacancies: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Experience Required</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. 1-3 Years"
-                                        value={reqForm.experience_required}
-                                        onChange={(e) => setReqForm({ ...reqForm, experience_required: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button type="button" onClick={() => setShowReqModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
-                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Create Opening</button>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                </ModalPortal>
             )}
 
             {/* MODAL 2: Add Candidate */}
             {showCandModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center">
-                            <h3 className="font-bold text-slate-900">Register New Candidate</h3>
-                            <button onClick={() => setShowCandModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
+                                <h3 className="font-bold text-slate-900">Register New Candidate</h3>
+                                <button onClick={() => setShowCandModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                            </div>
+                            <form onSubmit={handleCreateCandidate} className="p-5 space-y-4 overflow-y-auto">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Target Requisition</label>
+                                    <select
+                                        value={candForm.requisition_id}
+                                        onChange={(e) => setCandForm({ ...candForm, requisition_id: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    >
+                                        <option value="">General Candidate Pool</option>
+                                        {requisitions.map(r => (
+                                            <option key={r.requisition_id} value={r.requisition_id}>{r.title} ({r.department})</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Candidate Full Name"
+                                        value={candForm.full_name}
+                                        onChange={(e) => setCandForm({ ...candForm, full_name: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Email *</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            placeholder="email@example.com"
+                                            value={candForm.email}
+                                            onChange={(e) => setCandForm({ ...candForm, email: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
+                                        <input
+                                            type="tel"
+                                            required
+                                            placeholder="10-digit mobile"
+                                            value={candForm.phone}
+                                            onChange={(e) => setCandForm({ ...candForm, phone: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Current Company</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Current Employer"
+                                            value={candForm.current_company}
+                                            onChange={(e) => setCandForm({ ...candForm, current_company: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Current Designation</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Role / Title"
+                                            value={candForm.current_designation}
+                                            onChange={(e) => setCandForm({ ...candForm, current_designation: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setShowCandModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Add to Pipeline</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleCreateCandidate} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Target Requisition</label>
-                                <select
-                                    value={candForm.requisition_id}
-                                    onChange={(e) => setCandForm({ ...candForm, requisition_id: e.target.value })}
-                                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                >
-                                    <option value="">General Candidate Pool</option>
-                                    {requisitions.map(r => (
-                                        <option key={r.requisition_id} value={r.requisition_id}>{r.title} ({r.department})</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
-                                <input
-                                    type="text"
-                                    required
-                                    placeholder="Candidate Full Name"
-                                    value={candForm.full_name}
-                                    onChange={(e) => setCandForm({ ...candForm, full_name: e.target.value })}
-                                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Email *</label>
-                                    <input
-                                        type="email"
-                                        required
-                                        placeholder="email@example.com"
-                                        value={candForm.email}
-                                        onChange={(e) => setCandForm({ ...candForm, email: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number *</label>
-                                    <input
-                                        type="tel"
-                                        required
-                                        placeholder="10-digit mobile"
-                                        value={candForm.phone}
-                                        onChange={(e) => setCandForm({ ...candForm, phone: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Current Company</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Current Employer"
-                                        value={candForm.current_company}
-                                        onChange={(e) => setCandForm({ ...candForm, current_company: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Current Designation</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Role / Title"
-                                        value={candForm.current_designation}
-                                        onChange={(e) => setCandForm({ ...candForm, current_designation: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button type="button" onClick={() => setShowCandModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
-                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Add to Pipeline</button>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                </ModalPortal>
             )}
 
             {/* MODAL 3: Update Stage & Schedule Interview */}
             {showScheduleModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-slate-900">Update Pipeline: {selectedCandidate?.full_name}</h3>
-                                <p className="text-xs text-slate-500">Record interview schedule, rating & interviewer feedback</p>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
+                                <div>
+                                    <h3 className="font-bold text-slate-900">Update Pipeline: {selectedCandidate?.full_name}</h3>
+                                    <p className="text-xs text-slate-500">Record interview schedule, rating & interviewer feedback</p>
+                                </div>
+                                <button onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
                             </div>
-                            <button onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                            <form onSubmit={handleUpdateStage} className="p-5 space-y-4 overflow-y-auto">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Pipeline Stage *</label>
+                                    <select
+                                        value={interviewForm.stage}
+                                        onChange={(e) => setInterviewForm({ ...interviewForm, stage: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    >
+                                        <option value="APPLIED">Applied</option>
+                                        <option value="SHORTLISTED">Shortlisted</option>
+                                        <option value="INTERVIEW_SCHEDULED">Interview Scheduled</option>
+                                        <option value="INTERVIEW_COMPLETED">Interview Completed</option>
+                                        <option value="OFFER_EXTENDED">Offer Extended</option>
+                                        <option value="REJECTED">Rejected</option>
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Interview Date & Time (IST)</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={interviewForm.interview_date}
+                                            onChange={(e) => setInterviewForm({ ...interviewForm, interview_date: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Interviewer Name</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Operations Manager"
+                                            value={interviewForm.interviewer_name}
+                                            onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Rating (1 to 5 Stars)</label>
+                                    <div className="flex gap-2">
+                                        {[1, 2, 3, 4, 5].map((star) => (
+                                            <button
+                                                type="button"
+                                                key={star}
+                                                onClick={() => setInterviewForm({ ...interviewForm, rating: star })}
+                                                className={`p-1.5 rounded-lg border ${interviewForm.rating >= star ? 'bg-amber-50 border-amber-300 text-amber-500' : 'border-slate-200 text-slate-300'}`}
+                                            >
+                                                <Star size={16} fill={interviewForm.rating >= star ? 'currentColor' : 'none'} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Interviewer Feedback & Notes</label>
+                                    <textarea
+                                        rows="3"
+                                        placeholder="Evaluation on communication, technical skill, discipline..."
+                                        value={interviewForm.interview_feedback}
+                                        onChange={(e) => setInterviewForm({ ...interviewForm, interview_feedback: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    />
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Save Stage</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleUpdateStage} className="p-5 space-y-4">
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Pipeline Stage *</label>
-                                <select
-                                    value={interviewForm.stage}
-                                    onChange={(e) => setInterviewForm({ ...interviewForm, stage: e.target.value })}
-                                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                >
-                                    <option value="APPLIED">Applied</option>
-                                    <option value="SHORTLISTED">Shortlisted</option>
-                                    <option value="INTERVIEW_SCHEDULED">Interview Scheduled</option>
-                                    <option value="INTERVIEW_COMPLETED">Interview Completed</option>
-                                    <option value="OFFER_EXTENDED">Offer Extended</option>
-                                    <option value="REJECTED">Rejected</option>
-                                </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Interview Date & Time</label>
-                                    <input
-                                        type="datetime-local"
-                                        value={interviewForm.interview_date}
-                                        onChange={(e) => setInterviewForm({ ...interviewForm, interview_date: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Interviewer Name</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. Operations Manager"
-                                        value={interviewForm.interviewer_name}
-                                        onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Rating (1 to 5 Stars)</label>
-                                <div className="flex gap-2">
-                                    {[1, 2, 3, 4, 5].map((star) => (
-                                        <button
-                                            type="button"
-                                            key={star}
-                                            onClick={() => setInterviewForm({ ...interviewForm, rating: star })}
-                                            className={`p-1.5 rounded-lg border ${interviewForm.rating >= star ? 'bg-amber-50 border-amber-300 text-amber-500' : 'border-slate-200 text-slate-300'}`}
-                                        >
-                                            <Star size={16} fill={interviewForm.rating >= star ? 'currentColor' : 'none'} />
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">Interviewer Feedback & Notes</label>
-                                <textarea
-                                    rows="3"
-                                    placeholder="Evaluation on communication, technical skill, discipline..."
-                                    value={interviewForm.interview_feedback}
-                                    onChange={(e) => setInterviewForm({ ...interviewForm, interview_feedback: e.target.value })}
-                                    className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                />
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
-                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Save Stage</button>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                </ModalPortal>
             )}
 
             {/* MODAL 4: Generate Offer Letter */}
             {showOfferModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center">
-                            <div>
-                                <h3 className="font-bold text-slate-900">Generate Employment Offer Letter</h3>
-                                <p className="text-xs text-slate-500">Official employment terms & CTC package</p>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
+                                <div>
+                                    <h3 className="font-bold text-slate-900">Generate Employment Offer Letter</h3>
+                                    <p className="text-xs text-slate-500">Official employment terms & CTC package</p>
+                                </div>
+                                <button onClick={() => setShowOfferModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
                             </div>
-                            <button onClick={() => setShowOfferModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                            <form onSubmit={handleCreateOffer} className="p-5 space-y-4 overflow-y-auto">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Designation *</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={offerForm.designation}
+                                            onChange={(e) => setOfferForm({ ...offerForm, designation: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Deployment Site</label>
+                                        <select
+                                            value={offerForm.site_id}
+                                            onChange={(e) => setOfferForm({ ...offerForm, site_id: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        >
+                                            <option value="">Head Office / Unassigned</option>
+                                            {sites.map(s => (
+                                                <option key={s.site_id} value={s.site_id}>{s.site_name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Offered Annual CTC (₹) *</label>
+                                        <input
+                                            type="number"
+                                            required
+                                            placeholder="e.g. 360000"
+                                            value={offerForm.offered_ctc}
+                                            onChange={(e) => setOfferForm({ ...offerForm, offered_ctc: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Joining Date *</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={offerForm.joining_date}
+                                            onChange={(e) => setOfferForm({ ...offerForm, joining_date: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setShowOfferModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Extend Offer Letter</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleCreateOffer} className="p-5 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Designation *</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={offerForm.designation}
-                                        onChange={(e) => setOfferForm({ ...offerForm, designation: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Deployment Site</label>
-                                    <select
-                                        value={offerForm.site_id}
-                                        onChange={(e) => setOfferForm({ ...offerForm, site_id: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    >
-                                        <option value="">Head Office / Unassigned</option>
-                                        {sites.map(s => (
-                                            <option key={s.site_id} value={s.site_id}>{s.site_name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Offered Annual CTC (₹) *</label>
-                                    <input
-                                        type="number"
-                                        required
-                                        placeholder="e.g. 360000"
-                                        value={offerForm.offered_ctc}
-                                        onChange={(e) => setOfferForm({ ...offerForm, offered_ctc: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Joining Date *</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={offerForm.joining_date}
-                                        onChange={(e) => setOfferForm({ ...offerForm, joining_date: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2">
-                                <button type="button" onClick={() => setShowOfferModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
-                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700">Extend Offer Letter</button>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                </ModalPortal>
             )}
 
-            {/* MODAL 5: Step 2 - Candidate KYC & Document Collection */}
+            {/* MODAL 5: Candidate KYC & Document Collection */}
             {showDocModal && selectedCandForDocs && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
-                            <div>
-                                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
-                                    Step 2: KYC & Compliance
-                                </span>
-                                <h3 className="font-bold text-slate-900 mt-1">Collect Documents: {selectedCandForDocs.full_name}</h3>
-                                <p className="text-xs text-slate-500">Aadhaar, PAN, and Bank details for verification & payroll activation</p>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                            <div className="p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 shrink-0">
+                                <div>
+                                    <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
+                                        Step 2: KYC & Compliance
+                                    </span>
+                                    <h3 className="font-bold text-slate-900 mt-1">Collect Documents: {selectedCandForDocs.full_name}</h3>
+                                    <p className="text-xs text-slate-500">Aadhaar, PAN, and Bank details for verification & payroll activation</p>
+                                </div>
+                                <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
                             </div>
-                            <button onClick={() => setShowDocModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                            <form onSubmit={handleSaveDocuments} className="p-5 space-y-4 overflow-y-auto">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Aadhaar Number (12 Digits)</label>
+                                        <input
+                                            type="text"
+                                            maxLength="12"
+                                            placeholder="e.g. 543210987654"
+                                            value={docForm.aadhaar_number}
+                                            onChange={(e) => setDocForm({ ...docForm, aadhaar_number: e.target.value.replace(/\D/g, '') })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">PAN Number (10 Characters)</label>
+                                        <input
+                                            type="text"
+                                            maxLength="10"
+                                            placeholder="e.g. ABCDE1234F"
+                                            value={docForm.pan_number}
+                                            onChange={(e) => setDocForm({ ...docForm, pan_number: e.target.value.toUpperCase() })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 uppercase font-mono"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                                    <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Bank Account Details (For Salary Credit)</p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 mb-1">Bank Name</label>
+                                            <input
+                                                type="text"
+                                                placeholder="SBI, HDFC, etc."
+                                                value={docForm.bank_name}
+                                                onChange={(e) => setDocForm({ ...docForm, bank_name: e.target.value })}
+                                                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 mb-1">Account Number</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Account No."
+                                                value={docForm.bank_account_no}
+                                                onChange={(e) => setDocForm({ ...docForm, bank_account_no: e.target.value })}
+                                                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono bg-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-slate-600 mb-1">IFSC Code</label>
+                                            <input
+                                                type="text"
+                                                placeholder="SBIN0001234"
+                                                value={docForm.bank_ifsc}
+                                                onChange={(e) => setDocForm({ ...docForm, bank_ifsc: e.target.value.toUpperCase() })}
+                                                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 uppercase font-mono bg-white"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-semibold text-slate-700">Attach Verified Document Files (PDF / Images)</label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                        {['aadhaar_card', 'pan_card', 'bank_passbook'].map((docKey) => {
+                                            const label = docKey === 'aadhaar_card' ? 'Aadhaar Card' : docKey === 'pan_card' ? 'PAN Card' : 'Bank Passbook';
+                                            const uploadedUrl = docForm.documents?.[docKey];
+
+                                            return (
+                                                <div key={docKey} className="p-2.5 rounded-lg border border-slate-200 bg-white flex flex-col justify-between">
+                                                    <div>
+                                                        <span className="font-semibold text-slate-800 text-[11px] block">{label}</span>
+                                                        {uploadedUrl ? (
+                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                                <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                                                                    <Check size={11} /> Uploaded
+                                                                </span>
+                                                                <a
+                                                                    href={getFileUrl(uploadedUrl)}
+                                                                    target="_blank"
+                                                                    rel="noreferrer"
+                                                                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-primary-600 hover:underline"
+                                                                >
+                                                                    View <ExternalLink size={9} />
+                                                                </a>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[10px] text-slate-400 mt-0.5 block">Not attached</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="mt-2">
+                                                        <label className="cursor-pointer inline-flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-800 bg-primary-50 px-2 py-1 rounded">
+                                                            <Upload size={10} />
+                                                            {uploadedUrl ? 'Replace' : 'Upload'}
+                                                            <input
+                                                                type="file"
+                                                                accept=".pdf,image/*"
+                                                                className="hidden"
+                                                                onChange={(e) => handleFileUpload(docKey, e.target.files[0])}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                    {uploadingDoc && <p className="text-[11px] text-primary-600 animate-pulse">Uploading file to server...</p>}
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                                    <button type="button" onClick={() => setShowDocModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 shadow-2xs">Save KYC Details</button>
+                                </div>
+                            </form>
                         </div>
-                        <form onSubmit={handleSaveDocuments} className="p-5 space-y-4">
-                            {/* Statutory IDs */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Aadhaar Number (12 Digits)</label>
-                                    <input
-                                        type="text"
-                                        maxLength="12"
-                                        placeholder="e.g. 543210987654"
-                                        value={docForm.aadhaar_number}
-                                        onChange={(e) => setDocForm({ ...docForm, aadhaar_number: e.target.value.replace(/\D/g, '') })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">PAN Number (10 Characters)</label>
-                                    <input
-                                        type="text"
-                                        maxLength="10"
-                                        placeholder="e.g. ABCDE1234F"
-                                        value={docForm.pan_number}
-                                        onChange={(e) => setDocForm({ ...docForm, pan_number: e.target.value.toUpperCase() })}
-                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 uppercase font-mono"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Bank Details */}
-                            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-                                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Bank Account Details (For Salary Credit)</p>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Bank Name</label>
-                                        <input
-                                            type="text"
-                                            placeholder="SBI, HDFC, etc."
-                                            value={docForm.bank_name}
-                                            onChange={(e) => setDocForm({ ...docForm, bank_name: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Account Number</label>
-                                        <input
-                                            type="text"
-                                            placeholder="Account No."
-                                            value={docForm.bank_account_no}
-                                            onChange={(e) => setDocForm({ ...docForm, bank_account_no: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono bg-white"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">IFSC Code</label>
-                                        <input
-                                            type="text"
-                                            placeholder="SBIN0001234"
-                                            value={docForm.bank_ifsc}
-                                            onChange={(e) => setDocForm({ ...docForm, bank_ifsc: e.target.value.toUpperCase() })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 uppercase font-mono bg-white"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Document File Attachments */}
-                            <div className="space-y-2">
-                                <label className="block text-xs font-semibold text-slate-700">Attach Verified Document Files (PDF / Images)</label>
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                    {['aadhaar_card', 'pan_card', 'bank_passbook'].map((docKey) => {
-                                        const label = docKey === 'aadhaar_card' ? 'Aadhaar Card' : docKey === 'pan_card' ? 'PAN Card' : 'Bank Passbook';
-                                        const uploadedUrl = docForm.documents?.[docKey];
-
-                                        return (
-                                            <div key={docKey} className="p-2.5 rounded-lg border border-slate-200 bg-white flex flex-col justify-between">
-                                                <div>
-                                                    <span className="font-semibold text-slate-800 text-[11px] block">{label}</span>
-                                                    {uploadedUrl ? (
-                                                        <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 mt-0.5">
-                                                            <Check size={11} /> Uploaded
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[10px] text-slate-400 mt-0.5 block">Not attached</span>
-                                                    )}
-                                                </div>
-                                                <div className="mt-2">
-                                                    <label className="cursor-pointer inline-flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-800 bg-primary-50 px-2 py-1 rounded">
-                                                        <Upload size={10} />
-                                                        {uploadedUrl ? 'Replace' : 'Upload'}
-                                                        <input
-                                                            type="file"
-                                                            accept=".pdf,image/*"
-                                                            className="hidden"
-                                                            onChange={(e) => handleFileUpload(docKey, e.target.files[0])}
-                                                        />
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                {uploadingDoc && <p className="text-[11px] text-primary-600 animate-pulse">Uploading file to server...</p>}
-                            </div>
-
-                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                <button type="button" onClick={() => setShowDocModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
-                                <button type="submit" className="px-4 py-2 rounded-lg bg-primary-600 text-white text-xs font-semibold hover:bg-primary-700 shadow-2xs">Save KYC Details</button>
-                            </div>
-                        </form>
                     </div>
-                </div>
+                </ModalPortal>
             )}
         </div>
     );
 };
 
 export default Recruitment;
-

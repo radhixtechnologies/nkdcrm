@@ -1,47 +1,243 @@
 import React, { useState, useEffect } from 'react';
 import {
     Users, UserCheck, DollarSign, Calendar,
-    Building2, TrendingUp, Clock, Plus,
-    FileSpreadsheet, CreditCard, ArrowRight,
+    Building2, Plus, ArrowRight,
     CheckCircle, AlertCircle, RefreshCw,
-    ShieldAlert, Receipt, AlertTriangle
+    ShieldAlert, Receipt, AlertTriangle,
+    ClipboardList, Boxes
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import EmployeeDashboard from './EmployeeDashboard';
 import dashboardService from '../services/dashboardService';
+import { extractApiError } from '../services/api';
 import AreaTrendChart from '../components/charts/AreaTrendChart';
 import BarChart from '../components/charts/BarChart';
 import DonutChart from '../components/charts/DonutChart';
 import WorkflowFlowchart from '../components/charts/WorkflowFlowchart';
 import toast from 'react-hot-toast';
 
-const StatCard = ({ title, value, badge, icon: Icon, color, bg, link, linkText }) => (
+const formatCurrency = (num) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+    }).format(Number(num) || 0);
+};
+
+const StatCard = ({ title, value, badge, icon, color, bg, link, linkText }) => {
+    const IconComponent = icon;
+    return (
     <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs flex flex-col justify-between group">
-        <div className="flex items-start justify-between">
-            <div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900 tracking-tight group-hover:text-primary-700 transition-colors">{value}</p>
+        <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider truncate">{title}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900 tracking-tight group-hover:text-primary-700 transition-colors truncate">{value}</p>
             </div>
             <div className={`rounded-xl p-2.5 ${bg} ${color} shrink-0 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-2xs`}>
-                <Icon size={22} strokeWidth={2.2} />
+                {IconComponent && <IconComponent size={22} strokeWidth={2.2} />}
             </div>
         </div>
 
-        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="font-medium text-slate-600 flex items-center gap-1">
+        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs gap-2">
+            <span className="font-medium text-slate-600 flex items-center gap-1 truncate">
                 {badge}
             </span>
             {link && (
-                <Link to={link} className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-0.5 group/link">
+                <Link to={link} className="text-primary-600 hover:text-primary-700 font-semibold flex items-center gap-0.5 group/link shrink-0">
                     {linkText || 'View'} <ArrowRight size={12} className="transition-transform group-hover/link:translate-x-1" />
                 </Link>
             )}
         </div>
     </div>
-);
+    );
+};
+
+const ClientDashboard = () => {
+    const { hasPermission } = useAuth();
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const res = await dashboardService.getStats();
+            setStats(res.data?.data || null);
+        } catch (error) {
+            toast.error(extractApiError(error, 'Failed to load client overview'), { id: 'client-dash-err' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    const invoicedTotal = Number(stats?.invoiceStats?.total_invoiced || 0);
+    const receivedTotal = Number(stats?.invoiceStats?.total_received || 0);
+    const collectionPct = invoicedTotal > 0 ? Math.min(100, Math.round((receivedTotal / invoicedTotal) * 100)) : 0;
+
+    return (
+        <div className="space-y-6 max-w-7xl mx-auto pb-12">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Client Project Portal</h1>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Live Daily Progress Reports, GTPL Material Tracking & Billing Summary</p>
+                </div>
+                <button
+                    onClick={loadData}
+                    title="Refresh Data"
+                    className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs"
+                >
+                    <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+                <StatCard
+                    title="Active Project Sites"
+                    value={loading ? '...' : (stats?.totalSites ?? 0)}
+                    badge="Monitored Locations"
+                    icon={Building2}
+                    color="text-blue-600"
+                    bg="bg-blue-50"
+                />
+                <StatCard
+                    title="Daily Progress Reports"
+                    value={loading ? '...' : (stats?.totalDprs ?? 0)}
+                    badge="Site Field Logs"
+                    icon={ClipboardList}
+                    color="text-emerald-600"
+                    bg="bg-emerald-50"
+                    link={hasPermission('DPR', 'can_view') ? '/dpr' : null}
+                    linkText="Open DPR Hub"
+                />
+                <StatCard
+                    title="GTPL Materials"
+                    value={loading ? '...' : `${stats?.procurementDelivered ?? 0} / ${stats?.procurementTotal ?? 0}`}
+                    badge="Delivered at Site"
+                    icon={Boxes}
+                    color="text-indigo-600"
+                    bg="bg-indigo-50"
+                    link={hasPermission('PROCUREMENT', 'can_view') ? '/procurement' : null}
+                    linkText="Tracker"
+                />
+                <StatCard
+                    title="Pending Billing"
+                    value={loading ? '...' : formatCurrency(stats?.invoiceStats?.pending_amount)}
+                    badge={`${formatCurrency(stats?.invoiceStats?.overdue_amount)} overdue`}
+                    icon={Receipt}
+                    color="text-amber-600"
+                    bg="bg-amber-50"
+                    link={hasPermission('INVOICES', 'can_view') ? '/invoices' : null}
+                    linkText="View Invoices"
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2.5">
+                            <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                                <Receipt size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-slate-800">Billing & Settlement Status</h3>
+                                <p className="text-xs text-slate-500">Corporate invoicing & payment realization</p>
+                            </div>
+                        </div>
+                        {hasPermission('INVOICES', 'can_view') && (
+                            <Link to="/invoices" className="text-xs font-semibold text-primary-600 hover:underline">
+                                View Invoices
+                            </Link>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <p className="text-[11px] font-semibold text-slate-500 uppercase">Total Invoiced</p>
+                            <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5">{formatCurrency(invoicedTotal)}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100">
+                            <p className="text-[11px] font-semibold text-emerald-700 uppercase">Total Received</p>
+                            <p className="text-base sm:text-lg font-bold text-emerald-700 mt-0.5">{formatCurrency(receivedTotal)}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-100">
+                            <p className="text-[11px] font-semibold text-amber-700 uppercase">Pending Collection</p>
+                            <p className="text-base sm:text-lg font-bold text-amber-700 mt-0.5">{formatCurrency(stats?.invoiceStats?.pending_amount)}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-100">
+                            <p className="text-[11px] font-semibold text-rose-700 uppercase">Overdue</p>
+                            <p className="text-base sm:text-lg font-bold text-rose-700 mt-0.5">{formatCurrency(stats?.invoiceStats?.overdue_amount)}</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1.5">
+                            <span>Payment Settlement Rate</span>
+                            <span>{collectionPct}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${collectionPct}%` }} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+                    <div>
+                        <h3 className="text-base font-bold text-slate-800 mb-1">Client Portal Modules</h3>
+                        <p className="text-xs text-slate-500 mb-4">Quick access to project reports and material deliveries</p>
+
+                        <div className="space-y-3">
+                            {hasPermission('DPR', 'can_view') && (
+                                <Link to="/dpr" className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-primary-50/70 border border-slate-200/80 transition-colors group">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 shrink-0"><ClipboardList size={18} /></div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-slate-800 truncate">DPR Management Hub</p>
+                                            <p className="text-xs text-slate-500 truncate">Daily progress, issues, measurement sheets & tools</p>
+                                        </div>
+                                    </div>
+                                    <ArrowRight size={16} className="text-slate-400 group-hover:text-primary-600 shrink-0" />
+                                </Link>
+                            )}
+
+                            {hasPermission('PROCUREMENT', 'can_view') && (
+                                <Link to="/procurement" className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-primary-50/70 border border-slate-200/80 transition-colors group">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="p-2 rounded-lg bg-indigo-100 text-indigo-700 shrink-0"><Boxes size={18} /></div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-slate-800 truncate">GTPL Procurement Tracker</p>
+                                            <p className="text-xs text-slate-500 truncate">9-stage manufacturing, inspection & dispatch status</p>
+                                        </div>
+                                    </div>
+                                    <ArrowRight size={16} className="text-slate-400 group-hover:text-primary-600 shrink-0" />
+                                </Link>
+                            )}
+
+                            {hasPermission('INVOICES', 'can_view') && (
+                                <Link to="/invoices" className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-primary-50/70 border border-slate-200/80 transition-colors group">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="p-2 rounded-lg bg-blue-100 text-blue-700 shrink-0"><Receipt size={18} /></div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-bold text-slate-800 truncate">Client Invoices & Statements</p>
+                                            <p className="text-xs text-slate-500 truncate">View itemized invoices & PDF statements</p>
+                                        </div>
+                                    </div>
+                                    <ArrowRight size={16} className="text-slate-400 group-hover:text-primary-600 shrink-0" />
+                                </Link>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const AdminDashboard = () => {
+    const { hasPermission } = useAuth();
     const [stats, setStats] = useState(null);
     const [charts, setCharts] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -57,7 +253,7 @@ const AdminDashboard = () => {
             setCharts(chartsRes.data?.data || null);
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
-            toast.error('Failed to load live dashboard stats');
+            toast.error(extractApiError(error, 'Failed to load live dashboard stats'), { id: 'dashboard-load-err' });
         } finally {
             setLoading(false);
         }
@@ -67,21 +263,13 @@ const AdminDashboard = () => {
         loadData();
     }, []);
 
-    const formatCurrency = (num) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            maximumFractionDigits: 0
-        }).format(num || 0);
-    };
-
     return (
         <div className="space-y-8 max-w-7xl mx-auto pb-12">
             {/* Header with Quick Actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">NKD CRM Executive Overview</h1>
-                    <p className="text-sm text-slate-500 mt-0.5">Real-time workforce attendance, operations & financial insights</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">NKD CRM Executive Overview</h1>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Real-time workforce attendance, operations & financial insights</p>
                 </div>
 
                 <div className="flex items-center gap-2.5 flex-wrap">
@@ -93,24 +281,28 @@ const AdminDashboard = () => {
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
 
-                    <Link
-                        to="/employees"
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-xs hover:shadow-md btn-press transition-all"
-                    >
-                        <Plus size={15} /> Add Employee
-                    </Link>
+                    {hasPermission('EMPLOYEES', 'can_create') && (
+                        <Link
+                            to="/employees"
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-xs hover:shadow-md btn-press transition-all"
+                        >
+                            <Plus size={15} /> Add Employee
+                        </Link>
+                    )}
 
-                    <Link
-                        to="/payroll"
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-xs font-bold text-white shadow-xs hover:shadow-md hover:shadow-primary-500/20 btn-press transition-all"
-                    >
-                        <DollarSign size={15} /> Run Payroll
-                    </Link>
+                    {hasPermission('PAYROLL', 'can_create') && (
+                        <Link
+                            to="/payroll"
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-xs font-bold text-white shadow-xs hover:shadow-md hover:shadow-primary-500/20 btn-press transition-all"
+                        >
+                            <DollarSign size={15} /> Run Payroll
+                        </Link>
+                    )}
                 </div>
             </div>
 
             {/* Top Metric Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
                 <StatCard
                     title="Active Employees"
                     value={loading ? '...' : (stats?.totalEmployees ?? 0)}
@@ -118,7 +310,7 @@ const AdminDashboard = () => {
                     icon={Users}
                     color="text-blue-600"
                     bg="bg-blue-50"
-                    link="/employees"
+                    link={hasPermission('EMPLOYEES', 'can_view') ? '/employees' : null}
                     linkText="Directory"
                 />
 
@@ -129,7 +321,7 @@ const AdminDashboard = () => {
                     icon={UserCheck}
                     color="text-emerald-600"
                     bg="bg-emerald-50"
-                    link="/attendance"
+                    link={hasPermission('ATTENDANCE', 'can_view') ? '/attendance' : null}
                     linkText="Daily Logs"
                 />
 
@@ -140,7 +332,7 @@ const AdminDashboard = () => {
                     icon={Calendar}
                     color="text-amber-600"
                     bg="bg-amber-50"
-                    link="/leaves"
+                    link={hasPermission('LEAVES', 'can_view') ? '/leaves' : null}
                     linkText="Review"
                 />
 
@@ -151,29 +343,31 @@ const AdminDashboard = () => {
                     icon={DollarSign}
                     color="text-indigo-600"
                     bg="bg-indigo-50"
-                    link="/payroll"
+                    link={hasPermission('PAYROLL', 'can_view') ? '/payroll' : null}
                     linkText="Manage"
                 />
             </div>
 
-            {/* Compliance Alerts & Invoice Status Section (Module 1 Requested Features) */}
+            {/* Compliance Alerts & Invoice Status Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Statutory Compliance Alerts */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
                     <div>
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="p-2.5 rounded-xl bg-rose-50 text-rose-600 shadow-2xs shrink-0">
                                     <ShieldAlert size={20} />
                                 </div>
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-800">Compliance & Statutory Alerts</h3>
-                                    <p className="text-xs text-slate-500">PF, ESIC deadlines & mandatory employee KYC tracking</p>
+                                <div className="min-w-0">
+                                    <h3 className="text-base font-bold text-slate-800 truncate">Compliance & Statutory Alerts</h3>
+                                    <p className="text-xs text-slate-500 truncate">PF, ESIC deadlines & mandatory employee KYC tracking</p>
                                 </div>
                             </div>
-                            <Link to="/reports" className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline">
-                                Statutory Center
-                            </Link>
+                            {hasPermission('REPORTS', 'can_view') && (
+                                <Link to="/reports" className="text-xs font-semibold text-primary-600 hover:text-primary-700 hover:underline shrink-0">
+                                    Statutory Center
+                                </Link>
+                            )}
                         </div>
 
                         <div className="space-y-3">
@@ -192,11 +386,11 @@ const AdminDashboard = () => {
                                             'bg-blue-50/70 border-blue-200 text-blue-900'
                                         }`}
                                     >
-                                        <div className="flex items-start gap-2.5">
+                                        <div className="flex items-start gap-2.5 min-w-0">
                                             {alt.type === 'CRITICAL' ? <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" /> :
                                              alt.type === 'WARNING' ? <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" /> :
                                              <ShieldAlert size={16} className="text-blue-600 shrink-0 mt-0.5" />}
-                                            <div>
+                                            <div className="min-w-0">
                                                 <p className="font-bold">{alt.title}</p>
                                                 <p className="text-[11px] opacity-80 mt-0.5">{alt.description}</p>
                                             </div>
@@ -217,45 +411,47 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Invoice Status & Billing Overview */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
                     <div>
-                        <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                        <div className="flex items-center justify-between gap-2 mb-4">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
                                     <Receipt size={20} />
                                 </div>
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-800">Deployment Invoice Status</h3>
-                                    <p className="text-xs text-slate-500">Corporate client billing & collection cycle</p>
+                                <div className="min-w-0">
+                                    <h3 className="text-base font-bold text-slate-800 truncate">Deployment Invoice Status</h3>
+                                    <p className="text-xs text-slate-500 truncate">Corporate client billing & collection cycle</p>
                                 </div>
                             </div>
-                            <Link to="/invoices" className="text-xs font-semibold text-primary-600 hover:underline">
-                                View Invoices
-                            </Link>
+                            {hasPermission('INVOICES', 'can_view') && (
+                                <Link to="/invoices" className="text-xs font-semibold text-primary-600 hover:underline shrink-0">
+                                    View Invoices
+                                </Link>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mb-4">
                             <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
                                 <p className="text-[11px] font-semibold text-slate-500 uppercase">Total Invoiced</p>
-                                <p className="text-lg font-bold text-slate-900 mt-0.5">
+                                <p className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 truncate">
                                     {formatCurrency(stats?.invoiceStats?.total_invoiced)}
                                 </p>
                             </div>
                             <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100">
                                 <p className="text-[11px] font-semibold text-emerald-700 uppercase">Total Received</p>
-                                <p className="text-lg font-bold text-emerald-700 mt-0.5">
+                                <p className="text-base sm:text-lg font-bold text-emerald-700 mt-0.5 truncate">
                                     {formatCurrency(stats?.invoiceStats?.total_received)}
                                 </p>
                             </div>
                             <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-100">
                                 <p className="text-[11px] font-semibold text-amber-700 uppercase">Pending Collection</p>
-                                <p className="text-lg font-bold text-amber-700 mt-0.5">
+                                <p className="text-base sm:text-lg font-bold text-amber-700 mt-0.5 truncate">
                                     {formatCurrency(stats?.invoiceStats?.pending_amount)}
                                 </p>
                             </div>
                             <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-100">
                                 <p className="text-[11px] font-semibold text-rose-700 uppercase">Overdue</p>
-                                <p className="text-lg font-bold text-rose-700 mt-0.5">
+                                <p className="text-base sm:text-lg font-bold text-rose-700 mt-0.5 truncate">
                                     {formatCurrency(stats?.invoiceStats?.overdue_amount)}
                                 </p>
                             </div>
@@ -289,13 +485,13 @@ const AdminDashboard = () => {
             {/* Interactive Graph Charts Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* 1. Attendance Trend Chart */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Weekly Attendance Turnout</h3>
                             <p className="text-xs text-slate-500">Live employee check-in trend for the past 7 days</p>
                         </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 shrink-0">
                             Live Trend
                         </span>
                     </div>
@@ -309,13 +505,13 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 2. Workforce by Department Donut */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between mb-2">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 mb-2">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Workforce Distribution</h3>
                             <p className="text-xs text-slate-500">Departmental deployment across operations</p>
                         </div>
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 shrink-0">
                             Departments
                         </span>
                     </div>
@@ -328,15 +524,17 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 3. Site / Branch Deployment Bar Chart */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs">
+                    <div className="flex items-center justify-between gap-2 mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Site & Branch Staffing</h3>
                             <p className="text-xs text-slate-500">Employee count assigned to branches & client facilities</p>
                         </div>
-                        <Link to="/sites" className="text-xs font-semibold text-primary-600 hover:underline">
-                            View Sites
-                        </Link>
+                        {hasPermission('SITES', 'can_view') && (
+                            <Link to="/sites" className="text-xs font-semibold text-primary-600 hover:underline shrink-0">
+                                View Sites
+                            </Link>
+                        )}
                     </div>
 
                     <BarChart
@@ -348,15 +546,17 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* 4. Live Attendance Stream / Activity */}
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs flex flex-col justify-between">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+                    <div className="flex items-center justify-between gap-2 mb-4">
                         <div>
                             <h3 className="text-base font-bold text-slate-800">Live Punch Feed</h3>
                             <p className="text-xs text-slate-500">Latest recorded check-ins and attendance updates</p>
                         </div>
-                        <Link to="/attendance" className="text-xs font-semibold text-primary-600 hover:underline">
-                            Full Register
-                        </Link>
+                        {hasPermission('ATTENDANCE', 'can_view') && (
+                            <Link to="/attendance" className="text-xs font-semibold text-primary-600 hover:underline shrink-0">
+                                Full Register
+                            </Link>
+                        )}
                     </div>
 
                     <div className="divide-y divide-slate-100">
@@ -366,24 +566,24 @@ const AdminDashboard = () => {
                             </div>
                         ) : (
                             charts.recentActivity.map((act) => (
-                                <div key={act.attendance_id} className="py-3 flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700">
+                                <div key={act.attendance_id} className="py-3 flex items-center justify-between text-xs gap-2">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700 shrink-0">
                                             {act.first_name?.[0] || 'E'}
                                         </div>
-                                        <div>
-                                            <p className="font-semibold text-slate-800">{act.first_name} {act.last_name}</p>
-                                            <p className="text-[11px] text-slate-400 font-mono">{act.employee_code}</p>
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-slate-800 truncate">{act.first_name} {act.last_name}</p>
+                                            <p className="text-[11px] text-slate-400 font-mono truncate">{act.employee_code}</p>
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2.5 shrink-0">
                                         <span className="font-mono text-slate-600">
-                                            {act.time ? `${act.time} hrs` : new Date(act.date).toLocaleDateString()}
+                                            {act.time ? `${act.time} hrs` : act.date}
                                         </span>
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                             act.status === 'P' ? 'bg-emerald-100 text-emerald-700' :
-                                            act.status === 'HD' ? 'bg-amber-100 text-amber-700' :
+                                            act.status === 'HD' || act.status === 'H' ? 'bg-amber-100 text-amber-700' :
                                             act.status === 'L' ? 'bg-blue-100 text-blue-700' :
                                             'bg-rose-100 text-rose-700'
                                         }`}>
@@ -397,7 +597,7 @@ const AdminDashboard = () => {
                 </div>
             </div>
 
-            {/* System Master Workflow Flowchart (Requested by User) */}
+            {/* System Master Workflow Flowchart */}
             <div>
                 <WorkflowFlowchart defaultWorkflow="lifecycle" allowSwitch={true} />
             </div>
@@ -406,10 +606,14 @@ const AdminDashboard = () => {
 };
 
 const Dashboard = () => {
-    const { user } = useAuth();
+    const { getRoleCode } = useAuth();
+    const roleCode = getRoleCode();
 
-    if (user?.roleCode === 'EMPLOYEE') {
+    if (roleCode === 'EMPLOYEE') {
         return <EmployeeDashboard />;
+    }
+    if (roleCode === 'CLIENT_LOGIN') {
+        return <ClientDashboard />;
     }
 
     return <AdminDashboard />;

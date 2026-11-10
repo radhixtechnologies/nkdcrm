@@ -1,4 +1,5 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
+import { toast } from 'react-hot-toast';
 
 const payrollService = {
     // Generate Payroll (Trigger calculation)
@@ -19,11 +20,19 @@ const payrollService = {
     // Export
     downloadPayslip: (id) => {
         const token = localStorage.getItem('token');
-        window.open(`${api.defaults.baseURL}/payroll/payslip/${id}/pdf?token=${token}`, '_blank');
+        if (!token) {
+            toast.error('Please sign in again to download payslip');
+            return;
+        }
+        window.open(`${getApiBaseUrl()}/payroll/payslip/${id}/pdf?token=${encodeURIComponent(token)}`, '_blank', 'noopener,noreferrer');
     },
     downloadExcel: (month, year) => {
         const token = localStorage.getItem('token');
-        window.open(`${api.defaults.baseURL}/payroll/export/excel?month=${month}&year=${year}&token=${token}`, '_blank');
+        if (!token) {
+            toast.error('Please sign in again to export payroll');
+            return;
+        }
+        window.open(`${getApiBaseUrl()}/payroll/export/excel?month=${month}&year=${year}&token=${encodeURIComponent(token)}`, '_blank', 'noopener,noreferrer');
     },
 
     // Get Single Payroll Detail

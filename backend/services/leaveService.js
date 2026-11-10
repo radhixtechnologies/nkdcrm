@@ -5,6 +5,25 @@
 
 const db = require('../config/database');
 
+const parseIsoDateUtc = (val) => {
+  if (!val) return null;
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const m = val.getMonth() + 1;
+    const d = val.getDate();
+    return { y, m, d, str: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` };
+  }
+  const str = String(val).trim().slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (!match) return null;
+  return {
+    y: parseInt(match[1], 10),
+    m: parseInt(match[2], 10),
+    d: parseInt(match[3], 10),
+    str
+  };
+};
+
 class LeaveService {
   /**
    * Get all leave types
@@ -19,11 +38,12 @@ class LeaveService {
    * Get leave balance for an employee
    */
   async getLeaveBalance(employeeId, year = new Date().getFullYear()) {
-    let query = `
-      SELECT 
+    const targetYear = parseInt(year, 10) || new Date().getFullYear();
+    const query = `
+      SELECT
         lb.*,
-        (lb.opening_balance + lb.earned) as total_allocated,
-        (lb.opening_balance + lb.earned - lb.taken) as remaining,
+        (lb.opening_balance + lb.earned) AS total_allocated,
+        (lb.opening_balance + lb.earned - lb.taken) AS remaining,
         lt.leave_code,
         lt.leave_name,
         lt.is_paid
@@ -32,13 +52,11 @@ class LeaveService {
       WHERE lb.employee_id = $1 AND lb.year = $2
       ORDER BY lt.leave_code
     `;
-    let result = await db.query(query, [employeeId, year]);
+    let result = await db.query(query, [employeeId, targetYear]);
 
-    // Lazy Initialization for fetching balance
     if (result.rows.length === 0) {
-      console.log(`[getLeaveBalance] No balance found for Emp ${employeeId}, initializing...`);
-      await this.initializeLeaveBalance(employeeId, year);
-      result = await db.query(query, [employeeId, year]);
+      await this.initializeLeaveBalance(employeeId, targetYear);
+      result = await db.query(query, [employeeId, targetYear]);
     }
 
     return result.rows;
@@ -48,36 +66,27 @@ class LeaveService {
    * Initialize leave balance for an employee
    */
   async initializeLeaveBalance(employeeId, year = new Date().getFullYear()) {
+    const targetYear = parseInt(year, 10) || new Date().getFullYear();
     const leaveTypes = await this.getLeaveTypes();
 
     const results = [];
     for (const leaveType of leaveTypes) {
-      // Check if balance already exists
-      const checkQuery = `
-        SELECT balance_id FROM leave_balances 
-        WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3
+      const maxDays = parseFloat(leaveType.max_days_per_year) || 0;
+      const insertQuery = `
+        INSERT INTO leave_balances (
+          employee_id, leave_type_id, year,
+          opening_balance, earned, taken
+        ) VALUES ($1, $2, $3, 0, $4, 0)
+        ON CONFLICT (employee_id, leave_type_id, year) DO NOTHING
+        RETURNING *
       `;
-      const existing = await db.query(checkQuery, [employeeId, leaveType.leave_type_id, year]);
-
-      if (existing.rows.length === 0) {
-        const maxDays = parseFloat(leaveType.max_days_per_year) || 0;
-        console.log(`[DEBUG] Initializing ${leaveType.leave_code} for Emp ${employeeId}: MaxDays=${maxDays}`);
-
-        const insertQuery = `
-          INSERT INTO leave_balances (
-            employee_id, leave_type_id, year, 
-            opening_balance, earned, taken
-          ) VALUES ($1, $2, $3, 0, $4, 0)
-          RETURNING *
-        `;
-        const result = await db.query(insertQuery, [
-          employeeId,
-          leaveType.leave_type_id,
-          year,
-          maxDays
-        ]);
-        results.push(result.rows[0]);
-      }
+      const result = await db.query(insertQuery, [
+        employeeId,
+        leaveType.leave_type_id,
+        targetYear,
+        maxDays
+      ]);
+      if (result.rows[0]) results.push(result.rows[0]);
     }
 
     return results;
@@ -96,37 +105,53 @@ class LeaveService {
       reason
     } = leaveData;
 
-    // Check leave balance
-    const year = new Date(from_date).getFullYear();
+    const fromParsed = parseIsoDateUtc(from_date);
+    const toParsed = parseIsoDateUtc(to_date);
+    if (!fromParsed || !toParsed) {
+      const err = new Error('Valid from_date and to_date (YYYY-MM-DD) are required');
+      err.status = 400;
+      throw err;
+    }
+
+    const fromMs = Date.UTC(fromParsed.y, fromParsed.m - 1, fromParsed.d);
+    const toMs = Date.UTC(toParsed.y, toParsed.m - 1, toParsed.d);
+    if (toMs < fromMs) {
+      const err = new Error('To Date cannot be earlier than From Date');
+      err.status = 400;
+      throw err;
+    }
+
+    const computedDays = Math.floor((toMs - fromMs) / 86400000) + 1;
+    const requestedDays = (total_days !== undefined && total_days !== null && Number(total_days) > 0)
+      ? parseFloat(total_days)
+      : computedDays;
+
+    const year = fromParsed.y;
     const balanceQuery = `
-      SELECT (opening_balance + earned - taken) as available_balance 
-      FROM leave_balances 
+      SELECT (opening_balance + earned - taken) AS available_balance
+      FROM leave_balances
       WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3
     `;
     let balanceResult = await db.query(balanceQuery, [employee_id, leave_type_id, year]);
 
-    // Lazy Initialization: If balance doesn't exist, create it dynamically
     if (balanceResult.rows.length === 0) {
-      console.log(`Leave balance missing for employee ${employee_id}, initializing now...`);
       await this.initializeLeaveBalance(employee_id, year);
-
-      // Re-fetch balance after initialization
       balanceResult = await db.query(balanceQuery, [employee_id, leave_type_id, year]);
-
       if (balanceResult.rows.length === 0) {
         throw new Error('Failed to initialize leave balance. Please contact HR.');
       }
     }
 
     const currentBalance = parseFloat(balanceResult.rows[0].available_balance);
-    if (currentBalance < total_days) {
-      throw new Error(`Insufficient leave balance. Available: ${currentBalance} days, Requested: ${total_days} days`);
+    if (currentBalance < requestedDays) {
+      const err = new Error(`Insufficient leave balance. Available: ${currentBalance} days, Requested: ${requestedDays} days`);
+      err.status = 400;
+      throw err;
     }
 
-    // Check for overlapping leave requests
     const overlapQuery = `
       SELECT request_id FROM leave_requests
-      WHERE employee_id = $1 
+      WHERE employee_id = $1
         AND status IN ('PENDING', 'APPROVED')
         AND (
           (from_date <= $2 AND to_date >= $2) OR
@@ -134,117 +159,145 @@ class LeaveService {
           (from_date >= $2 AND to_date <= $3)
         )
     `;
-    const overlapResult = await db.query(overlapQuery, [employee_id, from_date, to_date]);
+    const overlapResult = await db.query(overlapQuery, [employee_id, fromParsed.str, toParsed.str]);
 
     if (overlapResult.rows.length > 0) {
-      throw new Error('Leave request overlaps with existing leave');
+      const err = new Error('Leave request overlaps with existing leave');
+      err.status = 409;
+      throw err;
     }
 
-    // Create leave request
     const insertQuery = `
       INSERT INTO leave_requests (
-        employee_id, leave_type_id, from_date, to_date, 
+        employee_id, leave_type_id, from_date, to_date,
         total_days, reason, status
       ) VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
-      RETURNING *
+      RETURNING *,
+        TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date,
+        created_at AS applied_on
     `;
 
     const result = await db.query(insertQuery, [
       employee_id,
       leave_type_id,
-      from_date,
-      to_date,
-      total_days,
-      reason
+      fromParsed.str,
+      toParsed.str,
+      requestedDays,
+      reason || ''
     ]);
 
     return result.rows[0];
   }
 
   /**
-   * Approve leave request
+   * Approve leave request (atomic transaction with balance validation & attendance sync)
    */
   async approveLeave(requestId, approvedBy, remarks = null) {
-    // Get leave request details
-    const getRequestQuery = `
-      SELECT lr.*, lt.leave_name, lt.leave_code 
-      FROM leave_requests lr
-      JOIN leave_types lt ON lr.leave_type_id = lt.leave_type_id
-      WHERE lr.request_id = $1
-    `;
-    const requestResult = await db.query(getRequestQuery, [requestId]);
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
 
-    if (requestResult.rows.length === 0) {
-      throw new Error('Leave request not found');
-    }
+      const requestResult = await client.query(`
+        SELECT lr.*,
+               TO_CHAR(lr.from_date, 'YYYY-MM-DD') AS from_date_str,
+               TO_CHAR(lr.to_date, 'YYYY-MM-DD') AS to_date_str,
+               lt.leave_name, lt.leave_code
+        FROM leave_requests lr
+        JOIN leave_types lt ON lr.leave_type_id = lt.leave_type_id
+        WHERE lr.request_id = $1
+        FOR UPDATE OF lr
+      `, [requestId]);
 
-    const request = requestResult.rows[0];
+      if (requestResult.rows.length === 0) {
+        const err = new Error('Leave request not found');
+        err.status = 404;
+        throw err;
+      }
 
-    if (request.status !== 'PENDING') {
-      throw new Error(`Leave request is already ${request.status}`);
-    }
+      const request = requestResult.rows[0];
+      if (request.status !== 'PENDING') {
+        const err = new Error(`Leave request is already ${request.status}`);
+        err.status = 400;
+        throw err;
+      }
 
-    // Update leave request status
-    const updateRequestQuery = `
-      UPDATE leave_requests 
-      SET status = 'APPROVED', 
-          approved_by = $1, 
-          approved_on = CURRENT_TIMESTAMP,
-          remarks = $2
-      WHERE request_id = $3
-      RETURNING *
-    `;
-    const updateResult = await db.query(updateRequestQuery, [approvedBy, remarks, requestId]);
+      const fromParsed = parseIsoDateUtc(request.from_date_str);
+      const toParsed = parseIsoDateUtc(request.to_date_str);
+      const year = fromParsed.y;
 
-    // Deduct from leave balance
-    const year = new Date(request.from_date).getFullYear();
-    const updateBalanceQuery = `
-      UPDATE leave_balances 
-      SET taken = taken + $1
-      WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4
-      RETURNING *
-    `;
-    await db.query(updateBalanceQuery, [
-      request.total_days,
-      request.employee_id,
-      request.leave_type_id,
-      year
-    ]);
+      let balRes = await client.query(`
+        SELECT balance_id, (opening_balance + earned - taken) AS available_balance
+        FROM leave_balances
+        WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3
+        FOR UPDATE
+      `, [request.employee_id, request.leave_type_id, year]);
 
-    // ✅ NEW: Mark attendance for each day of the leave period
-    const fromDate = new Date(request.from_date);
-    const toDate = new Date(request.to_date);
+      if (balRes.rows.length === 0) {
+        await this.initializeLeaveBalance(request.employee_id, year);
+        balRes = await client.query(`
+          SELECT balance_id, (opening_balance + earned - taken) AS available_balance
+          FROM leave_balances
+          WHERE employee_id = $1 AND leave_type_id = $2 AND year = $3
+          FOR UPDATE
+        `, [request.employee_id, request.leave_type_id, year]);
+      }
 
-    console.log(`Marking attendance for leave from ${fromDate.toISOString().split('T')[0]} to ${toDate.toISOString().split('T')[0]}`);
+      if (balRes.rows.length > 0) {
+        const avail = parseFloat(balRes.rows[0].available_balance);
+        if (avail < parseFloat(request.total_days)) {
+          const err = new Error(`Insufficient leave balance to approve. Available: ${avail} days, Requested: ${request.total_days} days`);
+          err.status = 400;
+          throw err;
+        }
+      }
 
-    // Loop through each day and mark attendance as 'L' (Leave)
-    for (let date = new Date(fromDate); date <= toDate; date.setDate(date.getDate() + 1)) {
-      const dateStr = date.toISOString().split('T')[0];
+      const updateResult = await client.query(`
+        UPDATE leave_requests
+        SET status = 'APPROVED',
+            approved_by = $1,
+            approved_on = CURRENT_TIMESTAMP,
+            remarks = $2,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE request_id = $3
+        RETURNING *,
+          TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date,
+          TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date,
+          created_at AS applied_on
+      `, [approvedBy || null, remarks, requestId]);
 
-      // Insert or update attendance_daily with status 'L'
-      const attendanceQuery = `
-                INSERT INTO attendance_daily (employee_id, date, status, source, remarks)
-                VALUES ($1, $2, 'L', 'LEAVE_APPROVAL', $3)
-                ON CONFLICT (employee_id, date) 
-                DO UPDATE SET 
-                    status = 'L', 
-                    source = 'LEAVE_APPROVAL', 
-                    remarks = EXCLUDED.remarks,
-                    updated_at = CURRENT_TIMESTAMP
-            `;
+      await client.query(`
+        UPDATE leave_balances
+        SET taken = taken + $1, updated_at = CURRENT_TIMESTAMP
+        WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4
+      `, [request.total_days, request.employee_id, request.leave_type_id, year]);
 
+      const startMs = Date.UTC(fromParsed.y, fromParsed.m - 1, fromParsed.d);
+      const endMs = Date.UTC(toParsed.y, toParsed.m - 1, toParsed.d);
       const attendanceRemarks = `${request.leave_name} - Request #${requestId}`;
 
-      await db.query(attendanceQuery, [
-        request.employee_id,
-        dateStr,
-        attendanceRemarks
-      ]);
+      for (let ms = startMs; ms <= endMs; ms += 86400000) {
+        const dateStr = new Date(ms).toISOString().slice(0, 10);
+        await client.query(`
+          INSERT INTO attendance_daily (employee_id, date, status, source, remarks)
+          VALUES ($1, $2, 'L', 'LEAVE_APPROVAL', $3)
+          ON CONFLICT (employee_id, date)
+          DO UPDATE SET
+            status = 'L',
+            source = 'LEAVE_APPROVAL',
+            remarks = EXCLUDED.remarks,
+            updated_at = CURRENT_TIMESTAMP
+        `, [request.employee_id, dateStr, attendanceRemarks]);
+      }
+
+      await client.query('COMMIT');
+      return updateResult.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    console.log(`Successfully marked ${request.total_days} days as Leave in attendance`);
-
-    return updateResult.rows[0];
   }
 
   /**
@@ -252,90 +305,93 @@ class LeaveService {
    */
   async rejectLeave(requestId, approvedBy, rejectionReason) {
     const query = `
-      UPDATE leave_requests 
-      SET status = 'REJECTED', 
-          approved_by = $1, 
+      UPDATE leave_requests
+      SET status = 'REJECTED',
+          approved_by = $1,
           approved_on = CURRENT_TIMESTAMP,
-          rejection_reason = $2
+          rejection_reason = $2,
+          updated_at = CURRENT_TIMESTAMP
       WHERE request_id = $3 AND status = 'PENDING'
-      RETURNING *
+      RETURNING *,
+        TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date,
+        created_at AS applied_on
     `;
 
-    const result = await db.query(query, [approvedBy, rejectionReason, requestId]);
+    const result = await db.query(query, [approvedBy || null, rejectionReason || null, requestId]);
 
     if (result.rows.length === 0) {
-      throw new Error('Leave request not found or already processed');
+      const err = new Error('Leave request not found or already processed');
+      err.status = 400;
+      throw err;
     }
 
     return result.rows[0];
   }
 
   /**
-   * Cancel leave request (by employee)
+   * Cancel leave request
    */
-  async cancelLeave(requestId, employeeId) {
-    // Get leave request
-    const getQuery = `
-      SELECT * FROM leave_requests 
-      WHERE request_id = $1 AND employee_id = $2
-    `;
-    const requestResult = await db.query(getQuery, [requestId, employeeId]);
+  async cancelLeave(requestId, employeeId = null) {
+    const client = await db.getClient();
+    try {
+      await client.query('BEGIN');
 
-    if (requestResult.rows.length === 0) {
-      throw new Error('Leave request not found');
+      const getQuery = employeeId
+        ? `SELECT *, TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date_str, TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date_str
+           FROM leave_requests WHERE request_id = $1 AND employee_id = $2 FOR UPDATE`
+        : `SELECT *, TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date_str, TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date_str
+           FROM leave_requests WHERE request_id = $1 FOR UPDATE`;
+
+      const requestResult = await client.query(getQuery, employeeId ? [requestId, employeeId] : [requestId]);
+      if (requestResult.rows.length === 0) {
+        const err = new Error('Leave request not found');
+        err.status = 404;
+        throw err;
+      }
+
+      const request = requestResult.rows[0];
+      if (request.status === 'CANCELLED' || request.status === 'REJECTED') {
+        const err = new Error(`Leave request cannot be cancelled (status: ${request.status})`);
+        err.status = 400;
+        throw err;
+      }
+
+      if (request.status === 'APPROVED') {
+        const year = parseInt(String(request.from_date_str).slice(0, 4), 10);
+        await client.query(`
+          UPDATE leave_balances
+          SET taken = GREATEST(0, taken - $1), updated_at = CURRENT_TIMESTAMP
+          WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4
+        `, [request.total_days, request.employee_id, request.leave_type_id, year]);
+
+        await client.query(`
+          DELETE FROM attendance_daily
+          WHERE employee_id = $1
+            AND date BETWEEN $2 AND $3
+            AND status = 'L'
+            AND source IN ('LEAVE_APPROVAL', 'LEAVE_APPROVED')
+        `, [request.employee_id, request.from_date_str, request.to_date_str]);
+      }
+
+      const result = await client.query(`
+        UPDATE leave_requests
+        SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
+        WHERE request_id = $1
+        RETURNING *,
+          TO_CHAR(from_date, 'YYYY-MM-DD') AS from_date,
+          TO_CHAR(to_date, 'YYYY-MM-DD') AS to_date,
+          created_at AS applied_on
+      `, [requestId]);
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const request = requestResult.rows[0];
-
-    if (request.status === 'CANCELLED') {
-      throw new Error('Leave request is already cancelled');
-    }
-
-    // If approved, restore balance
-    if (request.status === 'APPROVED') {
-      const year = new Date(request.from_date).getFullYear();
-      const restoreBalanceQuery = `
-        UPDATE leave_balances 
-        SET taken = taken - $1
-        WHERE employee_id = $2 AND leave_type_id = $3 AND year = $4
-      `;
-      await db.query(restoreBalanceQuery, [
-        request.total_days,
-        request.employee_id,
-        request.leave_type_id,
-        year
-      ]);
-
-      // ✅ NEW: Remove leave attendance marks
-      console.log(`Removing leave attendance marks from ${request.from_date} to ${request.to_date}`);
-
-      const deleteAttendanceQuery = `
-                DELETE FROM attendance_daily
-                WHERE employee_id = $1 
-                AND date BETWEEN $2 AND $3
-                AND status = 'L'
-                AND source = 'LEAVE_APPROVED'
-            `;
-
-      const deleteResult = await db.query(deleteAttendanceQuery, [
-        request.employee_id,
-        request.from_date,
-        request.to_date
-      ]);
-
-      console.log(`Removed ${deleteResult.rowCount} attendance records for cancelled leave`);
-    }
-
-    // Update status to cancelled
-    const updateQuery = `
-      UPDATE leave_requests 
-      SET status = 'CANCELLED'
-      WHERE request_id = $1
-      RETURNING *
-    `;
-    const result = await db.query(updateQuery, [requestId]);
-
-    return result.rows[0];
   }
 
   /**
@@ -343,11 +399,14 @@ class LeaveService {
    */
   async getLeaveRequests(employeeId, filters = {}) {
     let query = `
-      SELECT 
+      SELECT
         lr.*,
+        TO_CHAR(lr.from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(lr.to_date, 'YYYY-MM-DD') AS to_date,
+        lr.created_at AS applied_on,
         lt.leave_code,
         lt.leave_name,
-        e.full_name as approved_by_name
+        e.full_name AS approved_by_name
       FROM leave_requests lr
       JOIN leave_types lt ON lr.leave_type_id = lt.leave_type_id
       LEFT JOIN employees e ON lr.approved_by = e.employee_id
@@ -369,7 +428,7 @@ class LeaveService {
       paramCount++;
     }
 
-    query += ' ORDER BY lr.applied_on DESC';
+    query += ' ORDER BY lr.created_at DESC';
 
     const result = await db.query(query, values);
     return result.rows;
@@ -380,12 +439,15 @@ class LeaveService {
    */
   async getPendingLeaveRequests() {
     const query = `
-      SELECT 
+      SELECT
         lr.*,
+        TO_CHAR(lr.from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(lr.to_date, 'YYYY-MM-DD') AS to_date,
+        lr.created_at AS applied_on,
         e.employee_code,
         e.first_name,
         e.last_name,
-        e.full_name as employee_name,
+        e.full_name AS employee_name,
         e.designation,
         e.department,
         lt.leave_code,
@@ -406,15 +468,18 @@ class LeaveService {
    */
   async getLeaveHistory(employeeId, year = new Date().getFullYear()) {
     const query = `
-      SELECT 
+      SELECT
         lr.*,
+        TO_CHAR(lr.from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(lr.to_date, 'YYYY-MM-DD') AS to_date,
+        lr.created_at AS applied_on,
         lt.leave_code,
         lt.leave_name,
-        e.full_name as approved_by_name
+        e.full_name AS approved_by_name
       FROM leave_requests lr
       JOIN leave_types lt ON lr.leave_type_id = lt.leave_type_id
       LEFT JOIN employees e ON lr.approved_by = e.employee_id
-      WHERE lr.employee_id = $1 
+      WHERE lr.employee_id = $1
         AND EXTRACT(YEAR FROM lr.from_date) = $2
       ORDER BY lr.from_date DESC
     `;
@@ -422,22 +487,26 @@ class LeaveService {
     const result = await db.query(query, [employeeId, year]);
     return result.rows;
   }
+
   /**
    * Get all leave requests (for HR/Admin) with filters
    */
   async getAllLeaves(filters = {}) {
     let query = `
-      SELECT 
+      SELECT
         lr.*,
+        TO_CHAR(lr.from_date, 'YYYY-MM-DD') AS from_date,
+        TO_CHAR(lr.to_date, 'YYYY-MM-DD') AS to_date,
+        lr.created_at AS applied_on,
         e.employee_code,
         e.first_name,
         e.last_name,
-        e.full_name as employee_name,
+        e.full_name AS employee_name,
         e.designation,
         e.department,
         lt.leave_code,
         lt.leave_name,
-        approver.full_name as approved_by_name
+        approver.full_name AS approved_by_name
       FROM leave_requests lr
       JOIN employees e ON lr.employee_id = e.employee_id
       JOIN leave_types lt ON lr.leave_type_id = lt.leave_type_id
@@ -446,9 +515,7 @@ class LeaveService {
 
     const params = [];
     let paramCount = 1;
-
-    // WHERE clause builder
-    let whereClauses = [];
+    const whereClauses = [];
 
     if (filters.status && filters.status !== 'ALL') {
       whereClauses.push(`lr.status = $${paramCount}`);
@@ -458,8 +525,8 @@ class LeaveService {
 
     if (filters.search) {
       whereClauses.push(`(
-        e.first_name ILIKE $${paramCount} OR 
-        e.last_name ILIKE $${paramCount} OR 
+        e.first_name ILIKE $${paramCount} OR
+        e.last_name ILIKE $${paramCount} OR
         e.employee_code ILIKE $${paramCount}
       )`);
       params.push(`%${filters.search}%`);

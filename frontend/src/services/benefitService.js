@@ -9,6 +9,9 @@ const benefitService = {
     // 2. Assign Benefit (HR)
     assignBenefit: (data) => api.post('/benefits/assign', data),
 
+    // 2b. Get All Assigned Benefits (HR)
+    getAllAssignedBenefits: () => api.get('/benefits/assigned'),
+
     // 3. Get My Benefits
     getMyBenefits: (employeeCode) => api.get(`/benefits/my-benefits/${employeeCode}`),
 

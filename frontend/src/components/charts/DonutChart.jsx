@@ -27,23 +27,23 @@ const DonutChart = ({ data = [], size = 200, title = 'Total', subtitle = '' }) =
     const center = size / 2;
     const circumference = 2 * Math.PI * radius;
 
-    let accumulatedAngle = 0;
-    const slices = data.map((item, idx) => {
+    const slices = data.reduce((acc, item, idx) => {
         const val = Number(item.value) || 0;
         const percentage = total > 0 ? (val / total) * 100 : 0;
         const strokeDasharray = `${(percentage / 100) * circumference} ${circumference}`;
-        const strokeDashoffset = -accumulatedAngle;
-        accumulatedAngle += (percentage / 100) * circumference;
+        const strokeDashoffset = -acc.offset;
+        const nextOffset = acc.offset + (percentage / 100) * circumference;
 
-        return {
+        acc.items.push({
             ...item,
             val,
             percentage: Math.round(percentage),
             color: item.color || PALETTE[idx % PALETTE.length],
             strokeDasharray,
             strokeDashoffset,
-        };
-    });
+        });
+        return { offset: nextOffset, items: acc.items };
+    }, { offset: 0, items: [] }).items;
 
     return (
         <div className="flex flex-col sm:flex-row items-center justify-center gap-6 p-2">

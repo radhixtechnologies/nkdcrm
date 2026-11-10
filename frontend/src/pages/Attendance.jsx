@@ -8,12 +8,13 @@ import WorkflowFlowchart from '../components/charts/WorkflowFlowchart';
 import { useAuth } from '../context/AuthContext';
 
 const Attendance = () => {
-    const { user } = useAuth();
+    const { hasPermission } = useAuth();
     const [activeTab, setActiveTab] = useState('daily'); // daily, import, shifts, tracker, flowchart
-    const isManager = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(user?.roleCode);
+    const canImport = hasPermission('ATTENDANCE', 'can_update') || hasPermission('ATTENDANCE', 'can_approve');
+    const canManageShifts = hasPermission('SITES', 'can_create') || hasPermission('SITES', 'can_update');
 
     return (
-        <div className="space-y-6 pt-1 sm:pt-2">
+        <div className="space-y-6 pt-1 sm:pt-2 pb-16">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Attendance Management</h1>
@@ -23,7 +24,7 @@ const Attendance = () => {
 
             {/* Tabs */}
             <div className="border-b border-slate-200">
-                <nav className="-mb-px flex space-x-8 overflow-x-auto">
+                <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto no-scrollbar">
                     <button
                         onClick={() => setActiveTab('daily')}
                         className={`
@@ -50,7 +51,7 @@ const Attendance = () => {
                         Time Tracker
                     </button>
 
-                    {isManager && (
+                    {canImport && (
                         <button
                             onClick={() => setActiveTab('import')}
                             className={`
@@ -65,7 +66,7 @@ const Attendance = () => {
                         </button>
                     )}
 
-                    {isManager && (
+                    {canManageShifts && (
                         <button
                             onClick={() => setActiveTab('shifts')}
                             className={`
@@ -111,13 +112,13 @@ const Attendance = () => {
 
                 {activeTab === 'import' && (
                     <div className="animate-in fade-in slide-in-from-left-4 duration-300">
-                        {isManager ? <AttendanceImport /> : <div className="p-8 text-center text-red-500">Access Denied</div>}
+                        {canImport ? <AttendanceImport /> : <div className="p-8 text-center text-red-500">Access Denied</div>}
                     </div>
                 )}
 
                 {activeTab === 'shifts' && (
                     <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                        {isManager ? <ShiftManagement /> : <div className="p-8 text-center text-red-500">Access Denied</div>}
+                        {canManageShifts ? <ShiftManagement /> : <div className="p-8 text-center text-red-500">Access Denied</div>}
                     </div>
                 )}
 

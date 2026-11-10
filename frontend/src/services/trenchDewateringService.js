@@ -1,4 +1,4 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
 
 const trenchDewateringService = {
     getLogs: (params = {}) => api.get('/dpr/trench-logs', { params }),
@@ -6,11 +6,14 @@ const trenchDewateringService = {
     createLog: (data) => api.post('/dpr/trench-logs', data),
     updateLog: (id, data) => api.put(`/dpr/trench-logs/${id}`, data),
     deleteLog: (id) => api.delete(`/dpr/trench-logs/${id}`),
-    
+
     getExportPdfUrl: (params = {}) => {
-        const query = new URLSearchParams(params).toString();
-        const baseURL = api.defaults.baseURL || '/api';
-        return `${baseURL}/dpr/trench-logs/export-pdf?${query}`;
+        const token = localStorage.getItem('token');
+        const cleanParams = Object.fromEntries(
+            Object.entries({ ...params, token: token || '' }).filter(([, v]) => v !== undefined && v !== null && v !== '')
+        );
+        const query = new URLSearchParams(cleanParams).toString();
+        return `${getApiBaseUrl()}/dpr/trench-logs/export-pdf?${query}`;
     }
 };
 

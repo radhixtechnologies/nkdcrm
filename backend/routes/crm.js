@@ -3,7 +3,12 @@ const fs = require('fs');
 const xlsx = require('xlsx');
 const db = require('../config/database');
 const upload = require('../config/multer');
-const { authenticate } = require('../middleware/auth');
+const {
+    authenticate,
+    requirePermission,
+    requireAnyPermission,
+    checkUserPermission
+} = require('../middleware/auth');
 
 // Service imports
 const employeeService = require('../services/employeeService');
@@ -53,7 +58,7 @@ const resolveEmployee = async (codeOrId) => {
     return res.rows[0] || null;
 };
 
-// Helper to get requester's employee record
+// Helper to get requester's employee record (strict - never falls back to arbitrary employee)
 const getRequesterEmployee = async (user) => {
     if (!user) return null;
     if (user.employeeId) {
@@ -73,17 +78,22 @@ const getRequesterEmployee = async (user) => {
     }
     if (user.email) {
         const res = await db.query(
-            'SELECT employee_id, employee_code, first_name, last_name, full_name, email FROM employees WHERE LOWER(email) = LOWER($1)',
-            [user.email.trim()]
+            'SELECT employee_id, employee_code, first_name, last_name, full_name, email FROM employees WHERE LOWER(email) = LOWER($1) AND employment_status != $2 LIMIT 1',
+            [user.email.trim(), 'TERMINATED']
         );
         if (res.rows.length > 0) return res.rows[0];
     }
-    // Fallback: If user is an Admin/Manager testing attendance, map to the first active employee
-    const fallback = await db.query(
-        "SELECT employee_id, employee_code, first_name, last_name, full_name, email FROM employees WHERE employment_status != 'TERMINATED' ORDER BY employee_id ASC LIMIT 1"
-    );
-    return fallback.rows[0] || null;
+    return null;
 };
+
+const isSelfScopedEmployee = (user) => String(user?.roleCode || '').toUpperCase() === 'EMPLOYEE';
+
+const ALLOWED_SELF_PROFILE_FIELDS = new Set([
+    'mobile', 'personal_email', 'emergency_contact', 'blood_group',
+    'address', 'permanent_address', 'bank_name', 'account_number',
+    'ifsc_code', 'aadhaar_number', 'pan_number', 'documents',
+    'gender', 'father_name', 'dob', 'education'
+]);
 
 // Helper to get current Date (YYYY-MM-DD) and Time (HH:mm:ss) in Indian Standard Time (IST - Asia/Kolkata)
 const getIstDateTime = () => {
@@ -100,10 +110,68 @@ const getIstDateTime = () => {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: false
-    }).format(now);
+        hourCycle: 'h23'
+    }).format(now).replace(/^24:/, '00:');
 
     return { date, time };
+};
+
+// Parse Excel serial / Date / string date into YYYY-MM-DD
+const parseExcelDate = (val) => {
+    if (val === undefined || val === null || val === '') return null;
+    if (val instanceof Date && !Number.isNaN(val.getTime())) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, '0');
+        const d = String(val.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    if (typeof val === 'number') {
+        const utcMs = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
+        return new Date(utcMs).toISOString().slice(0, 10);
+    }
+    const raw = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+    const dmy = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(raw);
+    if (dmy) {
+        return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    }
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString().slice(0, 10);
+    }
+    return null;
+};
+
+// Parse Excel time fraction / Date / string into HH:mm:ss
+const parseExcelTime = (val) => {
+    if (val === undefined || val === null || val === '') return null;
+    if (val instanceof Date && !Number.isNaN(val.getTime())) {
+        return [
+            String(val.getHours()).padStart(2, '0'),
+            String(val.getMinutes()).padStart(2, '0'),
+            String(val.getSeconds()).padStart(2, '0')
+        ].join(':');
+    }
+    if (typeof val === 'number') {
+        const frac = val % 1;
+        const totalSecs = Math.round(frac * 86400);
+        const h = Math.floor(totalSecs / 3600) % 24;
+        const m = Math.floor((totalSecs % 3600) / 60);
+        const s = totalSecs % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    const raw = String(val).trim().toUpperCase();
+    const ampmMatch = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/.exec(raw);
+    if (ampmMatch) {
+        let h = parseInt(ampmMatch[1], 10);
+        const m = ampmMatch[2];
+        const s = ampmMatch[3] || '00';
+        const mer = ampmMatch[4];
+        if (mer === 'PM' && h < 12) h += 12;
+        if (mer === 'AM' && h === 12) h = 0;
+        return `${String(h).padStart(2, '0')}:${m}:${s}`;
+    }
+    return null;
 };
 
 // Helper to get file buffer from multer
@@ -112,7 +180,6 @@ const getFileBuffer = (file) => {
     if (file.buffer) return file.buffer;
     if (file.path && fs.existsSync(file.path)) {
         const buffer = fs.readFileSync(file.path);
-        // Clean up temporary file
         fs.unlink(file.path, () => {});
         return buffer;
     }
@@ -122,8 +189,45 @@ const getFileBuffer = (file) => {
 // ==========================================
 // 0. DASHBOARD STATS & CHARTS
 // ==========================================
-router.get('/dashboard/stats', async (req, res, next) => {
+router.get('/dashboard/stats', requirePermission('DASHBOARD', 'can_view'), async (req, res, next) => {
     try {
+        const isClient = String(req.user?.roleCode || '').toUpperCase() === 'CLIENT_LOGIN';
+        const { date: istDate } = getIstDateTime();
+
+        const sitesRes = await db.query('SELECT COUNT(*)::int as count FROM sites WHERE is_active = true');
+        const totalSites = sitesRes.rows[0]?.count || 0;
+
+        let invoiceStats = { total_invoiced: 0, total_received: 0, pending_amount: 0, overdue_amount: 0 };
+        try {
+            invoiceStats = await invoiceService.getInvoiceStats();
+        } catch (e) {
+            console.warn('Invoice stats fetch error:', e.message);
+        }
+
+        if (isClient) {
+            const [dprRes, procRes] = await Promise.all([
+                db.query('SELECT COUNT(*)::int AS count FROM daily_progress_reports').catch(() => ({ rows: [{ count: 0 }] })),
+                db.query('SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE milestone_stage = \'DELIVERED_AT_SITE\' OR receipt_actual IS NOT NULL)::int AS delivered FROM project_procurement_items').catch(() => ({ rows: [{ total: 0, delivered: 0 }] }))
+            ]);
+
+            return sendData(res, {
+                totalEmployees: 0,
+                presentToday: 0,
+                absentToday: 0,
+                onLeaveToday: 0,
+                attendanceRate: 0,
+                pendingLeaves: 0,
+                pendingClaims: 0,
+                totalSites,
+                totalDprs: dprRes.rows[0]?.count || 0,
+                procurementTotal: procRes.rows[0]?.total || 0,
+                procurementDelivered: procRes.rows[0]?.delivered || 0,
+                latestPayroll: { amount: 0, month: Number(istDate.slice(5, 7)), year: Number(istDate.slice(0, 4)) },
+                complianceAlerts: { summary: {}, alerts: [] },
+                invoiceStats
+            });
+        }
+
         const empCountRes = await db.query(
             "SELECT COUNT(*)::int as total FROM employees WHERE employment_status != 'TERMINATED'"
         );
@@ -133,10 +237,10 @@ router.get('/dashboard/stats', async (req, res, next) => {
             SELECT
                 COUNT(DISTINCT CASE WHEN status = 'P' OR check_in IS NOT NULL THEN employee_id END)::int as present,
                 COUNT(DISTINCT CASE WHEN status = 'A' THEN employee_id END)::int as absent,
-                COUNT(DISTINCT CASE WHEN status = 'HD' THEN employee_id END)::int as half_day,
+                COUNT(DISTINCT CASE WHEN status IN ('H', 'HD') THEN employee_id END)::int as half_day,
                 COUNT(DISTINCT CASE WHEN status = 'L' THEN employee_id END)::int as on_leave
             FROM attendance_daily
-            WHERE date = CURRENT_DATE
+            WHERE date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
         `);
         const presentToday = todayAttendanceRes.rows[0]?.present || 0;
         const absentToday = todayAttendanceRes.rows[0]?.absent || 0;
@@ -152,9 +256,6 @@ router.get('/dashboard/stats', async (req, res, next) => {
         );
         const pendingClaims = pendingClaimsRes.rows[0]?.count || 0;
 
-        const sitesRes = await db.query("SELECT COUNT(*)::int as count FROM sites WHERE is_active = true");
-        const totalSites = sitesRes.rows[0]?.count || 0;
-
         const payrollRes = await db.query(`
             SELECT COALESCE(SUM(net_salary), 0)::numeric as total, month, year
             FROM payroll
@@ -166,7 +267,7 @@ router.get('/dashboard/stats', async (req, res, next) => {
             amount: parseFloat(payrollRes.rows[0].total) || 0,
             month: payrollRes.rows[0].month,
             year: payrollRes.rows[0].year
-        } : { amount: 0, month: new Date().getMonth() + 1, year: new Date().getFullYear() };
+        } : { amount: 0, month: Number(istDate.slice(5, 7)), year: Number(istDate.slice(0, 4)) };
 
         const attendanceRate = totalEmployees > 0
             ? Math.round((presentToday / totalEmployees) * 100)
@@ -177,13 +278,6 @@ router.get('/dashboard/stats', async (req, res, next) => {
             complianceAlerts = await invoiceService.getComplianceAlerts();
         } catch (e) {
             console.warn('Compliance alerts fetch error:', e.message);
-        }
-
-        let invoiceStats = { total_invoiced: 0, total_received: 0, pending_amount: 0, overdue_amount: 0 };
-        try {
-            invoiceStats = await invoiceService.getInvoiceStats();
-        } catch (e) {
-            console.warn('Invoice stats fetch error:', e.message);
         }
 
         return sendData(res, {
@@ -202,18 +296,33 @@ router.get('/dashboard/stats', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dashboard/charts', async (req, res, next) => {
+router.get('/dashboard/charts', requirePermission('DASHBOARD', 'can_view'), async (req, res, next) => {
     try {
+        const isClient = String(req.user?.roleCode || '').toUpperCase() === 'CLIENT_LOGIN';
+        if (isClient) {
+            return sendData(res, {
+                attendanceTrend: [],
+                departmentBreakdown: [],
+                siteDistribution: [],
+                payrollTrend: [],
+                recentActivity: []
+            });
+        }
+
         const trendRes = await db.query(`
             WITH dates AS (
-                SELECT generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day'::interval)::date AS day
+                SELECT generate_series(
+                    (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - INTERVAL '6 days',
+                    (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date,
+                    '1 day'::interval
+                )::date AS day
             )
             SELECT
-                d.day as date,
+                TO_CHAR(d.day, 'YYYY-MM-DD') as date,
                 TO_CHAR(d.day, 'Dy') as day_name,
                 COUNT(CASE WHEN a.status = 'P' OR a.check_in IS NOT NULL THEN 1 END)::int as present,
                 COUNT(CASE WHEN a.status = 'A' THEN 1 END)::int as absent,
-                COUNT(CASE WHEN a.status = 'HD' THEN 1 END)::int as half_day,
+                COUNT(CASE WHEN a.status IN ('H', 'HD') THEN 1 END)::int as half_day,
                 COUNT(CASE WHEN a.status = 'L' THEN 1 END)::int as on_leave
             FROM dates d
             LEFT JOIN attendance_daily a ON a.date = d.day
@@ -260,7 +369,7 @@ router.get('/dashboard/charts', async (req, res, next) => {
         const recentAttendance = await db.query(`
             SELECT
                 a.attendance_id,
-                a.date,
+                TO_CHAR(a.date, 'YYYY-MM-DD') as date,
                 TO_CHAR(a.check_in, 'HH24:MI') as time,
                 a.status,
                 e.first_name,
@@ -285,9 +394,66 @@ router.get('/dashboard/charts', async (req, res, next) => {
 // ==========================================
 // 1. EMPLOYEES
 // ==========================================
-router.get('/employees', async (req, res, next) => {
+router.get('/employees', requirePermission('EMPLOYEES', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await employeeService.getAllEmployees(req.query)); } catch (error) { return sendError(next, error); }
 });
+
+router.get('/employees/profile/me', async (req, res, next) => {
+    try {
+        const emp = await getRequesterEmployee(req.user);
+        if (!emp) return res.status(404).json({ success: false, message: 'No linked employee profile found for this account' });
+        const full = await employeeService.getEmployeeByCode(emp.employee_code);
+        return sendData(res, full);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/employees/profile/update', async (req, res, next) => {
+    try {
+        const emp = await getRequesterEmployee(req.user);
+        if (!emp) return res.status(400).json({ success: false, message: 'User is not linked to an employee' });
+
+        const sanitized = {};
+        for (const [k, v] of Object.entries(req.body || {})) {
+            if (ALLOWED_SELF_PROFILE_FIELDS.has(k)) {
+                sanitized[k] = v;
+            }
+        }
+        if (Object.keys(sanitized).length === 0) {
+            return res.status(400).json({ success: false, message: 'No valid profile fields supplied for update' });
+        }
+
+        return sendData(res, await employeeService.updateEmployee(emp.employee_code, sanitized));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post(
+    '/employees/upload-document',
+    requireAnyPermission('EMPLOYEES.can_create', 'EMPLOYEES.can_update', 'RECRUITMENT.can_create', 'RECRUITMENT.can_update', 'BENEFITS.can_create'),
+    upload.single('file'),
+    (req, res, next) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ success: false, message: 'No file uploaded' });
+            }
+
+            const fileUrl = `/uploads/${req.file.filename}`;
+            return res.json({
+                success: true,
+                url: fileUrl,
+                message: 'Document uploaded successfully',
+                data: {
+                    url: fileUrl,
+                    filename: req.file.filename,
+                    originalName: req.file.originalname,
+                    size: req.file.size,
+                    mimetype: req.file.mimetype
+                }
+            });
+        } catch (error) {
+            return sendError(next, error);
+        }
+    }
+);
 
 router.get('/employees/:employeeCode', async (req, res, next) => {
     try {
@@ -299,47 +465,23 @@ router.get('/employees/:employeeCode', async (req, res, next) => {
             }
         }
         if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(employee.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
         return sendData(res, employee);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/employees', async (req, res, next) => {
+router.post('/employees', requirePermission('EMPLOYEES', 'can_create'), async (req, res, next) => {
     try { return sendData(res, await employeeService.createEmployee(req.body), 201); } catch (error) { return sendError(next, error); }
 });
 
-router.post('/employees/upload-document', upload.single('file'), (req, res, next) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ success: false, message: 'No file uploaded' });
-        }
-
-        const fileUrl = `/uploads/${req.file.filename}`;
-        return res.json({
-            success: true,
-            url: fileUrl,
-            message: 'Document uploaded successfully',
-            data: {
-                url: fileUrl,
-                filename: req.file.filename,
-                originalName: req.file.originalname,
-                size: req.file.size,
-                mimetype: req.file.mimetype
-            }
-        });
-    } catch (error) {
-        return sendError(next, error);
-    }
-});
-
-router.put('/employees/profile/update', async (req, res, next) => {
-    try {
-        const emp = await getRequesterEmployee(req.user);
-        if (!emp) return res.status(400).json({ success: false, message: 'User is not linked to an employee' });
-        return sendData(res, await employeeService.updateEmployee(emp.employee_code, req.body));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.put('/employees/:employeeCode', async (req, res, next) => {
+router.put('/employees/:employeeCode', requirePermission('EMPLOYEES', 'can_update'), async (req, res, next) => {
     try {
         let code = req.params.employeeCode;
         if (/^\d+$/.test(code)) {
@@ -350,7 +492,7 @@ router.put('/employees/:employeeCode', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/employees/:employeeCode', async (req, res, next) => {
+router.delete('/employees/:employeeCode', requirePermission('EMPLOYEES', 'can_delete'), async (req, res, next) => {
     try {
         let code = req.params.employeeCode;
         if (/^\d+$/.test(code)) {
@@ -364,180 +506,221 @@ router.delete('/employees/:employeeCode', async (req, res, next) => {
 // ==========================================
 // 2. SITES & SHIFTS
 // ==========================================
-router.get('/sites', async (req, res, next) => {
-    try { return sendData(res, await siteService.getAllSites()); } catch (error) { return sendError(next, error); }
-});
-router.post('/sites', async (req, res, next) => {
+router.get(
+    '/sites',
+    requireAnyPermission('SITES.can_view', 'EMPLOYEES.can_view', 'DPR.can_view', 'PROCUREMENT.can_view', 'ATTENDANCE.can_view', 'INVOICES.can_view', 'ASSETS.can_view', 'RECRUITMENT.can_view'),
+    async (req, res, next) => {
+        try { return sendData(res, await siteService.getAllSites()); } catch (error) { return sendError(next, error); }
+    }
+);
+router.post('/sites', requirePermission('SITES', 'can_create'), async (req, res, next) => {
     try { return sendData(res, await siteService.createSite(req.body), 201); } catch (error) { return sendError(next, error); }
 });
-router.put('/sites/:id', async (req, res, next) => {
+router.put('/sites/:id', requirePermission('SITES', 'can_update'), async (req, res, next) => {
     try { return sendData(res, await siteService.updateSite(req.params.id, req.body)); } catch (error) { return sendError(next, error); }
 });
-router.delete('/sites/:id', async (req, res, next) => {
+router.delete('/sites/:id', requirePermission('SITES', 'can_delete'), async (req, res, next) => {
     try { return sendData(res, await siteService.deleteSite(req.params.id)); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/shifts', async (req, res, next) => {
-    try { return sendData(res, await shiftService.getAllShifts()); } catch (error) { return sendError(next, error); }
-});
-router.post('/shifts', async (req, res, next) => {
+router.get(
+    '/shifts',
+    requireAnyPermission('SITES.can_view', 'EMPLOYEES.can_view', 'ATTENDANCE.can_view'),
+    async (req, res, next) => {
+        try { return sendData(res, await shiftService.getAllShifts()); } catch (error) { return sendError(next, error); }
+    }
+);
+router.post('/shifts', requirePermission('SITES', 'can_create'), async (req, res, next) => {
     try { return sendData(res, await shiftService.createShift(req.body), 201); } catch (error) { return sendError(next, error); }
 });
-router.put('/shifts/:id', async (req, res, next) => {
+router.put('/shifts/:id', requirePermission('SITES', 'can_update'), async (req, res, next) => {
     try { return sendData(res, await shiftService.updateShift(req.params.id, req.body)); } catch (error) { return sendError(next, error); }
 });
-router.delete('/shifts/:id', async (req, res, next) => {
+router.delete('/shifts/:id', requirePermission('SITES', 'can_delete'), async (req, res, next) => {
     try { return sendData(res, await shiftService.deleteShift(req.params.id)); } catch (error) { return sendError(next, error); }
 });
-router.put('/shifts/:employeeCode/assign', async (req, res, next) => {
+router.put('/shifts/:employeeCode/assign', requireAnyPermission('SITES.can_update', 'EMPLOYEES.can_update'), async (req, res, next) => {
     try { return sendData(res, await shiftService.assignShiftToEmployee(req.params.employeeCode, req.body.shift_id)); } catch (error) { return sendError(next, error); }
 });
 
 // ==========================================
 // 3. STATUTORY REGISTER IMPORT
 // ==========================================
-router.post('/statutory/import-register', upload.single('file'), async (req, res, next) => {
-    try {
-        if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-        const fileBuffer = getFileBuffer(req.file);
-        const result = await statutoryService.importRegister(fileBuffer, req.body.site_id || 1);
-        return res.json({ success: true, data: result });
-    } catch (error) { return sendError(next, error); }
-});
+router.post(
+    '/statutory/import-register',
+    requireAnyPermission('EMPLOYEES.can_create', 'REPORTS.can_export'),
+    upload.uploadExcel.single('file'),
+    async (req, res, next) => {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+            const fileBuffer = getFileBuffer(req.file);
+            const result = await statutoryService.importRegister(fileBuffer, req.body.site_id || 1);
+            return res.json({ success: true, data: result });
+        } catch (error) { return sendError(next, error); }
+    }
+);
 
 // ==========================================
 // 4. DAILY ATTENDANCE & TRACKER
 // ==========================================
-router.post('/daily-attendance/import', upload.single('file'), async (req, res, next) => {
-    try {
-        if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-        const fileBuffer = getFileBuffer(req.file);
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rawRows = xlsx.utils.sheet_to_json(sheet);
+router.post(
+    '/daily-attendance/import',
+    requirePermission('ATTENDANCE', 'can_create'),
+    upload.uploadExcel.single('file'),
+    async (req, res, next) => {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+            const fileBuffer = getFileBuffer(req.file);
+            const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: false });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = xlsx.utils.sheet_to_json(sheet);
 
-        const rows = rawRows.map(r => ({
-            employee_code: r.employee_code || r['Employee Code'] || r['Emp Code'] || r['emp_code'] || r.code,
-            date: r.date || r['Date'] || r['punch_date'] || r['Punch Date'],
-            status: r.status || r['Status'] || 'P',
-            check_in: r.check_in || r['Check In'] || r['in_time'] || r['In Time'],
-            check_out: r.check_out || r['Check Out'] || r['out_time'] || r['Out Time']
-        })).filter(r => r.employee_code && r.date);
+            const rows = rawRows.map((r, idx) => ({
+                _rowNumber: idx + 2,
+                employee_code: r.employee_code || r['Employee Code'] || r['Emp Code'] || r['emp_code'] || r.code,
+                date: parseExcelDate(r.date || r['Date'] || r['punch_date'] || r['Punch Date']),
+                status: r.status || r['Status'] || 'P',
+                check_in: parseExcelTime(r.check_in || r['Check In'] || r['in_time'] || r['In Time']),
+                check_out: parseExcelTime(r.check_out || r['Check Out'] || r['out_time'] || r['Out Time'])
+            })).filter(r => r.employee_code || r.date);
 
-        const results = await attendanceDailyService.bulkImport(rows);
-        return res.json({ success: true, summary: results, errors: results.errors, data: results });
-    } catch (error) { return sendError(next, error); }
-});
+            const results = await attendanceDailyService.bulkImport(rows);
+            return res.json({ success: true, summary: results, errors: results.errors, data: results });
+        } catch (error) { return sendError(next, error); }
+    }
+);
 
-router.get('/daily-attendance/list', async (req, res, next) => {
+router.get('/daily-attendance/list', requirePermission('ATTENDANCE', 'can_view'), async (req, res, next) => {
     try {
         const { startDate, endDate, employeeId } = req.query;
         const now = new Date();
         const istToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
-        // Default to last 30 days to ensure recent history is immediately visible
         const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
         const istDefaultStart = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(past);
 
         const start = startDate || istDefaultStart;
         const end = endDate || istToday;
-        const logs = await attendanceDailyService.getAttendanceByDateRange(start, end, employeeId);
+
+        let scopedEmployeeId = employeeId || null;
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp) return sendData(res, []);
+            scopedEmployeeId = reqEmp.employee_id;
+        }
+
+        const logs = await attendanceDailyService.getAttendanceByDateRange(start, end, scopedEmployeeId);
         return sendData(res, logs);
     } catch (error) { return sendError(next, error); }
 });
 
-// Time tracker endpoints
-router.get('/attendance/tracker/history', async (req, res, next) => {
+// Time tracker endpoints (always scoped to requester's own employee record)
+router.get('/attendance/tracker/history', requirePermission('ATTENDANCE', 'can_view'), async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
         if (!emp) return res.json([]);
         const now = new Date();
         const end = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
-        // Look back 90 days to ensure full history is always available
         const past = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
         const start = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(past);
-        const logs = await attendanceDailyService.getAttendanceByDateRange(start, end, emp.employee_id);
+        const logs = await attendanceDailyService.getTrackerHistory(emp.employee_id, start, end);
         return res.json(logs);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/attendance/tracker/check-in', async (req, res, next) => {
+router.post('/attendance/tracker/check-in', requirePermission('ATTENDANCE', 'can_create'), async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
-        if (!emp) return res.status(400).json({ success: false, msg: 'Employee not found for current user' });
+        if (!emp) {
+            return res.status(400).json({
+                success: false,
+                msg: 'No employee profile linked to current user',
+                message: 'No employee profile linked to current user'
+            });
+        }
 
-        // Exact Indian Standard Time (IST)
         const { date, time: check_in } = getIstDateTime();
         const { latitude, longitude, location_accuracy, punch_address } = req.body;
+        const hasCoords = latitude !== undefined && latitude !== null && latitude !== '' && !Number.isNaN(Number(latitude));
 
-        const log = await attendanceDailyService.upsertAttendance({
+        const log = await attendanceDailyService.recordPunch({
             employee_id: emp.employee_id,
+            punch_type: 'IN',
             date,
-            status: 'P',
-            source: latitude ? 'GPS' : 'WEB_PORTAL',
-            check_in,
-            latitude: latitude || null,
-            longitude: longitude || null,
+            time: check_in,
+            source: hasCoords ? 'GPS' : 'WEB_PORTAL',
+            latitude: hasCoords ? latitude : null,
+            longitude: hasCoords ? longitude : null,
             location_accuracy: location_accuracy || null,
             punch_address: punch_address || null
         });
-        return res.json({ success: true, check_in, data: log });
+        return res.json({ success: true, date, check_in, data: log });
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/attendance/tracker/check-out', async (req, res, next) => {
+router.post('/attendance/tracker/check-out', requirePermission('ATTENDANCE', 'can_create'), async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
-        if (!emp) return res.status(400).json({ success: false, msg: 'Employee not found for current user' });
+        if (!emp) {
+            return res.status(400).json({
+                success: false,
+                msg: 'No employee profile linked to current user',
+                message: 'No employee profile linked to current user'
+            });
+        }
 
-        // Exact Indian Standard Time (IST)
         const { date, time: check_out } = getIstDateTime();
         const { latitude, longitude, location_accuracy, punch_address } = req.body;
+        const hasCoords = latitude !== undefined && latitude !== null && latitude !== '' && !Number.isNaN(Number(latitude));
 
-        const log = await attendanceDailyService.upsertAttendance({
+        const log = await attendanceDailyService.recordPunch({
             employee_id: emp.employee_id,
+            punch_type: 'OUT',
             date,
-            status: 'P',
-            source: latitude ? 'GPS' : 'WEB_PORTAL',
-            check_out,
-            latitude: latitude || null,
-            longitude: longitude || null,
+            time: check_out,
+            source: hasCoords ? 'GPS' : 'WEB_PORTAL',
+            latitude: hasCoords ? latitude : null,
+            longitude: hasCoords ? longitude : null,
             location_accuracy: location_accuracy || null,
             punch_address: punch_address || null
         });
-        return res.json({ success: true, check_out, data: log });
+        return res.json({ success: true, check_out, date: log?.date || date, data: log });
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/attendance/gps-punch', async (req, res, next) => {
+router.post('/attendance/gps-punch', requirePermission('ATTENDANCE', 'can_create'), async (req, res, next) => {
     try {
         const { employee_id, latitude, longitude, location_accuracy, punch_address, punch_type } = req.body;
-        const targetEmp = employee_id ? await resolveEmployee(employee_id) : await getRequesterEmployee(req.user);
-        if (!targetEmp) return res.status(400).json({ success: false, message: 'Employee not found' });
+        const targetEmp = (!isSelfScopedEmployee(req.user) && employee_id)
+            ? await resolveEmployee(employee_id)
+            : await getRequesterEmployee(req.user);
+        if (!targetEmp) {
+            return res.status(400).json({
+                success: false,
+                msg: 'No employee profile linked or found',
+                message: 'No employee profile linked or found'
+            });
+        }
 
-        // Exact Indian Standard Time (IST)
         const { date, time: timeStr } = getIstDateTime();
+        const normalizedType = String(punch_type || 'IN').toUpperCase() === 'OUT' ? 'OUT' : 'IN';
 
-        const payload = {
+        const log = await attendanceDailyService.recordPunch({
             employee_id: targetEmp.employee_id,
+            punch_type: normalizedType,
             date,
-            status: 'P',
+            time: timeStr,
             source: 'GPS',
             latitude,
             longitude,
             location_accuracy,
             punch_address
-        };
-
-        if (punch_type === 'OUT') {
-            payload.check_out = timeStr;
-        } else {
-            payload.check_in = timeStr;
-        }
-
-        const log = await attendanceDailyService.upsertAttendance(payload);
+        });
         return res.json({
             success: true,
-            message: `GPS punch recorded successfully at ${timeStr}`,
+            date: log?.date || date,
+            time: timeStr,
+            punch_type: normalizedType,
+            message: `GPS punch ${normalizedType} recorded successfully at ${timeStr} IST`,
             data: log
         });
     } catch (error) { return sendError(next, error); }
@@ -546,31 +729,37 @@ router.post('/attendance/gps-punch', async (req, res, next) => {
 // ==========================================
 // 5. BIOMETRIC LOGS
 // ==========================================
-router.post('/biometric/import', upload.single('file'), async (req, res, next) => {
-    try {
-        if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-        const fileBuffer = getFileBuffer(req.file);
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rawRows = xlsx.utils.sheet_to_json(sheet);
+router.post(
+    '/biometric/import',
+    requirePermission('ATTENDANCE', 'can_create'),
+    upload.uploadExcel.single('file'),
+    async (req, res, next) => {
+        try {
+            if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+            const fileBuffer = getFileBuffer(req.file);
+            const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: false });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rawRows = xlsx.utils.sheet_to_json(sheet);
 
-        const logs = rawRows.map(r => ({
-            employee_code: r.employee_code || r['Employee Code'] || r['Emp Code'] || r['emp_code'],
-            punch_date: r.punch_date || r['Punch Date'] || r.date || r['Date'],
-            in_time: r.in_time || r['In Time'] || r.check_in || r['Check In'],
-            out_time: r.out_time || r['Out Time'] || r.check_out || r['Check Out'],
-            device_id: r.device_id || r['Device ID'] || 'BIOMETRIC-1'
-        })).filter(r => r.employee_code && r.punch_date);
+            const logs = rawRows.map((r, idx) => ({
+                _rowNumber: idx + 2,
+                employee_code: r.employee_code || r['Employee Code'] || r['Emp Code'] || r['emp_code'],
+                punch_date: parseExcelDate(r.punch_date || r['Punch Date'] || r.date || r['Date']),
+                in_time: parseExcelTime(r.in_time || r['In Time'] || r.check_in || r['Check In']),
+                out_time: parseExcelTime(r.out_time || r['Out Time'] || r.check_out || r['Check Out']),
+                device_id: r.device_id || r['Device ID'] || 'BIOMETRIC-1'
+            })).filter(r => r.employee_code || r.punch_date);
 
-        const results = await biometricService.importBiometricLogs(logs, {
-            upload_batch_id: `BATCH-${Date.now()}`,
-            uploaded_by: req.user.email || 'Admin'
-        });
-        return res.json({ success: true, summary: results, errors: results.errors, data: results });
-    } catch (error) { return sendError(next, error); }
-});
+            const results = await biometricService.importBiometricLogs(logs, {
+                upload_batch_id: `BATCH-${Date.now()}`,
+                uploaded_by: req.user.email || 'Admin'
+            });
+            return res.json({ success: true, summary: results, errors: results.errors, data: results });
+        } catch (error) { return sendError(next, error); }
+    }
+);
 
-router.get('/biometric/pending', async (req, res, next) => {
+router.get('/biometric/pending', requireAnyPermission('ATTENDANCE.can_update', 'ATTENDANCE.can_approve'), async (req, res, next) => {
     try {
         const result = await db.query('SELECT * FROM biometric_logs WHERE is_processed = FALSE ORDER BY punch_date DESC LIMIT 100');
         return sendData(res, result.rows);
@@ -580,29 +769,47 @@ router.get('/biometric/pending', async (req, res, next) => {
 // ==========================================
 // 6. LEAVES
 // ==========================================
-router.get('/leave-types', async (req, res, next) => {
+router.get('/leave-types', requirePermission('LEAVES', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await leaveService.getLeaveTypes()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/leaves/types', async (req, res, next) => {
+router.get('/leaves/types', requirePermission('LEAVES', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await leaveService.getLeaveTypes()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/leaves/balance/:code', async (req, res, next) => {
+router.get('/leaves/balance/:code', requirePermission('LEAVES', 'can_view'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.code);
         if (!emp) return sendData(res, []);
-        const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied: cannot view other employees leave balances' });
+            }
+        }
+
+        const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
         const balances = await leaveService.getLeaveBalance(emp.employee_id, year);
         return sendData(res, balances);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/leaves/apply', async (req, res, next) => {
+router.post('/leaves/apply', requirePermission('LEAVES', 'can_create'), async (req, res, next) => {
     try {
         let emp = null;
         const empIdentifier = req.body.employee_code || req.body.employee_id;
-        if (empIdentifier) {
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp) return res.status(400).json({ success: false, message: 'No employee profile linked to your account' });
+            if (empIdentifier) {
+                const requestedEmp = await resolveEmployee(empIdentifier);
+                if (!requestedEmp || Number(requestedEmp.employee_id) !== Number(reqEmp.employee_id)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: employees can only apply leave for themselves' });
+                }
+            }
+            emp = reqEmp;
+        } else if (empIdentifier) {
             emp = await resolveEmployee(empIdentifier);
         } else {
             emp = await getRequesterEmployee(req.user);
@@ -611,19 +818,18 @@ router.post('/leaves/apply', async (req, res, next) => {
         if (!emp) return res.status(400).json({ success: false, message: 'Employee not found. Please select a valid employee.' });
         const empId = emp.employee_id;
 
-        const isAdmin = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(req.user?.roleCode);
-        const autoApprove = isAdmin && (req.body.auto_approve === true || req.body.auto_approve === 'true');
+        const isApprover = ['SUPER_ADMIN', 'HR_ADMIN', 'SITE_MANAGER', 'DEPT_MANAGER'].includes(String(req.user?.roleCode || '').toUpperCase());
+        const autoApprove = isApprover && (req.body.auto_approve === true || req.body.auto_approve === 'true');
 
         const leave = await leaveService.applyLeave({
             ...req.body,
-            employee_id: parseInt(empId)
+            employee_id: parseInt(empId, 10)
         });
 
-        // If requested by Admin to auto-approve directly
         if (autoApprove && leave && leave.request_id) {
             const approver = await getRequesterEmployee(req.user);
             const approverId = approver ? approver.employee_id : null;
-            const remarks = req.body.remarks || `Directly granted by ${req.user?.firstName || 'Admin'}`;
+            const remarks = req.body.remarks || `Directly granted by ${req.user?.firstName || 'Manager'}`;
             const approved = await leaveService.approveLeave(leave.request_id, approverId, remarks);
             return sendData(res, approved, 201);
         }
@@ -632,24 +838,40 @@ router.post('/leaves/apply', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/leaves/history/:code', async (req, res, next) => {
+router.get('/leaves/history/:code', requirePermission('LEAVES', 'can_view'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.code);
         if (!emp) return sendData(res, []);
-        const history = await leaveService.getLeaveHistory(emp.employee_id);
+
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied: cannot view other employees leave history' });
+            }
+        }
+
+        const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+        const history = await leaveService.getLeaveHistory(emp.employee_id, year);
         return sendData(res, history);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/leaves/pending', async (req, res, next) => {
+router.get('/leaves/pending', requirePermission('LEAVES', 'can_approve'), async (req, res, next) => {
     try { return sendData(res, await leaveService.getPendingRequests()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/leaves/all-requests', async (req, res, next) => {
-    try { return sendData(res, await leaveService.getAllRequests(req.query)); } catch (error) { return sendError(next, error); }
+router.get('/leaves/all-requests', requirePermission('LEAVES', 'can_view'), async (req, res, next) => {
+    try {
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp) return sendData(res, []);
+            return sendData(res, await leaveService.getLeaveRequests(reqEmp.employee_id, req.query));
+        }
+        return sendData(res, await leaveService.getAllRequests(req.query));
+    } catch (error) { return sendError(next, error); }
 });
 
-router.post('/leaves/:id/approve', async (req, res, next) => {
+router.post('/leaves/:id/approve', requirePermission('LEAVES', 'can_approve'), async (req, res, next) => {
     try {
         const approver = await getRequesterEmployee(req.user);
         const approverId = approver ? approver.employee_id : null;
@@ -658,20 +880,39 @@ router.post('/leaves/:id/approve', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/leaves/:id/reject', async (req, res, next) => {
+router.post('/leaves/:id/reject', requirePermission('LEAVES', 'can_approve'), async (req, res, next) => {
     try {
         const approver = await getRequesterEmployee(req.user);
         const approverId = approver ? approver.employee_id : null;
-        const updated = await leaveService.rejectLeave(req.params.id, approverId, req.body.rejection_reason || 'Rejected by HR');
+        const updated = await leaveService.rejectLeave(req.params.id, approverId, req.body.rejection_reason || 'Rejected by Manager');
         return sendData(res, updated);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/leaves/balance/:code/initialize', async (req, res, next) => {
+router.post('/leaves/:id/cancel', requireAnyPermission('LEAVES.can_create', 'LEAVES.can_update', 'LEAVES.can_delete'), async (req, res, next) => {
+    try {
+        let empId = null;
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp) return res.status(403).json({ success: false, message: 'No linked employee profile' });
+            empId = reqEmp.employee_id;
+        }
+        const cancelled = await leaveService.cancelLeave(req.params.id, empId);
+        return sendData(res, cancelled);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/leaves/balance/:code/initialize', requireAnyPermission('LEAVES.can_create', 'LEAVES.can_update'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.code);
         if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
-        const year = req.body.year ? parseInt(req.body.year) : new Date().getFullYear();
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        }
+        const year = req.body.year ? parseInt(req.body.year, 10) : new Date().getFullYear();
         const init = await leaveService.initializeLeaveBalance(emp.employee_id, year);
         return sendData(res, init);
     } catch (error) { return sendError(next, error); }
@@ -680,53 +921,46 @@ router.post('/leaves/balance/:code/initialize', async (req, res, next) => {
 // ==========================================
 // 7. PAYROLL
 // ==========================================
-router.post('/payroll/generate', async (req, res, next) => {
+router.post('/payroll/generate', requirePermission('PAYROLL', 'can_create'), async (req, res, next) => {
     try {
-        const month = parseInt(req.body.month);
-        const year = parseInt(req.body.year);
-        if (!month || !year) {
-            return res.status(400).json({ success: false, message: 'Month and year are required' });
+        const month = parseInt(req.body.month, 10);
+        const year = parseInt(req.body.year, 10);
+        if (!month || !year || month < 1 || month > 12) {
+            return res.status(400).json({ success: false, message: 'Valid month (1-12) and year are required' });
         }
 
-        // Auto-compile attendance if not present for the period
+        // First aggregate any real daily/biometric/GPS attendance logs into monthly attendance table
+        await attendanceService.aggregateDailyLogs(month, year);
+
+        // For active employees with zero daily logs for the month, generate baseline attendance row
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const defaultWo = Math.floor(daysInMonth / 7);
+        const defaultPresent = daysInMonth - defaultWo;
+
         const existingAttendance = await attendanceService.getAttendanceByPeriod(month, year);
-        if (existingAttendance.length === 0) {
-            const employees = await db.query("SELECT employee_id FROM employees WHERE employment_status = 'ACTIVE'");
-            for (const emp of employees.rows) {
-                const dailyRes = await db.query(`
-                    SELECT
-                        COUNT(CASE WHEN status = 'P' THEN 1 END) as p_cnt,
-                        COUNT(CASE WHEN status = 'A' THEN 1 END) as a_cnt,
-                        COUNT(CASE WHEN status = 'L' THEN 1 END) as l_cnt,
-                        COUNT(CASE WHEN status = 'WO' THEN 1 END) as wo_cnt
-                    FROM attendance_daily
-                    WHERE employee_id = $1
-                      AND EXTRACT(MONTH FROM date) = $2
-                      AND EXTRACT(YEAR FROM date) = $3
-                `, [emp.employee_id, month, year]);
+        const presentEmpIds = new Set(existingAttendance.map(a => a.employee_id));
+        const activeEmps = await db.query("SELECT employee_id FROM employees WHERE employment_status = 'ACTIVE'");
 
-                const daily = dailyRes.rows[0];
-                const totalLogged = parseInt(daily.p_cnt) + parseInt(daily.a_cnt) + parseInt(daily.l_cnt) + parseInt(daily.wo_cnt);
-
-                try {
-                    await attendanceService.createAttendance({
-                        employee_id: emp.employee_id,
-                        month,
-                        year,
-                        total_days: 30,
-                        present_days: totalLogged > 0 ? parseFloat(daily.p_cnt) : 26,
-                        absent_days: totalLogged > 0 ? parseFloat(daily.a_cnt) : 0,
-                        weekly_off_days: totalLogged > 0 ? parseFloat(daily.wo_cnt) : 4,
-                        leave_days: totalLogged > 0 ? parseFloat(daily.l_cnt) : 0,
-                        half_days: 0,
-                        overtime_hours: 0,
-                        day_wise_attendance: {},
-                        uploaded_by: 'AutoSync',
-                        remarks: 'Compiled from system logs'
-                    });
-                } catch {
-                    // Ignore duplicate
-                }
+        for (const emp of activeEmps.rows) {
+            if (presentEmpIds.has(emp.employee_id)) continue;
+            try {
+                await attendanceService.createAttendance({
+                    employee_id: emp.employee_id,
+                    month,
+                    year,
+                    total_days: daysInMonth,
+                    present_days: defaultPresent,
+                    absent_days: 0,
+                    weekly_off_days: defaultWo,
+                    leave_days: 0,
+                    half_days: 0,
+                    overtime_hours: 0,
+                    day_wise_attendance: {},
+                    uploaded_by: 'AutoSync',
+                    remarks: 'Default active cycle compiled by system'
+                });
+            } catch {
+                // Ignore duplicate
             }
         }
 
@@ -735,16 +969,16 @@ router.post('/payroll/generate', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/payroll/list', async (req, res, next) => {
+router.get('/payroll/list', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.can_update', 'PAYROLL.can_approve'), async (req, res, next) => {
     try {
-        const month = parseInt(req.query.month);
-        const year = parseInt(req.query.year);
+        const month = parseInt(req.query.month, 10);
+        const year = parseInt(req.query.year, 10);
         const list = await payrollService.getPayrollByPeriod(month, year);
         return sendData(res, list);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/payroll/finalize', async (req, res, next) => {
+router.post('/payroll/finalize', requirePermission('PAYROLL', 'can_approve'), async (req, res, next) => {
     try {
         const { payroll_ids } = req.body;
         if (!payroll_ids || !Array.isArray(payroll_ids) || payroll_ids.length === 0) {
@@ -759,58 +993,74 @@ router.post('/payroll/finalize', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/payroll/config', async (req, res, next) => {
+router.get('/payroll/config', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.can_update', 'PAYROLL.can_approve'), async (req, res, next) => {
     try { return sendData(res, await payrollService.getPayrollConfig()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/payroll/my-history', async (req, res, next) => {
+router.get('/payroll/my-history', requirePermission('PAYROLL', 'can_view'), async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
         if (!emp) return sendData(res, []);
-        const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+        const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
         const records = await payrollService.getPayrollByEmployee(emp.employee_id, { year });
         return sendData(res, records);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/payroll/:id', async (req, res, next) => {
+router.get('/payroll/export/excel', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.can_update', 'PAYROLL.can_approve'), async (req, res, next) => {
+    try {
+        const month = parseInt(req.query.month, 10);
+        const year = parseInt(req.query.year, 10);
+        const payrollList = await payrollService.getPayrollByPeriod(month, year);
+        await excelService.generatePayrollExcel(payrollList, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/payroll/:id(\\d+)', requirePermission('PAYROLL', 'can_view'), async (req, res, next) => {
     try {
         const record = await payrollService.getPayrollById(req.params.id);
         if (!record) return res.status(404).json({ success: false, message: 'Payroll not found' });
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(record.employee_id) !== Number(reqEmp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied: cannot view other employees payroll records' });
+            }
+        }
         return sendData(res, record);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/payroll/payslip/:id/pdf', async (req, res, next) => {
+router.get('/payroll/payslip/:id(\\d+)/pdf', requirePermission('PAYROLL', 'can_view'), async (req, res, next) => {
     try {
         const payroll = await payrollService.getPayrollById(req.params.id);
         if (!payroll) return res.status(404).send('Payslip not found');
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(payroll.employee_id) !== Number(reqEmp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied: cannot download other employees payslips' });
+            }
+        }
         const employee = await employeeService.getEmployeeById(payroll.employee_id);
         await pdfService.generatePayslip(payroll, employee, res);
-    } catch (error) { return sendError(next, error); }
-});
-
-router.get('/payroll/export/excel', async (req, res, next) => {
-    try {
-        const month = parseInt(req.query.month);
-        const year = parseInt(req.query.year);
-        const payrollList = await payrollService.getPayrollByPeriod(month, year);
-        await excelService.generatePayrollExcel(payrollList, res);
     } catch (error) { return sendError(next, error); }
 });
 
 // ==========================================
 // 8. BENEFITS & REIMBURSEMENTS
 // ==========================================
-router.get('/benefits', async (req, res, next) => {
+router.get('/benefits', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await benefitService.getBenefitTypes()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/benefits/types', async (req, res, next) => {
+router.get('/benefits/types', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await benefitService.getBenefitTypes()); } catch (error) { return sendError(next, error); }
 });
 
-router.post('/benefits/assign', async (req, res, next) => {
+router.get('/benefits/assigned', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
+    try { return sendData(res, await benefitService.getAllAssignedBenefits()); } catch (error) { return sendError(next, error); }
+});
+
+router.post('/benefits/assign', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
     try {
         let empId = req.body.employee_id;
         if (req.body.employee_code && !empId) {
@@ -823,56 +1073,76 @@ router.post('/benefits/assign', async (req, res, next) => {
         if (!empId) {
             return res.status(400).json({ success: false, message: 'Please select an employee' });
         }
-        const assigned = await benefitService.assignBenefit({ ...req.body, employee_id: parseInt(empId) });
+        const assigned = await benefitService.assignBenefit({ ...req.body, employee_id: parseInt(empId, 10) });
         return sendData(res, assigned, 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/benefits/my-benefits/:employeeCode', async (req, res, next) => {
+router.get('/benefits/my-benefits/:employeeCode', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.employeeCode);
         if (!emp) return sendData(res, []);
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        }
         const benefits = await benefitService.getEmployeeBenefits(emp.employee_id);
         return sendData(res, benefits);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/reimbursements/apply', async (req, res, next) => {
+router.post('/reimbursements/apply', requirePermission('BENEFITS', 'can_create'), async (req, res, next) => {
     try {
         let emp = null;
         const empIdentifier = req.body.employee_code || req.body.employee_id;
-        if (empIdentifier) {
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp) return res.status(400).json({ success: false, message: 'No linked employee profile' });
+            if (empIdentifier) {
+                const target = await resolveEmployee(empIdentifier);
+                if (!target || Number(target.employee_id) !== Number(reqEmp.employee_id)) {
+                    return res.status(403).json({ success: false, message: 'Access denied: cannot claim reimbursement for another employee' });
+                }
+            }
+            emp = reqEmp;
+        } else if (empIdentifier) {
             emp = await resolveEmployee(empIdentifier);
         } else {
             emp = await getRequesterEmployee(req.user);
         }
 
         if (!emp) return res.status(400).json({ success: false, message: 'Please select an employee' });
-        const empId = emp.employee_id;
-
-        const claim = await benefitService.applyReimbursement({ ...req.body, employee_id: parseInt(empId) });
+        const claim = await benefitService.applyReimbursement({ ...req.body, employee_id: parseInt(emp.employee_id, 10) });
         return sendData(res, claim, 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reimbursements/my/:employeeCode', async (req, res, next) => {
+router.get('/reimbursements/my/:employeeCode', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.employeeCode);
         if (!emp) return sendData(res, []);
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        }
         const claims = await benefitService.getMyReimbursements(emp.employee_id);
         return sendData(res, claims);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reimbursements/pending', async (req, res, next) => {
+router.get('/reimbursements/pending', requirePermission('BENEFITS', 'can_approve'), async (req, res, next) => {
     try { return sendData(res, await benefitService.getPendingReimbursements()); } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reimbursements/all', async (req, res, next) => {
+router.get('/reimbursements/all', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
     try { return sendData(res, await benefitService.getAllReimbursements(req.query.status)); } catch (error) { return sendError(next, error); }
 });
 
-router.post('/reimbursements/approve', async (req, res, next) => {
+router.post('/reimbursements/approve', requirePermission('BENEFITS', 'can_approve'), async (req, res, next) => {
     try {
         const approver = await getRequesterEmployee(req.user);
         const approverId = approver ? approver.employee_id : null;
@@ -881,7 +1151,7 @@ router.post('/reimbursements/approve', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/reimbursements/reject', async (req, res, next) => {
+router.post('/reimbursements/reject', requirePermission('BENEFITS', 'can_approve'), async (req, res, next) => {
     try {
         const approver = await getRequesterEmployee(req.user);
         const approverId = approver ? approver.employee_id : null;
@@ -890,42 +1160,57 @@ router.post('/reimbursements/reject', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/reimbursements/mark-paid', async (req, res, next) => {
+router.post('/reimbursements/mark-paid', requireAnyPermission('BENEFITS.can_approve', 'BENEFITS.can_update'), async (req, res, next) => {
     try {
         const updated = await benefitService.markAsPaid(req.body.claim_id);
         return sendData(res, updated);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/insurance/policies', async (req, res, next) => {
+router.get('/insurance/policies', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await benefitService.getInsurancePolicies());
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/insurance/dependents/:employeeCode', async (req, res, next) => {
+router.get('/insurance/dependents/:employeeCode', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try {
-        const emp = await getEmployeeByCodeOrThrow(req.params.employeeCode);
+        const emp = await resolveEmployee(req.params.employeeCode);
+        if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        }
         return sendData(res, await benefitService.getEmployeeDependents(emp.employee_id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/insurance/dependents', async (req, res, next) => {
+router.post('/insurance/dependents', requirePermission('BENEFITS', 'can_create'), async (req, res, next) => {
     try {
-        let empId = req.body.employee_id;
-        if (!empId && req.body.employee_code) {
-            const emp = await getEmployeeByCodeOrThrow(req.body.employee_code);
-            empId = emp.employee_id;
-        }
-        if (!empId) {
+        let empId = null;
+        if (isSelfScopedEmployee(req.user)) {
             const reqEmp = await getRequesterEmployee(req.user);
-            empId = reqEmp ? reqEmp.employee_id : null;
+            if (!reqEmp) return res.status(400).json({ success: false, message: 'No linked employee profile' });
+            empId = reqEmp.employee_id;
+        } else {
+            const identifier = req.body.employee_id || req.body.employee_code;
+            if (identifier) {
+                const emp = await resolveEmployee(identifier);
+                if (!emp) return res.status(404).json({ success: false, message: 'Employee not found' });
+                empId = emp.employee_id;
+            } else {
+                const reqEmp = await getRequesterEmployee(req.user);
+                empId = reqEmp ? reqEmp.employee_id : null;
+            }
         }
-        return sendData(res, await benefitService.addEmployeeDependent({ ...req.body, employee_id: parseInt(empId) }), 201);
+        if (!empId) return res.status(400).json({ success: false, message: 'Please select an employee' });
+        return sendData(res, await benefitService.addEmployeeDependent({ ...req.body, employee_id: parseInt(empId, 10) }), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/benefits/mis-reports', async (req, res, next) => {
+router.get('/benefits/mis-reports', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
     try {
         return sendData(res, await benefitService.getBenefitsMISReports());
     } catch (error) { return sendError(next, error); }
@@ -934,15 +1219,15 @@ router.get('/benefits/mis-reports', async (req, res, next) => {
 // ==========================================
 // 9. PERKS
 // ==========================================
-router.get('/perks', async (req, res, next) => {
+router.get('/perks', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try { return sendData(res, await perkService.getAllPerkTypes()); } catch (error) { return sendError(next, error); }
 });
 
-router.post('/perks/create', async (req, res, next) => {
+router.post('/perks/create', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
     try { return sendData(res, await perkService.createPerkType(req.body), 201); } catch (error) { return sendError(next, error); }
 });
 
-router.post('/perks/assign', async (req, res, next) => {
+router.post('/perks/assign', requireAnyPermission('BENEFITS.can_update', 'BENEFITS.can_approve'), async (req, res, next) => {
     try {
         let empId = req.body.employee_id;
         if (req.body.employee_code && !empId) {
@@ -955,15 +1240,21 @@ router.post('/perks/assign', async (req, res, next) => {
         if (!empId) {
             return res.status(400).json({ success: false, message: 'Please select an employee' });
         }
-        const assigned = await perkService.assignPerk({ ...req.body, employee_id: parseInt(empId) });
+        const assigned = await perkService.assignPerk({ ...req.body, employee_id: parseInt(empId, 10) });
         return sendData(res, assigned, 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/perks/my/:employeeCode', async (req, res, next) => {
+router.get('/perks/my/:employeeCode', requirePermission('BENEFITS', 'can_view'), async (req, res, next) => {
     try {
         const emp = await resolveEmployee(req.params.employeeCode);
         if (!emp) return sendData(res, []);
+        if (isSelfScopedEmployee(req.user)) {
+            const reqEmp = await getRequesterEmployee(req.user);
+            if (!reqEmp || Number(reqEmp.employee_id) !== Number(emp.employee_id)) {
+                return res.status(403).json({ success: false, message: 'Access denied' });
+            }
+        }
         const perks = await perkService.getEmployeePerks(emp.employee_id);
         return sendData(res, perks);
     } catch (error) { return sendError(next, error); }
@@ -972,68 +1263,67 @@ router.get('/perks/my/:employeeCode', async (req, res, next) => {
 // ==========================================
 // 10. REPORTS
 // ==========================================
-router.get('/reports/pf', async (req, res, next) => {
+router.get('/reports/pf', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getPFReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/esi', async (req, res, next) => {
+router.get('/reports/esi', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getESIReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/pt', async (req, res, next) => {
+router.get('/reports/pt', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getPTReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/bank-transfer', async (req, res, next) => {
+router.get('/reports/bank-transfer', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getBankTransferStatement(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/attendance-summary', async (req, res, next) => {
+router.get('/reports/attendance-summary', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getAttendanceSummaryReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/department-cost', async (req, res, next) => {
+router.get('/reports/department-cost', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getDepartmentCostReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/reports/overtime', async (req, res, next) => {
+router.get('/reports/overtime', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
         return sendData(res, await reportsService.getOvertimeReport(m, y));
     } catch (error) { return sendError(next, error); }
 });
 
-// Generic download reports endpoint
-router.get('/reports/download/:type', async (req, res, next) => {
+router.get('/reports/download/:type', requirePermission('REPORTS', 'can_view'), async (req, res, next) => {
     try {
         const { type } = req.params;
-        const m = parseInt(req.query.month) || (new Date().getMonth() + 1);
-        const y = parseInt(req.query.year) || new Date().getFullYear();
+        const m = parseInt(req.query.month, 10) || (new Date().getMonth() + 1);
+        const y = parseInt(req.query.year, 10) || new Date().getFullYear();
 
         let data;
         if (type === 'pf') data = await reportsService.getPFReport(m, y);
@@ -1052,51 +1342,66 @@ router.get('/reports/download/:type', async (req, res, next) => {
 // ==========================================
 // CLIENT MASTER & INVOICES
 // ==========================================
-router.get('/clients', async (req, res, next) => {
+router.get('/clients', requireAnyPermission('INVOICES.can_view', 'SITES.can_view', 'DPR.can_view'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.getClients());
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/clients', async (req, res, next) => {
+router.post('/clients', requirePermission('INVOICES', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.createClient(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/clients/:id', async (req, res, next) => {
+router.put('/clients/:id', requirePermission('INVOICES', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.updateClient(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/invoices', async (req, res, next) => {
+router.get('/invoices/stats', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.getInvoiceStats());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/invoices', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.getInvoices(req.query));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/invoices', async (req, res, next) => {
+router.post('/invoices', requirePermission('INVOICES', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.createInvoice(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/invoices/:id/status', async (req, res, next) => {
+router.put('/invoices/:id/status', requirePermission('INVOICES', 'can_update'), async (req, res, next) => {
     try {
         const { status, payment_mode } = req.body;
         return sendData(res, await invoiceService.updateInvoiceStatus(req.params.id, status, { payment_mode }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/invoices/stats', async (req, res, next) => {
+router.put('/invoices/:id(\\d+)', requirePermission('INVOICES', 'can_update'), async (req, res, next) => {
     try {
-        return sendData(res, await invoiceService.getInvoiceStats());
+        return sendData(res, await invoiceService.updateInvoice(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/compliance/alerts', async (req, res, next) => {
+router.delete('/invoices/:id(\\d+)', requirePermission('INVOICES', 'can_delete'), async (req, res, next) => {
     try {
+        return sendData(res, await invoiceService.deleteInvoice(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/compliance/alerts', requireAnyPermission('REPORTS.can_view', 'EMPLOYEES.can_view', 'SITES.can_view', 'INVOICES.can_view'), async (req, res, next) => {
+    try {
+        if (String(req.user?.roleCode || '').toUpperCase() === 'CLIENT_LOGIN') {
+            return sendData(res, { summary: {}, alerts: [] });
+        }
         return sendData(res, await invoiceService.getComplianceAlerts());
     } catch (error) { return sendError(next, error); }
 });
@@ -1104,37 +1409,49 @@ router.get('/compliance/alerts', async (req, res, next) => {
 // ==========================================
 // RECRUITMENT & ONBOARDING
 // ==========================================
-router.get('/recruitment/requisitions', async (req, res, next) => {
+router.get('/recruitment/requisitions', requirePermission('RECRUITMENT', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.getRequisitions());
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/requisitions', async (req, res, next) => {
+router.post('/recruitment/requisitions', requirePermission('RECRUITMENT', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.createRequisition(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/recruitment/requisitions/:id', async (req, res, next) => {
+router.put('/recruitment/requisitions/:id', requirePermission('RECRUITMENT', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.updateRequisition(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/recruitment/candidates', async (req, res, next) => {
+router.delete('/recruitment/requisitions/:id', requirePermission('RECRUITMENT', 'can_delete'), async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.deleteRequisition(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/recruitment/candidates', requirePermission('RECRUITMENT', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.getCandidates(req.query));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/candidates', async (req, res, next) => {
+router.post('/recruitment/candidates', requirePermission('RECRUITMENT', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.createCandidate(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/recruitment/candidates/:id/stage', async (req, res, next) => {
+router.delete('/recruitment/candidates/:id', requirePermission('RECRUITMENT', 'can_delete'), async (req, res, next) => {
+    try {
+        return sendData(res, await recruitmentService.deleteCandidate(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/recruitment/candidates/:id/stage', requirePermission('RECRUITMENT', 'can_update'), async (req, res, next) => {
     try {
         const { stage, interview_date, interviewer_name, interview_feedback, rating } = req.body;
         return sendData(res, await recruitmentService.updateCandidateStage(req.params.id, stage, {
@@ -1143,19 +1460,19 @@ router.put('/recruitment/candidates/:id/stage', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/recruitment/offers', async (req, res, next) => {
+router.get('/recruitment/offers', requirePermission('RECRUITMENT', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.getOffers());
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/offers', async (req, res, next) => {
+router.post('/recruitment/offers', requirePermission('RECRUITMENT', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.createOffer(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/recruitment/offers/:id/pdf', async (req, res, next) => {
+router.get('/recruitment/offers/:id/pdf', requirePermission('RECRUITMENT', 'can_view'), async (req, res, next) => {
     try {
         const offer = await recruitmentService.getOfferById(req.params.id);
         if (!offer) return res.status(404).json({ success: false, message: 'Offer letter not found' });
@@ -1164,45 +1481,45 @@ router.get('/recruitment/offers/:id/pdf', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/offers/:id/approve-salary', async (req, res, next) => {
+router.post('/recruitment/offers/:id/approve-salary', requirePermission('RECRUITMENT', 'can_approve'), async (req, res, next) => {
     try {
         const approver = req.body.approver || req.user?.fullName || req.user?.username || 'HR Manager';
         return sendData(res, await recruitmentService.approveSalary(req.params.id, approver));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/offers/:id/approve-management', async (req, res, next) => {
+router.post('/recruitment/offers/:id/approve-management', requirePermission('RECRUITMENT', 'can_approve'), async (req, res, next) => {
     try {
         const approver = req.body.approver || req.user?.fullName || req.user?.username || 'Director';
         return sendData(res, await recruitmentService.approveManagement(req.params.id, approver));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/offers/:id/dispatch-email', async (req, res, next) => {
+router.post('/recruitment/offers/:id/dispatch-email', requireAnyPermission('RECRUITMENT.can_create', 'RECRUITMENT.can_update'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.dispatchEmail(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/offers/:id/accept', async (req, res, next) => {
+router.post('/recruitment/offers/:id/accept', requirePermission('RECRUITMENT', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.acceptOffer(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/recruitment/candidates/:id/documents', async (req, res, next) => {
+router.put('/recruitment/candidates/:id/documents', requirePermission('RECRUITMENT', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.updateCandidateDocuments(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/recruitment/offers/:id/status', async (req, res, next) => {
+router.put('/recruitment/offers/:id/status', requirePermission('RECRUITMENT', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.updateOfferStatus(req.params.id, req.body.status));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/recruitment/candidates/:id/convert-to-employee', async (req, res, next) => {
+router.post('/recruitment/candidates/:id/convert-to-employee', requireAnyPermission('RECRUITMENT.can_approve', 'EMPLOYEES.can_create'), async (req, res, next) => {
     try {
         return sendData(res, await recruitmentService.convertToEmployee(req.params.id, req.body), 201);
     } catch (error) { return sendError(next, error); }
@@ -1211,102 +1528,108 @@ router.post('/recruitment/candidates/:id/convert-to-employee', async (req, res, 
 // ==========================================
 // VENDOR MANAGEMENT ROUTES
 // ==========================================
-router.get('/vendors/stats', async (req, res, next) => {
+router.get('/vendors/stats', requireAnyPermission('VENDORS.can_view', 'DPR.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
     try {
         return sendData(res, await vendorService.getVendorStats());
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/vendors', async (req, res, next) => {
-    try {
-        return sendData(res, await vendorService.getVendors(req.query));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.post('/vendors', async (req, res, next) => {
-    try {
-        return sendData(res, await vendorService.createVendor(req.body), 201);
-    } catch (error) { return sendError(next, error); }
-});
-
-router.put('/vendors/:id', async (req, res, next) => {
-    try {
-        return sendData(res, await vendorService.updateVendor(req.params.id, req.body));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.delete('/vendors/:id', async (req, res, next) => {
-    try {
-        return sendData(res, await vendorService.deleteVendor(req.params.id));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.get('/vendors/agreements', async (req, res, next) => {
+router.get('/vendors/agreements', requirePermission('VENDORS', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await vendorService.getAgreements(req.query.vendor_id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/vendors/agreements', async (req, res, next) => {
+router.post('/vendors/agreements', requirePermission('VENDORS', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await vendorService.createAgreement(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/vendors/agreements/:id', async (req, res, next) => {
+router.put('/vendors/agreements/:id', requirePermission('VENDORS', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.updateAgreement(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/vendors/agreements/:id', requirePermission('VENDORS', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await vendorService.deleteAgreement(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendors', requireAnyPermission('VENDORS.can_view', 'DPR.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.getVendors(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/vendors', requirePermission('VENDORS', 'can_create'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.createVendor(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/vendors/:id(\\d+)', requirePermission('VENDORS', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.updateVendor(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/vendors/:id(\\d+)', requirePermission('VENDORS', 'can_delete'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorService.deleteVendor(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
 // ==========================================
 // ASSET MANAGEMENT ROUTES
 // ==========================================
-router.get('/assets/stats', async (req, res, next) => {
+router.get('/assets/stats', requirePermission('ASSETS', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await assetService.getAssetStats());
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/assets', async (req, res, next) => {
-    try {
-        return sendData(res, await assetService.getAssets(req.query));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.post('/assets', async (req, res, next) => {
-    try {
-        return sendData(res, await assetService.createAsset(req.body), 201);
-    } catch (error) { return sendError(next, error); }
-});
-
-router.put('/assets/:id', async (req, res, next) => {
-    try {
-        return sendData(res, await assetService.updateAsset(req.params.id, req.body));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.delete('/assets/:id', async (req, res, next) => {
-    try {
-        return sendData(res, await assetService.deleteAsset(req.params.id));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.get('/assets/allocations', async (req, res, next) => {
+router.get('/assets/allocations', requirePermission('ASSETS', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await assetService.getAllocations(req.query));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/assets/allocate', async (req, res, next) => {
+router.post('/assets/allocate', requirePermission('ASSETS', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await assetService.allocateAsset(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/assets/return/:id', async (req, res, next) => {
+router.post('/assets/return/:id', requirePermission('ASSETS', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await assetService.returnAsset(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/assets', requirePermission('ASSETS', 'can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.getAssets(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/assets', requirePermission('ASSETS', 'can_create'), async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.createAsset(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/assets/:id(\\d+)', requirePermission('ASSETS', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.updateAsset(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/assets/:id(\\d+)', requirePermission('ASSETS', 'can_delete'), async (req, res, next) => {
+    try {
+        return sendData(res, await assetService.deleteAsset(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
@@ -1316,18 +1639,30 @@ router.post('/assets/return/:id', async (req, res, next) => {
 router.post('/ai/chat', async (req, res, next) => {
     try {
         const { message, context } = req.body;
-        return sendData(res, await aiService.handleChatMessage(message, context));
+        return sendData(res, await aiService.handleChatMessage(message, {
+            role: req.user?.roleCode,
+            ...(context || {})
+        }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/ai/screen-candidate/:id', async (req, res, next) => {
+router.post('/ai/screen-candidate/:id', requireAnyPermission('RECRUITMENT.can_view', 'RECRUITMENT.can_update'), async (req, res, next) => {
     try {
         return sendData(res, await aiService.screenCandidate(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/ai/compliance-prediction', async (req, res, next) => {
+router.get('/ai/compliance-prediction', requireAnyPermission('REPORTS.can_view', 'DASHBOARD.can_view'), async (req, res, next) => {
     try {
+        if (String(req.user?.roleCode || '').toUpperCase() === 'CLIENT_LOGIN') {
+            return sendData(res, {
+                compliance_health_score: 100,
+                risk_level: 'LOW_RISK',
+                days_to_pf_esic_deadline: 0,
+                risk_factors: [],
+                total_active_staff: 0
+            });
+        }
         return sendData(res, await aiService.getPredictiveCompliance());
     } catch (error) { return sendError(next, error); }
 });
@@ -1335,14 +1670,14 @@ router.get('/ai/compliance-prediction', async (req, res, next) => {
 // ==========================================
 // DPR (DAILY PROGRESS REPORT) ROUTES
 // ==========================================
-router.get('/dpr', async (req, res, next) => {
+router.get('/dpr', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, search, start_date, end_date } = req.query;
         return sendData(res, await dprService.getAllDprs({ site_id, search, start_date, end_date }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dpr/:id(\\d+)', async (req, res, next) => {
+router.get('/dpr/:id(\\d+)', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);
         if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
@@ -1350,26 +1685,26 @@ router.get('/dpr/:id(\\d+)', async (req, res, next) => {
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/dpr', async (req, res, next) => {
+router.post('/dpr', requirePermission('DPR', 'can_create'), async (req, res, next) => {
     try {
         const dpr = await dprService.createDpr(req.body, req.user?.userId);
         return sendData(res, dpr, 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/dpr/:id(\\d+)', async (req, res, next) => {
+router.put('/dpr/:id(\\d+)', requirePermission('DPR', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await dprService.updateDpr(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/dpr/:id(\\d+)', async (req, res, next) => {
+router.delete('/dpr/:id(\\d+)', requirePermission('DPR', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await dprService.deleteDpr(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dpr/:id(\\d+)/pdf', async (req, res, next) => {
+router.get('/dpr/:id(\\d+)/pdf', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);
         if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
@@ -1380,42 +1715,42 @@ router.get('/dpr/:id(\\d+)/pdf', async (req, res, next) => {
 // ==========================================
 // TRENCH DEWATERING & SPECIAL SITE LOGS
 // ==========================================
-router.get('/dpr/trench-logs/export-pdf', async (req, res, next) => {
+router.get('/dpr/trench-logs/export-pdf', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, month, year, search, start_date, end_date } = req.query;
         await trenchDewateringService.generatePdf({ site_id, month, year, search, start_date, end_date }, res);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/dpr/trench-logs', async (req, res, next) => {
-    try {
-        const { site_id, month, year, search, start_date, end_date } = req.query;
-        return sendData(res, await trenchDewateringService.getLogs({ site_id, month, year, search, start_date, end_date }));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.get('/dpr/trench-logs/stats', async (req, res, next) => {
+router.get('/dpr/trench-logs/stats', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, month, year } = req.query;
         return sendData(res, await trenchDewateringService.getStats({ site_id, month, year }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/dpr/trench-logs', async (req, res, next) => {
+router.get('/dpr/trench-logs', requirePermission('DPR', 'can_view'), async (req, res, next) => {
+    try {
+        const { site_id, month, year, search, start_date, end_date } = req.query;
+        return sendData(res, await trenchDewateringService.getLogs({ site_id, month, year, search, start_date, end_date }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/dpr/trench-logs', requirePermission('DPR', 'can_create'), async (req, res, next) => {
     try {
         const log = await trenchDewateringService.createLog(req.body, req.user?.userId);
         return sendData(res, log, 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/dpr/trench-logs/:id', async (req, res, next) => {
+router.put('/dpr/trench-logs/:id', requirePermission('DPR', 'can_update'), async (req, res, next) => {
     try {
         const log = await trenchDewateringService.updateLog(req.params.id, req.body);
         return sendData(res, log);
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/dpr/trench-logs/:id', async (req, res, next) => {
+router.delete('/dpr/trench-logs/:id', requirePermission('DPR', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await trenchDewateringService.deleteLog(req.params.id));
     } catch (error) { return sendError(next, error); }
@@ -1424,40 +1759,40 @@ router.delete('/dpr/trench-logs/:id', async (req, res, next) => {
 // ==========================================
 // PROCUREMENT & MATERIAL TRACKER ROUTES
 // ==========================================
-router.get('/procurement/export-pdf', async (req, res, next) => {
+router.get('/procurement/export-pdf', requirePermission('PROCUREMENT', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, po_status, vendor, search, stage } = req.query;
         await procurementService.generatePdf({ site_id, po_status, vendor, search, stage }, res);
     } catch (error) { return sendError(next, error); }
 });
 
-router.get('/procurement', async (req, res, next) => {
-    try {
-        const { site_id, po_status, vendor, search, stage } = req.query;
-        return sendData(res, await procurementService.getAllItems({ site_id, po_status, vendor, search, stage }));
-    } catch (error) { return sendError(next, error); }
-});
-
-router.get('/procurement/stats', async (req, res, next) => {
+router.get('/procurement/stats', requirePermission('PROCUREMENT', 'can_view'), async (req, res, next) => {
     try {
         const { site_id } = req.query;
         return sendData(res, await procurementService.getStats({ site_id }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/procurement', async (req, res, next) => {
+router.get('/procurement', requirePermission('PROCUREMENT', 'can_view'), async (req, res, next) => {
+    try {
+        const { site_id, po_status, vendor, search, stage } = req.query;
+        return sendData(res, await procurementService.getAllItems({ site_id, po_status, vendor, search, stage }));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/procurement', requirePermission('PROCUREMENT', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await procurementService.createItem(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/procurement/:id', async (req, res, next) => {
+router.put('/procurement/:id(\\d+)', requirePermission('PROCUREMENT', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await procurementService.updateItem(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/procurement/:id', async (req, res, next) => {
+router.delete('/procurement/:id(\\d+)', requirePermission('PROCUREMENT', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await procurementService.deleteItem(req.params.id));
     } catch (error) { return sendError(next, error); }
@@ -1466,7 +1801,7 @@ router.delete('/procurement/:id', async (req, res, next) => {
 // ==========================================
 // SITE OPERATIONS & DPR HUB ROUTES
 // ==========================================
-router.get('/site-operations/stats', async (req, res, next) => {
+router.get('/site-operations/stats', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id } = req.query;
         return sendData(res, await siteOperationsService.getOperationsStats(site_id));
@@ -1474,98 +1809,98 @@ router.get('/site-operations/stats', async (req, res, next) => {
 });
 
 // Concerns / Issues
-router.get('/site-operations/concerns', async (req, res, next) => {
+router.get('/site-operations/concerns', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, status, severity, search } = req.query;
         return sendData(res, await siteOperationsService.getConcerns({ site_id, status, severity, search }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/site-operations/concerns', async (req, res, next) => {
+router.post('/site-operations/concerns', requirePermission('DPR', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.createConcern(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/site-operations/concerns/:id', async (req, res, next) => {
+router.put('/site-operations/concerns/:id', requirePermission('DPR', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.updateConcern(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/site-operations/concerns/:id', async (req, res, next) => {
+router.delete('/site-operations/concerns/:id', requirePermission('DPR', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.deleteConcern(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
 // Measurements (M-Book)
-router.get('/site-operations/measurements', async (req, res, next) => {
+router.get('/site-operations/measurements', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, search, start_date, end_date, status } = req.query;
         return sendData(res, await siteOperationsService.getMeasurements({ site_id, search, start_date, end_date, status }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/site-operations/measurements', async (req, res, next) => {
+router.post('/site-operations/measurements', requirePermission('DPR', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.createMeasurement(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/site-operations/measurements/:id', async (req, res, next) => {
+router.put('/site-operations/measurements/:id', requirePermission('DPR', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.updateMeasurement(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/site-operations/measurements/:id', async (req, res, next) => {
+router.delete('/site-operations/measurements/:id', requirePermission('DPR', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.deleteMeasurement(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
 // Vendor Mapping with Scope of Work
-router.get('/site-operations/vendors', async (req, res, next) => {
+router.get('/site-operations/vendors', requireAnyPermission('DPR.can_view', 'VENDORS.can_view'), async (req, res, next) => {
     try {
         const { site_id, category, search } = req.query;
         return sendData(res, await siteOperationsService.getVendorsWithScope({ site_id, category, search }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/site-operations/vendors/:id', async (req, res, next) => {
+router.put('/site-operations/vendors/:id', requireAnyPermission('DPR.can_update', 'VENDORS.can_update'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.updateVendorScope(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
 // Tools & Tackles / TPI Calibration
-router.get('/site-operations/tools', async (req, res, next) => {
+router.get('/site-operations/tools', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const { site_id, status, category, search } = req.query;
         return sendData(res, await siteOperationsService.getToolsAndTackles({ site_id, status, category, search }));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/site-operations/tools', async (req, res, next) => {
+router.post('/site-operations/tools', requirePermission('DPR', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.createTool(req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 
-router.put('/site-operations/tools/:id', async (req, res, next) => {
+router.put('/site-operations/tools/:id', requirePermission('DPR', 'can_update'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.updateTool(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
-router.delete('/site-operations/tools/:id', async (req, res, next) => {
+router.delete('/site-operations/tools/:id', requirePermission('DPR', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await siteOperationsService.deleteTool(req.params.id));
     } catch (error) { return sendError(next, error); }
 });
 
-router.post('/site-operations/tools/upload-certificate', upload.single('file'), (req, res) => {
+router.post('/site-operations/tools/upload-certificate', requireAnyPermission('DPR.can_create', 'DPR.can_update'), upload.single('file'), (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No certificate file uploaded' });
@@ -1582,7 +1917,7 @@ router.post('/site-operations/tools/upload-certificate', upload.single('file'), 
     }
 });
 
-router.get('/health/db', async (req, res, next) => {
+router.get('/health/db', requirePermission('DASHBOARD', 'can_view'), async (req, res, next) => {
     try {
         const result = await db.query('SELECT current_database() AS database');
         return sendData(res, result.rows[0]);

@@ -15,20 +15,18 @@ class BiometricService {
         };
 
         for (const [index, log] of logs.entries()) {
+            const empCode = String(log.employee_code || '').trim().toUpperCase();
             try {
-                // Basic Validation
-                if (!log.employee_code || !log.punch_date) {
+                if (!empCode || !log.punch_date) {
                     throw new Error('Employee Code and Punch Date are required.');
                 }
 
-                // Upsert Query: Staging area data
-                // We use CONFLICT DO UPDATE so repeated uploads fix/add data for the day
                 const query = `
                     INSERT INTO biometric_logs (
-                        employee_code, punch_date, in_time, out_time, 
+                        employee_code, punch_date, in_time, out_time,
                         device_id, upload_batch_id, uploaded_by
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (employee_code, punch_date) 
+                    ON CONFLICT (employee_code, punch_date)
                     DO UPDATE SET
                         in_time = EXCLUDED.in_time,
                         out_time = EXCLUDED.out_time,
@@ -39,7 +37,7 @@ class BiometricService {
                 `;
 
                 const values = [
-                    log.employee_code,
+                    empCode,
                     log.punch_date,
                     log.in_time || null,
                     log.out_time || null,
@@ -50,18 +48,23 @@ class BiometricService {
 
                 await db.query(query, values);
                 results.success++;
-
             } catch (error) {
                 results.failed++;
                 results.errors.push({
-                    row: index + 2,
-                    employee_code: log.employee_code,
+                    row: log._rowNumber || (index + 2),
+                    employee_code: empCode,
                     message: error.message
                 });
             }
         }
 
-        return results;
+        return {
+            total_processed: logs.length,
+            successful: results.success,
+            success: results.success,
+            failed: results.failed,
+            errors: results.errors
+        };
     }
 
     /**
@@ -71,7 +74,7 @@ class BiometricService {
         const query = `
             SELECT b.*, e.first_name, e.last_name, s.shift_name
             FROM biometric_logs b
-            LEFT JOIN employees e ON b.employee_code = e.employee_code
+            LEFT JOIN employees e ON LOWER(b.employee_code) = LOWER(e.employee_code)
             LEFT JOIN shifts s ON e.shift_id = s.shift_id
             WHERE b.is_processed = FALSE
             ORDER BY b.punch_date DESC, b.employee_code ASC
@@ -84,11 +87,11 @@ class BiometricService {
      * Mark logs as processed (after moving to attendance_daily)
      */
     async markAsProcessed(logIds) {
-        if (!logIds || logIds.length === 0) return;
+        if (!logIds || logIds.length === 0) return 0;
 
         const query = `
-            UPDATE biometric_logs 
-            SET is_processed = TRUE, processed_at = CURRENT_TIMESTAMP 
+            UPDATE biometric_logs
+            SET is_processed = TRUE, processed_at = CURRENT_TIMESTAMP
             WHERE log_id = ANY($1)
         `;
         const result = await db.query(query, [logIds]);

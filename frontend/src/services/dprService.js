@@ -1,4 +1,4 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
 
 const dprService = {
     getAllDprs: (params) => api.get('/dpr', { params }),
@@ -8,7 +8,7 @@ const dprService = {
     deleteDpr: (id) => api.delete(`/dpr/${id}`),
     getPdfUrl: (id) => {
         const token = localStorage.getItem('token');
-        return `${api.defaults.baseURL || ''}/api/dpr/${id}/pdf?token=${encodeURIComponent(token || '')}`;
+        return `${getApiBaseUrl()}/dpr/${id}/pdf?token=${encodeURIComponent(token || '')}`;
     }
 };
 

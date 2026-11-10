@@ -215,20 +215,25 @@ class StatutoryService {
 
         results.summary = warningSummary;
 
-        // Write detailed logs to file for debugging
+        // Write detailed logs to file for debugging with safe temp fallback
         try {
             const fs = require('fs');
             const path = require('path');
-            const logDir = path.join(__dirname, '../logs');
-            if (!fs.existsSync(logDir)) fs.mkdirSync(logDir);
+            const os = require('os');
+            let logDir = path.join(__dirname, '../logs');
+            try {
+                if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+                fs.accessSync(logDir, fs.constants.W_OK);
+            } catch (_) {
+                logDir = os.tmpdir();
+            }
 
             fs.writeFileSync(
                 path.join(logDir, 'import_warnings.json'),
                 JSON.stringify(results.warnings, null, 2)
             );
-            console.log("Written import warnings to logs/import_warnings.json");
         } catch (e) {
-            console.error("Failed to write log file:", e);
+            console.warn('Note writing import log file:', e.message);
         }
 
         console.log("Import Summary:", JSON.stringify(results.summary));

@@ -9,6 +9,7 @@ const vendorService = {
 
     getAgreements: (vendorId) => api.get('/vendors/agreements', { params: { vendor_id: vendorId } }),
     createAgreement: (data) => api.post('/vendors/agreements', data),
+    updateAgreement: (id, data) => api.put(`/vendors/agreements/${id}`, data),
     deleteAgreement: (id) => api.delete(`/vendors/agreements/${id}`),
 };
 

@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
 import { MapPin, Clock, Lock, Loader, Building2, Calendar, Search, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const SiteShift = () => {
-    const { user, hasRole } = useAuth();
+    const { user, hasPermission, getRoleCode } = useAuth();
     const [loading, setLoading] = useState(true);
     const [employeeData, setEmployeeData] = useState(null);
     const [allEmployees, setAllEmployees] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const isAdmin = hasRole('SUPER_ADMIN', 'HR_ADMIN') || ['SUPER_ADMIN', 'HR_ADMIN'].includes(user?.roleCode || user?.role?.roleCode || user?.role);
+    const isAdmin = hasPermission('EMPLOYEES', 'can_view') && getRoleCode() !== 'CLIENT_LOGIN';
 
     const fetchAllEmployees = React.useCallback(async () => {
         try {
@@ -19,7 +20,7 @@ const SiteShift = () => {
             setAllEmployees(res.data.data || []);
         } catch (error) {
             console.error(error);
-            toast.error('Failed to load employees data');
+            toast.error(extractApiError(error, 'Failed to load employees data'));
         } finally {
             setLoading(false);
         }
@@ -35,7 +36,7 @@ const SiteShift = () => {
             setEmployeeData(res.data.data);
         } catch (error) {
             console.error(error);
-            toast.error('Failed to load site and shift information');
+            toast.error(extractApiError(error, 'Failed to load site and shift information'));
         } finally {
             setLoading(false);
         }
@@ -68,26 +69,68 @@ const SiteShift = () => {
 
     if (isAdmin) {
         return (
-            <div className="max-w-7xl mx-auto pb-10 px-4">
+            <div className="max-w-7xl mx-auto pb-16 px-0 sm:px-4">
                 <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800">Site & Shift Management</h1>
-                        <p className="text-sm text-slate-500 mt-1">Overview of all employee site assignments and shift timings</p>
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Site & Shift Management</h1>
+                        <p className="text-xs sm:text-sm text-slate-500 mt-1">Overview of all employee site assignments and shift timings</p>
                     </div>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <div className="relative w-full md:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <input
                             type="text"
                             placeholder="Search employees or sites..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full md:w-64"
+                            className="pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-full"
                         />
                     </div>
                 </div>
 
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
+                    {/* Mobile Cards View */}
+                    <div className="block md:hidden divide-y divide-slate-100">
+                        {filteredEmployees.length > 0 ? filteredEmployees.map((emp) => (
+                            <div key={emp.employee_id} className="p-4 space-y-2.5">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="h-8 w-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                            {emp.first_name?.[0]}{emp.last_name?.[0]}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="font-bold text-slate-900 text-sm truncate">{emp.first_name} {emp.last_name}</div>
+                                            <div className="text-xs text-slate-500 font-mono">{emp.employee_code}</div>
+                                        </div>
+                                    </div>
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset shrink-0 ${emp.employment_status === 'ACTIVE'
+                                        ? 'bg-green-50 text-green-700 ring-green-600/20'
+                                        : 'bg-red-50 text-red-700 ring-red-600/20'}`}>
+                                        {emp.employment_status}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg">
+                                    <div>
+                                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Site</span>
+                                        <span className="font-medium text-slate-700">{emp.site_name || 'Not Assigned'}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Shift</span>
+                                        <span className="font-medium text-slate-700">
+                                            {emp.shift_name ? `${emp.shift_name} (${emp.start_time?.slice(0, 5)}-${emp.end_time?.slice(0, 5)})` : 'Not Assigned'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )) : (
+                            <div className="p-8 text-center text-slate-500 text-sm">
+                                <Users size={28} className="mx-auto text-slate-300 mb-2" />
+                                <p>No employees found matching your search.</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left text-sm">
                             <thead>
                                 <tr className="border-b border-slate-200 bg-slate-50/50 text-slate-500 font-medium">
@@ -167,10 +210,10 @@ const SiteShift = () => {
     }
 
     return (
-        <div className="max-w-5xl mx-auto pb-10 px-4">
+        <div className="max-w-5xl mx-auto pb-16 px-0 sm:px-4">
             <div className="mb-6">
-                <h1 className="text-2xl font-bold text-slate-800">Site & Shift Setup</h1>
-                <p className="text-sm text-slate-500 mt-1">View your assigned work location and shift timing</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Site & Shift Setup</h1>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">View your assigned work location and shift timing</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -244,7 +287,7 @@ const SiteShift = () => {
                                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 block">
                                     Working Hours
                                 </label>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="p-3 bg-green-50 rounded-lg border border-green-200">
                                         <p className="text-xs text-green-600 font-medium mb-1">Start Time</p>
                                         <p className="text-lg font-bold text-green-700">

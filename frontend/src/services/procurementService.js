@@ -1,4 +1,4 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
 
 const procurementService = {
     getAllItems: (params = {}) => api.get('/procurement', { params }),
@@ -8,9 +8,12 @@ const procurementService = {
     deleteItem: (id) => api.delete(`/procurement/${id}`),
 
     getExportPdfUrl: (params = {}) => {
-        const query = new URLSearchParams(params).toString();
-        const baseURL = api.defaults.baseURL || '/api';
-        return `${baseURL}/procurement/export-pdf?${query}`;
+        const token = localStorage.getItem('token');
+        const cleanParams = Object.fromEntries(
+            Object.entries({ ...params, token: token || '' }).filter(([, v]) => v !== undefined && v !== null && v !== '')
+        );
+        const query = new URLSearchParams(cleanParams).toString();
+        return `${getApiBaseUrl()}/procurement/export-pdf?${query}`;
     }
 };
 

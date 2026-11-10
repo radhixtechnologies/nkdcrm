@@ -1,16 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    Calendar, Search, Filter, Clock, CheckCircle,
-    MapPin, User, ChevronRight, ArrowUpDown, RefreshCw,
-    Download, ShieldCheck, AlertCircle
+    Search, Filter, Clock, MapPin, RefreshCw
 } from 'lucide-react';
 import attendanceService from '../../services/attendanceService';
+import { extractApiError } from '../../services/api';
 import toast from 'react-hot-toast';
-import dayjs from 'dayjs';
 
-const getTodayStr = () => dayjs().format('YYYY-MM-DD');
-const getDaysAgoStr = (days) => dayjs().subtract(days, 'day').format('YYYY-MM-DD');
-const getMonthStartStr = () => dayjs().startOf('month').format('YYYY-MM-DD');
+const getTodayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+const getDaysAgoStr = (days) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(Date.now() - days * 86400000));
+const getMonthStartStr = () => {
+    const today = getTodayStr();
+    return `${today.slice(0, 8)}01`;
+};
+const formatLogDateDisplay = (log) => {
+    if (log.date_formatted) return log.date_formatted;
+    const raw = log.date ? String(log.date).split('T')[0] : '';
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return raw || '-';
+};
 
 const DailyAttendance = () => {
     const [logs, setLogs] = useState([]);
@@ -29,7 +38,7 @@ const DailyAttendance = () => {
             setLogs(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error('Failed to fetch attendance logs:', err);
-            toast.error('Failed to fetch attendance logs');
+            toast.error(extractApiError(err, 'Failed to fetch attendance logs'));
         } finally {
             setLoading(false);
         }
@@ -128,7 +137,7 @@ const DailyAttendance = () => {
     const leaveCount = filteredLogs.filter(l => l.status === 'L').length;
 
     return (
-        <div className="space-y-5 animate-fade-in">
+        <div className="space-y-5">
             {/* Quick Stats Pill Header */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs card-hover-effect">
@@ -273,7 +282,7 @@ const DailyAttendance = () => {
                                     <div>
                                         <span className="text-[10px] font-bold text-slate-400 uppercase block">Date</span>
                                         <span className="text-xs font-semibold text-slate-800">
-                                            {log.date_formatted || (log.date ? dayjs(log.date).format('DD MMM') : '-')}
+                                            {formatLogDateDisplay(log)}
                                         </span>
                                     </div>
                                     <div>
@@ -355,7 +364,12 @@ const DailyAttendance = () => {
                                     return (
                                         <tr key={log.attendance_id || idx} className="hover:bg-slate-50/80 transition-colors">
                                             <td className="px-5 py-3.5 font-semibold text-slate-900 whitespace-nowrap">
-                                                {log.date_formatted || (log.date ? dayjs(log.date).format('DD/MM/YYYY') : '-')}
+                                                <div>{formatLogDateDisplay(log)}</div>
+                                                {Number(log.punch_count) > 1 && (
+                                                    <span className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                        {log.punch_count} Punches
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-3.5">
                                                 <div className="font-bold text-slate-900 leading-tight">

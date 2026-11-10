@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, Fingerprint, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import attendanceService from '../../services/attendanceService';
 import biometricService from '../../services/biometricService';
+import { extractApiError } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const AttendanceImport = () => {
@@ -38,7 +39,7 @@ const AttendanceImport = () => {
             });
         } catch (error) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Upload failed');
+            toast.error(extractApiError(error, 'Upload failed'));
         } finally {
             setUploading(false);
             // Reset inputs
@@ -54,7 +55,7 @@ const AttendanceImport = () => {
                 <div
                     onClick={() => dailyInputRef.current?.click()}
                     className={`
-                        relative overflow-hidden rounded-xl border-2 border-dashed p-8 text-center transition-all cursor-pointer group
+                        relative overflow-hidden rounded-xl border-2 border-dashed p-5 sm:p-8 text-center transition-all cursor-pointer group
                         ${uploading ? 'opacity-50 pointer-events-none' : 'hover:border-emerald-400 border-slate-200 bg-white hover:bg-emerald-50/30'}
                     `}
                 >
@@ -62,7 +63,7 @@ const AttendanceImport = () => {
                         type="file"
                         ref={dailyInputRef}
                         className="hidden"
-                        accept=".xlsx, .xls"
+                        accept=".xlsx,.xls,.csv"
                         onChange={(e) => handleUpload('DAILY', e.target.files[0])}
                     />
 
@@ -84,7 +85,7 @@ const AttendanceImport = () => {
                 <div
                     onClick={() => biomInputRef.current?.click()}
                     className={`
-                        relative overflow-hidden rounded-xl border-2 border-dashed p-8 text-center transition-all cursor-pointer group
+                        relative overflow-hidden rounded-xl border-2 border-dashed p-5 sm:p-8 text-center transition-all cursor-pointer group
                         ${uploading ? 'opacity-50 pointer-events-none' : 'hover:border-blue-400 border-slate-200 bg-white hover:bg-blue-50/30'}
                     `}
                 >
@@ -92,7 +93,7 @@ const AttendanceImport = () => {
                         type="file"
                         ref={biomInputRef}
                         className="hidden"
-                        accept=".xlsx, .xls"
+                        accept=".xlsx,.xls,.csv"
                         onChange={(e) => handleUpload('BIOMETRIC', e.target.files[0])}
                     />
 

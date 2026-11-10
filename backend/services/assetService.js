@@ -1,11 +1,23 @@
 const db = require('../config/database');
 
+const cleanInt = (val, fallback = null) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = parseInt(val, 10);
+    return Number.isNaN(n) ? fallback : n;
+};
+
+const cleanNum = (val, fallback = 0) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = parseFloat(val);
+    return Number.isNaN(n) ? fallback : n;
+};
+
 const assetService = {
     // --- 1. Assets Master ---
     async getAssets(filters = {}) {
         let query = `
             SELECT a.*, s.site_name,
-                   (a.quantity_total - a.quantity_allocated) as in_stock
+                   (a.quantity_total - a.quantity_allocated) AS in_stock
             FROM assets a
             LEFT JOIN sites s ON a.site_id = s.site_id
             WHERE 1=1
@@ -25,7 +37,10 @@ const assetService = {
     },
 
     async createAsset(data) {
-        const code = data.asset_code || `AST-${Date.now().toString().slice(-5)}`;
+        const code = (data.asset_code && String(data.asset_code).trim())
+            ? String(data.asset_code).trim().toUpperCase()
+            : `AST-${Date.now().toString().slice(-5)}`;
+        const qtyTotal = cleanInt(data.quantity_total, 1);
         const query = `
             INSERT INTO assets (
                 asset_code, asset_name, category, brand_model, serial_number,
@@ -36,41 +51,74 @@ const assetService = {
         const params = [
             code,
             data.asset_name,
-            data.category, // 'UNIFORM', 'HELMET_PPE', 'LAPTOP_IT', 'MOBILE', 'SECURITY_GEAR'
+            data.category,
             data.brand_model || null,
             data.serial_number || null,
-            parseInt(data.quantity_total) || 1,
+            Math.max(0, qtyTotal),
             0,
-            parseFloat(data.cost) || 0,
+            cleanNum(data.cost, 0),
             data.condition || 'NEW',
-            data.site_id || null,
+            cleanInt(data.site_id, null),
             data.notes || null
         ];
-        const res = await db.query(query, params);
-        return res.rows[0];
+        try {
+            const res = await db.query(query, params);
+            return res.rows[0];
+        } catch (err) {
+            if (err.code === '23505') {
+                const dup = new Error(`Asset code "${code}" already exists`);
+                dup.status = 409;
+                throw dup;
+            }
+            throw err;
+        }
     },
 
     async updateAsset(id, data) {
+        const existingRes = await db.query('SELECT * FROM assets WHERE asset_id = $1', [id]);
+        if (existingRes.rows.length === 0) {
+            const err = new Error('Asset not found');
+            err.status = 404;
+            throw err;
+        }
+        const ex = existingRes.rows[0];
+
+        const nextTotal = data.quantity_total !== undefined
+            ? cleanInt(data.quantity_total, ex.quantity_total)
+            : ex.quantity_total;
+
+        if (nextTotal < ex.quantity_allocated) {
+            const err = new Error(`Total quantity (${nextTotal}) cannot be less than currently allocated units (${ex.quantity_allocated})`);
+            err.status = 400;
+            throw err;
+        }
+
         const query = `
             UPDATE assets SET
-                asset_name = COALESCE($1, asset_name),
-                category = COALESCE($2, category),
-                brand_model = COALESCE($3, brand_model),
-                serial_number = COALESCE($4, serial_number),
-                quantity_total = COALESCE($5, quantity_total),
-                cost = COALESCE($6, cost),
-                condition = COALESCE($7, condition),
-                site_id = COALESCE($8, site_id),
-                notes = COALESCE($9, notes),
+                asset_name = $1,
+                category = $2,
+                brand_model = $3,
+                serial_number = $4,
+                quantity_total = $5,
+                cost = $6,
+                condition = $7,
+                site_id = $8,
+                notes = $9,
                 updated_at = CURRENT_TIMESTAMP
             WHERE asset_id = $10
             RETURNING *
         `;
         const params = [
-            data.asset_name, data.category, data.brand_model, data.serial_number,
-            data.quantity_total ? parseInt(data.quantity_total) : null,
-            data.cost ? parseFloat(data.cost) : null,
-            data.condition, data.site_id, data.notes, id
+            data.asset_name !== undefined ? data.asset_name : ex.asset_name,
+            data.category !== undefined ? data.category : ex.category,
+            data.brand_model !== undefined ? (data.brand_model || null) : ex.brand_model,
+            data.serial_number !== undefined ? (data.serial_number || null) : ex.serial_number,
+            nextTotal,
+            data.cost !== undefined ? cleanNum(data.cost, ex.cost) : ex.cost,
+            data.condition !== undefined ? data.condition : ex.condition,
+            data.site_id !== undefined ? cleanInt(data.site_id, null) : ex.site_id,
+            data.notes !== undefined ? (data.notes || null) : ex.notes,
+            id
         ];
         const res = await db.query(query, params);
         return res.rows[0];
@@ -80,8 +128,11 @@ const assetService = {
     async getAllocations(filters = {}) {
         let query = `
             SELECT al.*,
+                   TO_CHAR(al.issued_date, 'YYYY-MM-DD') AS issued_date,
+                   TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
+                   TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
                    a.asset_name, a.asset_code, a.category,
-                   e.full_name as employee_name, e.employee_code, e.designation,
+                   e.full_name AS employee_name, e.employee_code, e.designation,
                    s.site_name
             FROM asset_allocations al
             JOIN assets a ON al.asset_id = a.asset_id
@@ -104,89 +155,144 @@ const assetService = {
     },
 
     async allocateAsset(data) {
-        const qty = parseInt(data.quantity) || 1;
-
-        // Check availability
-        const assetRes = await db.query('SELECT * FROM assets WHERE asset_id = $1', [data.asset_id]);
-        if (assetRes.rows.length === 0) throw new Error('Asset not found');
-        const asset = assetRes.rows[0];
-
-        const available = asset.quantity_total - asset.quantity_allocated;
-        if (available < qty) {
-            throw new Error(`Insufficient stock. Only ${available} item(s) available.`);
+        const qty = cleanInt(data.quantity, 1);
+        if (!qty || qty <= 0) {
+            const err = new Error('Allocation quantity must be greater than zero');
+            err.status = 400;
+            throw err;
         }
 
-        const query = `
-            INSERT INTO asset_allocations (
-                asset_id, employee_id, site_id, issued_date, return_due_date,
-                quantity, status, condition_on_issue, remarks
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'ISSUED', $7, $8)
-            RETURNING *
-        `;
-        const params = [
-            data.asset_id,
-            data.employee_id,
-            data.site_id || asset.site_id || null,
-            data.issued_date || new Date().toISOString().split('T')[0],
-            data.return_due_date || null,
-            qty,
-            data.condition_on_issue || 'GOOD',
-            data.remarks || null
-        ];
-        const res = await db.query(query, params);
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
 
-        // Increment allocated count in assets
-        await db.query(
-            'UPDATE assets SET quantity_allocated = quantity_allocated + $1, updated_at = CURRENT_TIMESTAMP WHERE asset_id = $2',
-            [qty, data.asset_id]
-        );
+            const assetRes = await client.query('SELECT * FROM assets WHERE asset_id = $1 FOR UPDATE', [data.asset_id]);
+            if (assetRes.rows.length === 0) {
+                const err = new Error('Asset not found');
+                err.status = 404;
+                throw err;
+            }
+            const asset = assetRes.rows[0];
 
-        return res.rows[0];
+            const available = asset.quantity_total - asset.quantity_allocated;
+            if (available < qty) {
+                const err = new Error(`Insufficient stock. Only ${available} item(s) available.`);
+                err.status = 400;
+                throw err;
+            }
+
+            const query = `
+                INSERT INTO asset_allocations (
+                    asset_id, employee_id, site_id, issued_date, return_due_date,
+                    quantity, status, condition_on_issue, remarks
+                ) VALUES ($1, $2, $3, $4, $5, $6, 'ISSUED', $7, $8)
+                RETURNING *
+            `;
+            const params = [
+                data.asset_id,
+                data.employee_id,
+                cleanInt(data.site_id, asset.site_id),
+                data.issued_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+                data.return_due_date && String(data.return_due_date).trim() !== '' ? data.return_due_date : null,
+                qty,
+                data.condition_on_issue || 'GOOD',
+                data.remarks || null
+            ];
+            const res = await client.query(query, params);
+
+            await client.query(
+                'UPDATE assets SET quantity_allocated = quantity_allocated + $1, updated_at = CURRENT_TIMESTAMP WHERE asset_id = $2',
+                [qty, data.asset_id]
+            );
+
+            await client.query('COMMIT');
+            return res.rows[0];
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     },
 
     async returnAsset(allocationId, returnData = {}) {
-        const alRes = await db.query('SELECT * FROM asset_allocations WHERE allocation_id = $1', [allocationId]);
-        if (alRes.rows.length === 0) throw new Error('Allocation record not found');
-        const allocation = alRes.rows[0];
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
 
-        if (allocation.status === 'RETURNED') throw new Error('Asset is already marked as returned');
+            const alRes = await client.query('SELECT * FROM asset_allocations WHERE allocation_id = $1 FOR UPDATE', [allocationId]);
+            if (alRes.rows.length === 0) {
+                const err = new Error('Allocation record not found');
+                err.status = 404;
+                throw err;
+            }
+            const allocation = alRes.rows[0];
 
-        const query = `
-            UPDATE asset_allocations SET
-                status = 'RETURNED',
-                returned_date = $1,
-                condition_on_return = $2,
-                remarks = COALESCE($3, remarks),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE allocation_id = $4
-            RETURNING *
-        `;
-        const params = [
-            returnData.returned_date || new Date().toISOString().split('T')[0],
-            returnData.condition_on_return || 'GOOD',
-            returnData.remarks || null,
-            allocationId
-        ];
-        const res = await db.query(query, params);
+            if (allocation.status !== 'ISSUED') {
+                const err = new Error(`Allocation is already marked as ${allocation.status}`);
+                err.status = 400;
+                throw err;
+            }
 
-        // Decrement allocated count in assets
-        await db.query(
-            'UPDATE assets SET quantity_allocated = GREATEST(0, quantity_allocated - $1), updated_at = CURRENT_TIMESTAMP WHERE asset_id = $2',
-            [allocation.quantity, allocation.asset_id]
-        );
+            const cond = String(returnData.condition_on_return || 'GOOD').toUpperCase();
+            const isLost = cond === 'LOST' || String(returnData.status || '').toUpperCase() === 'LOST';
+            const nextStatus = isLost ? 'LOST' : (cond === 'DAMAGED' ? 'DAMAGED' : 'RETURNED');
 
-        return res.rows[0];
+            const res = await client.query(`
+                UPDATE asset_allocations SET
+                    status = $1,
+                    returned_date = $2,
+                    condition_on_return = $3,
+                    remarks = COALESCE($4, remarks),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE allocation_id = $5
+                RETURNING *
+            `, [
+                nextStatus,
+                returnData.returned_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+                cond,
+                returnData.remarks || null,
+                allocationId
+            ]);
+
+            if (isLost) {
+                // Lost items are no longer allocated AND removed from usable total stock
+                await client.query(`
+                    UPDATE assets SET
+                        quantity_allocated = GREATEST(0, quantity_allocated - $1),
+                        quantity_total = GREATEST(0, quantity_total - $1),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE asset_id = $2
+                `, [allocation.quantity, allocation.asset_id]);
+            } else {
+                await client.query(`
+                    UPDATE assets SET
+                        quantity_allocated = GREATEST(0, quantity_allocated - $1),
+                        condition = CASE WHEN $2 = 'DAMAGED' THEN 'DAMAGED' ELSE condition END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE asset_id = $3
+                `, [allocation.quantity, cond, allocation.asset_id]);
+            }
+
+            await client.query('COMMIT');
+            return res.rows[0];
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
     },
 
     // --- 3. Inventory Overview Stats ---
     async getAssetStats() {
         const query = `
             SELECT
-                COALESCE(SUM(quantity_total), 0)::int as total_units,
-                COALESCE(SUM(quantity_allocated), 0)::int as allocated_units,
-                COALESCE(SUM(quantity_total - quantity_allocated), 0)::int as available_stock,
-                COUNT(CASE WHEN condition = 'DAMAGED' OR condition = 'NEEDS_REPAIR' THEN 1 END)::int as damaged_count,
-                COALESCE(SUM(cost * quantity_total), 0)::numeric as total_inventory_value
+                COALESCE(SUM(quantity_total), 0)::int AS total_units,
+                COALESCE(SUM(quantity_allocated), 0)::int AS allocated_units,
+                COALESCE(SUM(quantity_total - quantity_allocated), 0)::int AS available_stock,
+                COUNT(CASE WHEN condition IN ('DAMAGED', 'NEEDS_REPAIR') THEN 1 END)::int AS damaged_count,
+                COALESCE(SUM(cost * quantity_total), 0)::numeric AS total_inventory_value
             FROM assets
         `;
         const res = await db.query(query);
@@ -194,6 +300,17 @@ const assetService = {
     },
 
     async deleteAsset(id) {
+        const existingRes = await db.query('SELECT quantity_allocated FROM assets WHERE asset_id = $1', [id]);
+        if (existingRes.rows.length === 0) {
+            const err = new Error('Asset not found');
+            err.status = 404;
+            throw err;
+        }
+        if (existingRes.rows[0].quantity_allocated > 0) {
+            const err = new Error('Cannot delete asset that has units currently issued to employees');
+            err.status = 400;
+            throw err;
+        }
         await db.query('DELETE FROM assets WHERE asset_id = $1', [id]);
         return { success: true, message: 'Asset deleted successfully' };
     }

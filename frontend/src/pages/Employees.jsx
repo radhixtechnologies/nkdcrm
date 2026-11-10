@@ -1,13 +1,28 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText } from 'lucide-react';
+import { Plus, User, Edit, Trash, Eye, UploadCloud } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
-import api from '../services/api';
+import api, { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
+import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+
+const formatJoiningDate = (val) => {
+    if (!val) return 'N/A';
+    const str = String(val).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? str : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+};
 
 const Employees = () => {
     const navigate = useNavigate();
+    const { hasPermission } = useAuth();
+    const canCreate = hasPermission('EMPLOYEES', 'can_create');
+    const canUpdate = hasPermission('EMPLOYEES', 'can_update');
+    const canDelete = hasPermission('EMPLOYEES', 'can_delete');
+
     const [showForm, setShowForm] = useState(false);
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -23,6 +38,7 @@ const Employees = () => {
             setLoading(false);
         } catch (error) {
             console.error("Failed to fetch employees", error);
+            toast.error(extractApiError(error, 'Failed to fetch employees'));
             setLoading(false);
         }
     }, []);
@@ -152,39 +168,41 @@ const Employees = () => {
     });
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
+        <div className="space-y-5 sm:space-y-6 max-w-7xl mx-auto pb-16">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Master</h1>
-                    <p className="text-sm text-slate-500 mt-0.5">Manage deployed workforce, statutory records & deployments</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Employee Master</h1>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Manage deployed workforce, statutory records & deployments</p>
                 </div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                    <input
-                        type="file"
-                        ref={importInputRef}
-                        className="hidden"
-                        accept=".xlsx, .xls"
-                        onChange={handleImportRegister}
-                    />
-                    <button
-                        onClick={() => importInputRef.current?.click()}
-                        disabled={importing}
-                        className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs btn-press"
-                    >
-                        {importing ? 'Importing...' : <><UploadCloud size={15} className="text-primary-600" /> Import Register (Form XIII)</>}
-                    </button>
-                    <button
-                        onClick={() => {
-                            setEditingEmployee(null);
-                            setShowForm(true);
-                        }}
-                        className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:shadow-md hover:shadow-primary-500/20 transition-all btn-press"
-                    >
-                        <Plus size={15} />
-                        Add Employee
-                    </button>
-                </div>
+                {canCreate && (
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <input
+                            type="file"
+                            ref={importInputRef}
+                            className="hidden"
+                            accept=".xlsx, .xls"
+                            onChange={handleImportRegister}
+                        />
+                        <button
+                            onClick={() => importInputRef.current?.click()}
+                            disabled={importing}
+                            className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs btn-press"
+                        >
+                            {importing ? 'Importing...' : <><UploadCloud size={15} className="text-primary-600" /> Import Register (Form XIII)</>}
+                        </button>
+                        <button
+                            onClick={() => {
+                                setEditingEmployee(null);
+                                setShowForm(true);
+                            }}
+                            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 px-4 py-2 text-xs font-bold text-white shadow-xs hover:shadow-md hover:shadow-primary-500/20 transition-all btn-press"
+                        >
+                            <Plus size={15} />
+                            Add Employee
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Filter and Search Bar */}
@@ -205,9 +223,9 @@ const Employees = () => {
                 </div>
             </div>
 
-            {/* Table Container with Slick Responsive Wrapper */}
-            <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs overflow-hidden min-h-[400px]">
-                <div className="border-b border-slate-200/80 bg-slate-50/60 px-6 py-4 flex justify-between items-center">
+            {/* Directory Container */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs overflow-hidden min-h-[360px]">
+                <div className="border-b border-slate-200/80 bg-slate-50/60 px-4 sm:px-6 py-4 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 text-sm">All Registered Employees</h3>
                     <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-200/50">
                         {filteredEmployees.length} Total
@@ -228,85 +246,152 @@ const Employees = () => {
                         <p className="mt-1 text-xs text-slate-500 max-w-sm">
                             {searchTerm ? 'No results matched your search term.' : 'Get started by adding your first employee or importing Form XIII.'}
                         </p>
-                        <button
-                            onClick={() => {
-                                setEditingEmployee(null);
-                                setShowForm(true);
-                            }}
-                            className="mt-5 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs btn-press"
-                        >
-                            + Add Employee
-                        </button>
+                        {canCreate && (
+                            <button
+                                onClick={() => {
+                                    setEditingEmployee(null);
+                                    setShowForm(true);
+                                }}
+                                className="mt-5 rounded-xl bg-white border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs btn-press"
+                            >
+                                + Add Employee
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs text-slate-600">
-                            <thead>
-                                <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider">
-                                    <th className="px-6 py-3.5">Code</th>
-                                    <th className="px-6 py-3.5">Name</th>
-                                    <th className="px-6 py-3.5">Department</th>
-                                    <th className="px-6 py-3.5">Designation</th>
-                                    <th className="px-6 py-3.5">Joining Date</th>
-                                    <th className="px-6 py-3.5">Status</th>
-                                    <th className="px-6 py-3.5 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {filteredEmployees.map((emp) => (
-                                    <tr key={emp.employee_id} className="hover:bg-slate-50/80 transition-colors group">
-                                        <td className="px-6 py-4 font-mono font-bold text-primary-700 text-xs">{emp.employee_code}</td>
-                                        <td className="px-6 py-4 font-bold text-slate-900">
-                                            {emp.first_name} {emp.last_name}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-600">
-                                            <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                                                {emp.department || 'Operations'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 font-medium text-slate-700">{emp.designation || 'Staff'}</td>
-                                        <td className="px-6 py-4 text-slate-500 font-mono">
-                                            {emp.date_of_joining ? new Date(emp.date_of_joining).toLocaleDateString('en-IN') : 'N/A'}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                                                emp.employment_status === 'ACTIVE'
-                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                : 'bg-rose-50 text-rose-700 border border-rose-200'
-                                            }`}>
-                                                {emp.employment_status || 'ACTIVE'}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => navigate(`/employees/${emp.employee_code}`)}
-                                                    className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors btn-press"
-                                                    title="View Profile Details"
-                                                >
-                                                    <Eye size={16} />
-                                                </button>
+                    <>
+                        {/* Mobile Cards View */}
+                        <div className="block md:hidden divide-y divide-slate-100">
+                            {filteredEmployees.map((emp) => (
+                                <div key={emp.employee_id} className="p-4 space-y-2.5 hover:bg-slate-50/60">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="font-mono text-xs font-bold text-primary-700">{emp.employee_code}</p>
+                                            <h4 className="font-bold text-slate-900 text-sm truncate">
+                                                {emp.first_name} {emp.last_name}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 truncate">
+                                                {emp.designation || 'Staff'} • {emp.department || 'Operations'}
+                                            </p>
+                                        </div>
+                                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold shrink-0 ${
+                                            emp.employment_status === 'ACTIVE'
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                        }`}>
+                                            {emp.employment_status || 'ACTIVE'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-1">
+                                        <span className="text-[11px] font-mono text-slate-500">
+                                            Joined: {formatJoiningDate(emp.date_of_joining)}
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                onClick={() => navigate(`/employees/${emp.employee_code}`)}
+                                                className="p-1.5 text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-lg border border-slate-200"
+                                                title="View Profile Details"
+                                            >
+                                                <Eye size={15} />
+                                            </button>
+                                            {canUpdate && (
                                                 <button
                                                     onClick={() => handleEdit(emp)}
-                                                    className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors btn-press"
+                                                    className="p-1.5 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg border border-slate-200"
                                                     title="Edit Employee"
                                                 >
-                                                    <Edit size={16} />
+                                                    <Edit size={15} />
                                                 </button>
+                                            )}
+                                            {canDelete && (
                                                 <button
                                                     onClick={() => handleDelete(emp.employee_id, emp.employee_code)}
-                                                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors btn-press"
+                                                    className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200"
                                                     title="Delete Employee"
                                                 >
-                                                    <Trash size={16} />
+                                                    <Trash size={15} />
                                                 </button>
-                                            </div>
-                                        </td>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Desktop Table View */}
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left text-xs text-slate-600">
+                                <thead>
+                                    <tr className="border-b border-slate-200/80 bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider">
+                                        <th className="px-6 py-3.5">Code</th>
+                                        <th className="px-6 py-3.5">Name</th>
+                                        <th className="px-6 py-3.5">Department</th>
+                                        <th className="px-6 py-3.5">Designation</th>
+                                        <th className="px-6 py-3.5">Joining Date</th>
+                                        <th className="px-6 py-3.5">Status</th>
+                                        <th className="px-6 py-3.5 text-right">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredEmployees.map((emp) => (
+                                        <tr key={emp.employee_id} className="hover:bg-slate-50/80 transition-colors group">
+                                            <td className="px-6 py-4 font-mono font-bold text-primary-700 text-xs">{emp.employee_code}</td>
+                                            <td className="px-6 py-4 font-bold text-slate-900">
+                                                {emp.first_name} {emp.last_name}
+                                            </td>
+                                            <td className="px-6 py-4 text-slate-600">
+                                                <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                                                    {emp.department || 'Operations'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 font-medium text-slate-700">{emp.designation || 'Staff'}</td>
+                                            <td className="px-6 py-4 text-slate-500 font-mono">
+                                                {formatJoiningDate(emp.date_of_joining)}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                                                    emp.employment_status === 'ACTIVE'
+                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                }`}>
+                                                    {emp.employment_status || 'ACTIVE'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex justify-end gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => navigate(`/employees/${emp.employee_code}`)}
+                                                        className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors btn-press"
+                                                        title="View Profile Details"
+                                                    >
+                                                        <Eye size={16} />
+                                                    </button>
+                                                    {canUpdate && (
+                                                        <button
+                                                            onClick={() => handleEdit(emp)}
+                                                            className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors btn-press"
+                                                            title="Edit Employee"
+                                                        >
+                                                            <Edit size={16} />
+                                                        </button>
+                                                    )}
+                                                    {canDelete && (
+                                                        <button
+                                                            onClick={() => handleDelete(emp.employee_id, emp.employee_code)}
+                                                            className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors btn-press"
+                                                            title="Delete Employee"
+                                                        >
+                                                            <Trash size={16} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
                 )}
             </div>
 

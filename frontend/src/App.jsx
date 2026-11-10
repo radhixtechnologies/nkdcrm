@@ -51,9 +51,10 @@ function App() {
           <Route path="invoices" element={<ProtectedRoute requiredPermission="INVOICES.can_view"><Invoices /></ProtectedRoute>} />
           <Route path="vendors" element={<ProtectedRoute requiredPermission="VENDORS.can_view"><Vendors /></ProtectedRoute>} />
           <Route path="assets" element={<ProtectedRoute requiredPermission="ASSETS.can_view"><Assets /></ProtectedRoute>} />
-          <Route path="dpr" element={<ProtectedRoute><DPRManagementHub /></ProtectedRoute>} />
-          <Route path="procurement" element={<ProtectedRoute><ProcurementTracker /></ProtectedRoute>} />
-          <Route path="mobile" element={<ProtectedRoute><MobileApp /></ProtectedRoute>} />
+          <Route path="dpr" element={<ProtectedRoute requiredPermission="DPR.can_view"><DPRManagementHub /></ProtectedRoute>} />
+          <Route path="dpr-reports" element={<ProtectedRoute requiredPermission="DPR.can_view"><DPRReports /></ProtectedRoute>} />
+          <Route path="procurement" element={<ProtectedRoute requiredPermission="PROCUREMENT.can_view"><ProcurementTracker /></ProtectedRoute>} />
+          <Route path="mobile" element={<ProtectedRoute requiredPermission="ATTENDANCE.can_view"><MobileApp /></ProtectedRoute>} />
 
           <Route
             path="sites"

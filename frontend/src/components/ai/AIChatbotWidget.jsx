@@ -66,7 +66,7 @@ const AIChatbotWidget = () => {
                     suggestedActions: botData.suggestedActions || []
                 }
             ]);
-        } catch (err) {
+        } catch {
             setMessages([
                 ...newMessages,
                 {
@@ -103,19 +103,20 @@ const AIChatbotWidget = () => {
     };
 
     return (
-        <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 z-40 font-sans max-w-[calc(100vw-1.5rem)]">
+        <div className={`fixed bottom-20 md:bottom-6 right-3 md:right-6 font-sans max-w-[calc(100vw-1.5rem)] ${isOpen ? 'z-50' : 'z-30'}`}>
             {/* Floating Trigger Button */}
             {!isOpen && (
                 <button
                     onClick={() => { setIsOpen(true); setIsMinimized(false); }}
-                    className="relative group flex items-center gap-2 bg-gradient-to-r from-primary-600 to-indigo-600 text-white p-3 md:p-3.5 rounded-full shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300"
+                    className="relative group flex items-center gap-2 bg-gradient-to-r from-primary-600 to-indigo-600 text-white p-2.5 md:p-3.5 rounded-full shadow-lg hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300"
                     title="NKD AI Assistant"
+                    aria-label="Open NKD AI Assistant"
                 >
                     <div className="relative">
                         <Sparkles className="w-5 h-5 md:w-6 md:h-6 animate-pulse" />
-                        <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                         </span>
                     </div>
                     <span className="hidden sm:group-hover:inline-block pr-2 text-sm font-semibold tracking-wide">
@@ -127,11 +128,11 @@ const AIChatbotWidget = () => {
             {/* Chat Box Window */}
             {isOpen && (
                 <div
-                    className="w-[calc(100vw-1.5rem)] sm:w-96 h-[480px] sm:h-[540px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 animate-slide-up"
+                    className={`w-[calc(100vw-1.5rem)] sm:w-96 ${isMinimized ? 'h-auto' : 'h-[min(500px,calc(100vh-8rem))] sm:h-[540px]'} bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-300 animate-slide-up`}
                 >
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between select-none">
-                        <div className="flex items-center gap-2 sm:gap-2.5">
+                    <div className="bg-gradient-to-r from-primary-600 to-indigo-700 text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between select-none shrink-0">
+                        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
                             <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm shrink-0">
                                 <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
                             </div>
@@ -146,7 +147,14 @@ const AIChatbotWidget = () => {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 shrink-0">
+                            <button
+                                onClick={() => setIsMinimized(!isMinimized)}
+                                className="p-1 hover:bg-white/20 rounded text-white/90 hover:text-white transition-colors"
+                                title={isMinimized ? 'Expand' : 'Minimize'}
+                            >
+                                {isMinimized ? <Maximize2 size={15} /> : <Minimize2 size={15} />}
+                            </button>
                             <button
                                 onClick={() => setIsOpen(false)}
                                 className="p-1 hover:bg-white/20 rounded text-white/90 hover:text-white transition-colors"
@@ -198,7 +206,7 @@ const AIChatbotWidget = () => {
                                                         key={actIdx}
                                                         onClick={() => {
                                                             navigate(act.link);
-                                                            setIsMinimized(true);
+                                                            setIsOpen(false);
                                                         }}
                                                         className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 bg-primary-50 text-primary-700 border border-primary-200 rounded-md hover:bg-primary-100 transition-colors"
                                                     >

@@ -69,7 +69,13 @@ const Login = () => {
                         <div className="space-y-1.5">
                             <div className="flex justify-between items-center ml-1">
                                 <label className="text-sm font-semibold text-slate-700">Password</label>
-                                <a href="#" className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline">Forgot password?</a>
+                                <button
+                                    type="button"
+                                    onClick={() => toast('Please contact your System Administrator or HR Admin to reset your password.', { icon: '🔐' })}
+                                    className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline bg-transparent border-0 p-0 cursor-pointer"
+                                >
+                                    Forgot password?
+                                </button>
                             </div>
                             <div className="relative group">
                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary-500 transition-colors">

@@ -3,13 +3,25 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import { X, Save, User, Briefcase, CreditCard, FileText, CheckCircle, Upload, Eye, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import api from '../../services/api';
+import api, { getFileUrl, extractApiError } from '../../services/api';
 import shiftService from '../../services/shiftService';
 import siteService from '../../services/siteService';
+import ModalPortal from '../common/ModalPortal';
 
+const getIstTodayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+const formatDateInput = (val) => {
+    if (!val) return '';
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? '' : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+};
 
 const Wrapper = ({ children, isModal }) => isModal ? (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 p-0 backdrop-blur-xs bg-slate-900/60 overflow-hidden">{children}</div>
+    <ModalPortal>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 p-0 backdrop-blur-xs bg-slate-900/60 overflow-hidden">{children}</div>
+    </ModalPortal>
 ) : <>{children}</>;
 
 const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, viewOnly = false }) => {
@@ -23,30 +35,43 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
     const [uploading, setUploading] = useState({});
     const [createUserAccount, setCreateUserAccount] = useState(!!initialData?.role_id && initialData?.is_active !== false);
     const [userPassword, setUserPassword] = useState('');
-    const [selectedRole, setSelectedRole] = useState(initialData?.role_id ? String(initialData.role_id) : '5');
+    const [selectedRole, setSelectedRole] = useState(initialData?.role_id ? String(initialData.role_id) : '');
+
+    useEffect(() => {
+        setCreateUserAccount(!!initialData?.role_id && initialData?.is_active !== false);
+        if (initialData?.role_id) {
+            setSelectedRole(String(initialData.role_id));
+        }
+    }, [initialData]);
 
     useEffect(() => {
         const loadData = async () => {
             try {
                 const [shiftsRes, sitesRes, rolesRes, employeesRes] = await Promise.all([
-                    shiftService.getAllShifts(),
-                    siteService.getAllSites(),
-                    api.get('/auth/roles'), // Fetch roles for dropdown
-                    api.get('/employees')   // Fetch employees for manager dropdown
+                    shiftService.getAllShifts().catch(() => ({ data: { data: [] } })),
+                    siteService.getAllSites().catch(() => ({ data: { data: [] } })),
+                    api.get('/auth/roles').catch(() => ({ data: { data: [] } })),
+                    api.get('/employees').catch(() => ({ data: { data: [] } }))
                 ]);
-                setShifts(shiftsRes.data.data || []);
-                setSites(sitesRes.data.data || []);
-                setRoles(rolesRes.data.data || []);
-                setManagers(employeesRes.data.data || []);
+                const loadedRoles = rolesRes.data?.data || [];
+                setShifts(shiftsRes.data?.data || []);
+                setSites(sitesRes.data?.data || []);
+                setRoles(loadedRoles);
+                setManagers(employeesRes.data?.data || []);
+
+                if (!initialData?.role_id && loadedRoles.length > 0) {
+                    const defaultEmpRole = loadedRoles.find(r => r.role_code === 'EMPLOYEE') || loadedRoles[0];
+                    setSelectedRole(prev => prev || String(defaultEmpRole.role_id));
+                }
             } catch (err) {
                 console.error("Failed to load form data", err);
             }
         };
         loadData();
-
-    }, []);
+    }, [initialData?.role_id]);
 
     const formik = useFormik({
+        enableReinitialize: true,
         initialValues: {
             // Basic Info
             employee_code: initialData?.employee_code || '',
@@ -62,7 +87,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
             // Statutory Fields (Form XIII)
             gender: initialData?.gender || '',
             father_name: initialData?.father_name || '',
-            dob: initialData?.dob ? new Date(initialData.dob).toISOString().split('T')[0] : '',
+            dob: formatDateInput(initialData?.dob),
             nationality: initialData?.nationality || 'Indian',
             education: initialData?.education || '',
             skill_category: initialData?.skill_category || '',
@@ -74,7 +99,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
             // Employment
             designation: initialData?.designation || '',
             department: initialData?.department || '',
-            date_of_joining: initialData?.date_of_joining ? new Date(initialData.date_of_joining).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            date_of_joining: formatDateInput(initialData?.date_of_joining) || getIstTodayStr(),
             employment_status: initialData?.employment_status || 'ACTIVE',
             employment_type: initialData?.employment_type || 'PERMANENT',
             site_id: initialData?.site_id || '',
@@ -121,11 +146,29 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
         }),
         onSubmit: async (values) => {
             try {
-                // Validate password for new user account creation
+                if (createUserAccount && !values.email?.trim()) {
+                    setActiveTab('basic');
+                    toast.error('Official Email is required when Login Access is enabled');
+                    return;
+                }
+
                 const isNewLoginAccess = createUserAccount && (!initialData?.role_id);
 
-                if ((!isEdit || isNewLoginAccess) && !userPassword && createUserAccount) {
-                    toast.error('Password is required when creating new login access');
+                if (createUserAccount && (!isEdit || isNewLoginAccess) && !userPassword) {
+                    setActiveTab('user');
+                    toast.error('Temporary password is required when creating login access');
+                    return;
+                }
+
+                if (createUserAccount && userPassword && userPassword.length < 8) {
+                    setActiveTab('user');
+                    toast.error('Password must be at least 8 characters');
+                    return;
+                }
+
+                if (createUserAccount && !selectedRole) {
+                    setActiveTab('user');
+                    toast.error('Please select a role for login access');
                     return;
                 }
 
@@ -133,7 +176,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                 const cleanedValues = {
                     ...values,
                     employee_code: values.employee_code && values.employee_code.trim() !== '' ? values.employee_code.trim() : null,
-                    date_of_joining: values.date_of_joining || new Date().toISOString().split('T')[0],
+                    date_of_joining: values.date_of_joining || getIstTodayStr(),
                     basic_salary: Number(values.basic_salary || 0),
                     hra: Number(values.hra || 0),
                     conveyance: Number(values.conveyance || 0),
@@ -145,16 +188,13 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                     manager_id: values.manager_id ? Number(values.manager_id) : null,
                 };
 
-                // Add login access data
                 if (createUserAccount) {
                     cleanedValues.createUser = true;
                     if (userPassword) cleanedValues.userPassword = userPassword;
-                    cleanedValues.roleId = parseInt(selectedRole);
+                    cleanedValues.roleId = parseInt(selectedRole, 10);
                 } else {
                     cleanedValues.createUser = false;
                 }
-
-                console.log("Submitting:", cleanedValues);
 
                 if (isEdit) {
                     await api.put(`/employees/${initialData.employee_code}`, cleanedValues);
@@ -172,7 +212,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                 onClose();
             } catch (error) {
                 console.error("Submission Error:", error.response?.data || error.message);
-                toast.error(error.response?.data?.message || 'Failed to save employee');
+                toast.error(extractApiError(error, 'Failed to save employee'));
             }
         },
     });
@@ -288,25 +328,27 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
         toast.success(`Saved! Proceeding to ${nextTabObj?.label || 'next section'}.`, { duration: 1500 });
     };
 
+    const activeRoleObj = roles.find(r => String(r.role_id) === String(selectedRole));
+
     return (
         <Wrapper isModal={isModal}>
-            <div className={`flex flex-col bg-white overflow-hidden ${isModal ? 'w-full max-w-5xl sm:rounded-2xl rounded-none shadow-2xl h-full sm:h-[90vh]' : 'w-full h-full'}`}>
+            <div className={`flex flex-col bg-white overflow-hidden ${isModal ? 'w-full max-w-5xl sm:rounded-2xl rounded-none shadow-2xl h-dvh sm:h-[90vh]' : 'w-full h-full'}`}>
 
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 sm:px-6 py-3.5 sm:py-4 shrink-0">
-                    <div>
-                        <h2 className="text-lg sm:text-xl font-bold text-slate-800 leading-tight">
+                    <div className="min-w-0">
+                        <h2 className="text-lg sm:text-xl font-bold text-slate-800 leading-tight truncate">
                             {viewOnly ? 'Employee Details' : (isEdit ? 'Edit Employee' : 'New Employee Onboarding')}
                         </h2>
                         <p className="text-xs sm:text-sm text-slate-500">Central Employee Master</p>
                     </div>
-                    <button onClick={onClose} className="rounded-full p-1.5 sm:p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors">
+                    <button type="button" onClick={onClose} className="rounded-full p-1.5 sm:p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors shrink-0">
                         <X size={20} className="sm:w-6 sm:h-6" />
                     </button>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-slate-200 bg-white px-2 sm:px-6 overflow-x-auto scrollbar-thin">
+                <div className="flex border-b border-slate-200 bg-white px-2 sm:px-6 overflow-x-auto no-scrollbar shrink-0">
                     {tabs.map(tab => {
                         const errCount = (tabFieldMap[tab.id] || []).filter(f => formik.touched[f] && formik.errors[f]).length;
                         return (
@@ -331,38 +373,38 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                     })}
                 </div>
 
-                <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-slate-50/50">
+                <form onSubmit={formik.handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                    <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 md:p-8 bg-slate-50/50">
 
-                        {/* Tab Content: Basic Info */}
-                        <fieldset disabled={viewOnly} className="contents">
+                        {/* Tab Content (fieldset min-inline-size overridden for mobile layout stability) */}
+                        <fieldset disabled={viewOnly} className="block w-full min-w-0 border-0 p-0 m-0 space-y-6" style={{ minInlineSize: 0 }}>
                             {activeTab === 'basic' && (
-                                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                    <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                                <div className="space-y-5 sm:space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                    <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Personal Details</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div className="space-y-1">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Employee Code {isEdit ? '' : <span className="text-xs text-slate-400 font-normal normal-case">(Auto-generated if blank)</span>}</label>
                                                 <input
                                                     type="text"
                                                     {...formik.getFieldProps('employee_code')}
-                                                    disabled={isEdit}
+                                                    disabled={viewOnly || isEdit}
                                                     className="input-field font-mono disabled:bg-slate-100 disabled:text-slate-500 placeholder:text-slate-400"
                                                     placeholder={isEdit ? "" : "Leave blank to auto-generate"}
                                                 />
                                                 {formik.touched.employee_code && formik.errors.employee_code && <p className="error-msg">{formik.errors.employee_code}</p>}
                                             </div>
 
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">First Name <span className="text-red-500">*</span></label>
                                                 <input type="text" {...formik.getFieldProps('first_name')} className="input-field" />
                                                 {formik.touched.first_name && formik.errors.first_name && <p className="error-msg">{formik.errors.first_name}</p>}
                                             </div>
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Last Name</label>
                                                 <input type="text" {...formik.getFieldProps('last_name')} className="input-field" />
                                             </div>
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Blood Group</label>
                                                 <select {...formik.getFieldProps('blood_group')} className="input-field">
                                                     <option value="">Select...</option>
@@ -378,24 +420,26 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                     <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Contact Information</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Mobile Number</label>
                                                 <input type="tel" {...formik.getFieldProps('mobile')} className="input-field" />
                                                 {formik.touched.mobile && formik.errors.mobile && <p className="error-msg">{formik.errors.mobile}</p>}
                                             </div>
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Official Email</label>
                                                 <input type="email" {...formik.getFieldProps('email')} className="input-field" />
+                                                {formik.touched.email && formik.errors.email && <p className="error-msg">{formik.errors.email}</p>}
                                             </div>
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Personal Email</label>
                                                 <input type="email" {...formik.getFieldProps('personal_email')} className="input-field" />
+                                                {formik.touched.personal_email && formik.errors.personal_email && <p className="error-msg">{formik.errors.personal_email}</p>}
                                             </div>
-                                            <div className="space-y-1">
+                                            <div className="space-y-1 min-w-0">
                                                 <label className="input-label">Emergency Contact</label>
                                                 <input type="tel" {...formik.getFieldProps('emergency_contact')} className="input-field" />
                                             </div>
-                                            <div className="col-span-1 md:col-span-2 space-y-1">
+                                            <div className="col-span-1 md:col-span-2 space-y-1 min-w-0">
                                                 <label className="input-label">Residential Address</label>
                                                 <textarea {...formik.getFieldProps('address')} className="input-field min-h-[80px]" placeholder="Full address..." />
                                             </div>
@@ -673,7 +717,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
 
                                                         {fileUrl ? (
                                                             <div className="flex items-center gap-3 mt-2">
-                                                                <a href={`${api.defaults.baseURL}${fileUrl}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800">
+                                                                <a href={getFileUrl(fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800">
                                                                     <Eye size={16} /> View
                                                                 </a>
                                                                 <button
@@ -790,15 +834,17 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                                 </div>
 
                                                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                                    <h4 className="font-semibold text-amber-900 mb-2">📋 Role Permissions Summary:</h4>
-                                                    <ul className="text-sm text-amber-800 space-y-1">
-                                                        {selectedRole === '1' && <li>• <strong>Super Admin:</strong> Full system access - all modules, user management, settings</li>}
-                                                        {selectedRole === '2' && <li>• <strong>HR Admin:</strong> Employees, attendance, leaves, benefits, payroll (view)</li>}
-                                                        {selectedRole === '3' && <li>• <strong>Finance Manager:</strong> Payroll, reimbursements, financial reports</li>}
-                                                        {selectedRole === '4' && <li>• <strong>Department Manager:</strong> Team data, approve team leaves, team attendance</li>}
-                                                        {selectedRole === '5' && <li>• <strong>Employee:</strong> Self-service - own data, payslips, leaves, claims</li>}
-                                                        {!selectedRole && <li className="text-slate-500">Select a role to see permissions</li>}
-                                                    </ul>
+                                                    <h4 className="font-semibold text-amber-900 mb-1.5">Role Permissions Summary:</h4>
+                                                    <div className="text-sm text-amber-800">
+                                                        {activeRoleObj ? (
+                                                            <p>
+                                                                <strong>{activeRoleObj.role_name}:</strong>{' '}
+                                                                {activeRoleObj.description || 'Assigned module permissions enforced by RBAC policy.'}
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-slate-500">Select a role to see permissions</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         )}

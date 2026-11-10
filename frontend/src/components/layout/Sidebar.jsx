@@ -31,7 +31,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
     const isSuperAdmin = roleCode === 'SUPER_ADMIN';
 
     const menuItems = [
-        { title: 'Dashboard', path: '/', icon: <LayoutDashboard size={20} />, moduleCode: 'DASHBOARD' },
+        { title: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={20} />, moduleCode: 'DASHBOARD' },
         { title: 'Mobile App View', path: '/mobile', icon: <Smartphone size={20} />, moduleCode: 'ATTENDANCE' },
         { title: 'Recruitment', path: '/recruitment', icon: <UserPlus size={20} />, moduleCode: 'RECRUITMENT' },
         { title: 'Client Invoices', path: '/invoices', icon: <Receipt size={20} />, moduleCode: 'INVOICES' },
@@ -67,7 +67,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
             {mobileOpen && (
                 <div
                     onClick={closeMobileSidebar}
-                    className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 md:hidden transition-opacity"
+                    className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[45] md:hidden transition-opacity"
                 />
             )}
 

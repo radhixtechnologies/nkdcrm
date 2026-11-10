@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 
 const AreaTrendChart = ({ data = [], height = 240, color = '#6366f1', labelKey = 'day_name', valueKey = 'present' }) => {
     const [hoveredIdx, setHoveredIdx] = useState(null);
+    const gradientId = useId();
 
     if (!data || data.length === 0) {
         return (
@@ -37,7 +38,7 @@ const AreaTrendChart = ({ data = [], height = 240, color = '#6366f1', labelKey =
         <div className="relative w-full overflow-hidden select-none">
             <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
                 <defs>
-                    <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={color} stopOpacity="0.35" />
                         <stop offset="100%" stopColor={color} stopOpacity="0.02" />
                     </linearGradient>
@@ -72,7 +73,7 @@ const AreaTrendChart = ({ data = [], height = 240, color = '#6366f1', labelKey =
                 })}
 
                 {/* Area and Line */}
-                <path d={areaPath} fill="url(#areaGradient)" />
+                <path d={areaPath} fill={`url(#${gradientId})`} />
                 <path
                     d={linePath}
                     fill="none"

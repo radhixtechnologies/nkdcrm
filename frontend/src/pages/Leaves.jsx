@@ -1,22 +1,41 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Calendar, CheckCircle, XCircle, Clock, Plus,
-    FileText, User, ChevronRight, AlertCircle, RefreshCw,
-    GitBranch, Users
+    CheckCircle, XCircle, Plus,
+    FileText, User, RefreshCw,
+    GitBranch
 } from 'lucide-react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 import toast from 'react-hot-toast';
 import leaveService from '../services/leaveService';
 import employeeService from '../services/employeeService';
+import { extractApiError } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import WorkflowFlowchart from '../components/charts/WorkflowFlowchart';
+import ModalPortal from '../components/common/ModalPortal';
+
+const formatDateSafe = (val) => {
+    if (!val) return '—';
+    const str = String(val).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(str);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    const d = new Date(str);
+    return Number.isNaN(d.getTime()) ? str : d.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+};
+
+const countDaysInclusive = (fromStr, toStr) => {
+    const m1 = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(fromStr || ''));
+    const m2 = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(toStr || ''));
+    if (!m1 || !m2) return 1;
+    const t1 = Date.UTC(Number(m1[1]), Number(m1[2]) - 1, Number(m1[3]));
+    const t2 = Date.UTC(Number(m2[1]), Number(m2[2]) - 1, Number(m2[3]));
+    return Math.max(1, Math.round((t2 - t1) / 86400000) + 1);
+};
 
 // --- Sub-Component: Apply Leave Form ---
 const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
-    const { user } = useAuth();
-    const userRole = user?.roleCode || user?.role?.roleCode || user?.role;
-    const isHR = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(userRole);
+    const { hasPermission } = useAuth();
+    const isHR = hasPermission('LEAVES', 'can_approve');
     const [leaveTypes, setLeaveTypes] = useState([]);
     const [employees, setEmployees] = useState([]);
     const [autoApprove, setAutoApprove] = useState(true);
@@ -29,7 +48,7 @@ const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
                 setLeaveTypes(typeRes.data?.data || typeRes.data || []);
 
                 if (isHR || !employeeCode) {
-                    const empRes = await employeeService.getEmployees();
+                    const empRes = await employeeService.getEmployees().catch(() => ({ data: { data: [] } }));
                     setEmployees(empRes.data?.data || []);
                 }
             } catch (err) {
@@ -57,11 +76,7 @@ const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
         }),
         onSubmit: async (values, { resetForm }) => {
             try {
-                const start = new Date(values.from_date);
-                const end = new Date(values.to_date);
-                const diffTime = Math.abs(end - start);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
+                const diffDays = countDaysInclusive(values.from_date, values.to_date);
                 const selectedEmp = employees.find(e => e.employee_code === values.employee_code);
 
                 await leaveService.applyLeave({
@@ -80,6 +95,7 @@ const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
                 onSuccess && onSuccess();
             } catch (err) {
                 console.error('Leave submit error:', err);
+                toast.error(extractApiError(err, 'Failed to submit leave application'));
             }
         }
     });
@@ -173,7 +189,7 @@ const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
                     )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-slate-700 mb-1">
                             From <span className="text-red-500">*</span>
@@ -193,6 +209,7 @@ const ApplyLeaveForm = ({ employeeCode, onSuccess }) => {
                         </label>
                         <input
                             type="date"
+                            min={formik.values.from_date || undefined}
                             {...formik.getFieldProps('to_date')}
                             className="w-full text-sm border-slate-300 rounded-lg py-2 px-3 focus:ring-primary-500 focus:border-primary-500"
                         />
@@ -270,19 +287,28 @@ const LeaveBalances = ({ employeeCode }) => {
     }, [fetchBalances]);
 
     return (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            {balances.map(b => (
-                <div key={b.leave_type_id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-                    <div>
-                        <div className="text-slate-500 text-xs uppercase font-semibold">{b.leave_name}</div>
-                        <div className="text-2xl font-bold text-slate-800 mt-1">{b.remaining}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {balances.map(b => {
+                const isUnpaid = b.is_paid === false || b.leave_code === 'LWP';
+                return (
+                    <div key={b.leave_type_id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+                        <div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-slate-500 text-xs uppercase font-semibold">{b.leave_name}</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isUnpaid ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                                    {isUnpaid ? 'Unpaid' : 'Paid'}
+                                </span>
+                            </div>
+                            <div className="text-2xl font-bold text-slate-800 mt-1">{isUnpaid ? b.taken : b.remaining}</div>
+                            {isUnpaid && <div className="text-[10px] text-slate-400">Days taken (Unpaid)</div>}
+                        </div>
+                        <div className="mt-3 text-xs text-slate-400 flex justify-between">
+                            <span>Used: {b.taken}</span>
+                            <span>{isUnpaid ? 'Allowance: LWP' : `Total: ${b.total_allocated}`}</span>
+                        </div>
                     </div>
-                    <div className="mt-3 text-xs text-slate-400 flex justify-between">
-                        <span>Used: {b.taken}</span>
-                        <span>Total: {b.total_allocated}</span>
-                    </div>
-                </div>
-            ))}
+                );
+            })}
             {balances.length === 0 && <div className="col-span-full text-slate-500 text-sm">No leave balances found for current user.</div>}
         </div>
     );
@@ -290,10 +316,12 @@ const LeaveBalances = ({ employeeCode }) => {
 
 // --- Main Page ---
 const Leaves = () => {
-    const { user } = useAuth();
-    const isHR = ['SUPER_ADMIN', 'HR_ADMIN', 'DEPT_MANAGER'].includes(user?.roleCode || user?.role?.roleCode);
+    const { user, hasPermission } = useAuth();
+    const isHR = hasPermission('LEAVES', 'can_approve');
+    const canCreate = hasPermission('LEAVES', 'can_create');
     const [activeTab, setActiveTab] = useState(isHR ? 'hr_dashboard' : 'my_leaves');
     const [showApplyModal, setShowApplyModal] = useState(false);
+    const [rejectModal, setRejectModal] = useState({ open: false, id: null, reason: '' });
 
     const currentEmployeeCode = user?.employeeCode || '';
     const [hrRequestList, setHrRequestList] = useState([]);
@@ -301,13 +329,13 @@ const Leaves = () => {
     const [myHistory, setMyHistory] = useState([]);
 
     const loadData = useCallback(async () => {
-        if (activeTab === 'hr_dashboard') {
+        if (activeTab === 'hr_dashboard' && isHR) {
             try {
                 const res = await leaveService.getAllRequests({ status: statusFilter });
                 setHrRequestList(res.data.data || []);
             } catch (err) {
                 console.error(err);
-                toast.error("Failed to load requests");
+                toast.error(extractApiError(err, "Failed to load requests"));
             }
         } else if (currentEmployeeCode) {
             try {
@@ -315,9 +343,10 @@ const Leaves = () => {
                 setMyHistory(res.data.data || []);
             } catch (err) {
                 console.error(err);
+                toast.error(extractApiError(err, "Failed to load leave history"));
             }
         }
-    }, [activeTab, currentEmployeeCode, statusFilter]);
+    }, [activeTab, currentEmployeeCode, statusFilter, isHR]);
 
     useEffect(() => {
         loadData();
@@ -329,44 +358,61 @@ const Leaves = () => {
             toast.success("Leave Approved and Attendance synced");
             loadData();
         } catch (err) {
-            toast.error(err.response?.data?.message || "Approval failed");
+            toast.error(extractApiError(err, "Approval failed"));
         }
     };
 
-    const handleReject = async (id) => {
-        const reason = prompt("Enter rejection reason:");
-        if (!reason) return;
+    const handleRejectSubmit = async (e) => {
+        e.preventDefault();
+        if (!rejectModal.reason.trim()) {
+            toast.error('Please enter a rejection reason');
+            return;
+        }
         try {
-            await leaveService.rejectLeave(id, currentEmployeeCode, reason);
+            await leaveService.rejectLeave(rejectModal.id, currentEmployeeCode, rejectModal.reason.trim());
             toast.success("Leave Rejected");
+            setRejectModal({ open: false, id: null, reason: '' });
             loadData();
         } catch (err) {
             console.error(err);
-            toast.error("Rejection failed");
+            toast.error(extractApiError(err, "Rejection failed"));
+        }
+    };
+
+    const handleCancel = async (id) => {
+        if (!window.confirm('Cancel this pending leave application?')) return;
+        try {
+            await leaveService.cancelLeave(id);
+            toast.success('Leave application cancelled');
+            loadData();
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to cancel leave'));
         }
     };
 
     return (
-        <div className="space-y-6 max-w-7xl mx-auto pb-10 relative">
+        <div className="space-y-6 max-w-7xl mx-auto pb-16 relative">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800">Leave Management</h1>
-                    <p className="text-slate-500">Apply, approve, track leave balances & attendance integration</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800">Leave Management</h1>
+                    <p className="text-xs sm:text-sm text-slate-500">Apply, approve, track leave balances & attendance integration</p>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setShowApplyModal(true)}
-                        className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors text-sm"
-                    >
-                        <Plus size={18} /> Apply Leave
-                    </button>
-                </div>
+                {canCreate && (
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setShowApplyModal(true)}
+                            className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-colors text-xs sm:text-sm"
+                        >
+                            <Plus size={18} /> Apply Leave
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Tabs */}
             <div className="border-b border-slate-200">
-                <nav className="-mb-px flex space-x-8 overflow-x-auto">
+                <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto no-scrollbar">
                     {isHR && (
                         <button
                             onClick={() => setActiveTab('hr_dashboard')}
@@ -393,16 +439,16 @@ const Leaves = () => {
             </div>
 
             {/* Content: HR Dashboard */}
-            {activeTab === 'hr_dashboard' && (
+            {activeTab === 'hr_dashboard' && isHR && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                            <div className="flex items-center gap-4">
+                        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-3 bg-slate-50">
+                            <div className="flex items-center gap-3 flex-wrap">
                                 <h3 className="font-semibold text-slate-800">Leave Requests</h3>
                                 <select
                                     value={statusFilter}
                                     onChange={(e) => setStatusFilter(e.target.value)}
-                                    className="text-sm border-slate-300 rounded-lg py-1 px-2.5 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                                    className="text-sm border-slate-300 rounded-lg py-1 px-2.5 focus:ring-primary-500 focus:border-primary-500 bg-white border"
                                 >
                                     <option value="PENDING">Pending</option>
                                     <option value="APPROVED">Approved</option>
@@ -420,17 +466,17 @@ const Leaves = () => {
                         ) : (
                             <div className="divide-y divide-slate-100">
                                 {hrRequestList.map(req => (
-                                    <div key={req.request_id} className="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50 transition-colors">
-                                        <div className="flex items-start gap-4">
+                                    <div key={req.request_id} className="p-4 sm:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50 transition-colors">
+                                        <div className="flex items-start gap-3 sm:gap-4 min-w-0">
                                             <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold shrink-0">
-                                                {req.first_name[0]}{req.last_name ? req.last_name[0] : ''}
+                                                {req.first_name?.[0]}{req.last_name ? req.last_name[0] : ''}
                                             </div>
-                                            <div>
+                                            <div className="min-w-0">
                                                 <div className="font-medium text-slate-900">{req.first_name} {req.last_name} <span className="text-slate-400 text-xs font-mono">({req.employee_code})</span></div>
-                                                <div className="text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-2">
+                                                <div className="text-xs sm:text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-2">
                                                     <span className="font-semibold text-slate-700">{req.leave_name}</span>
                                                     <span>•</span>
-                                                    <span>{new Date(req.from_date).toLocaleDateString()} to {new Date(req.to_date).toLocaleDateString()}</span>
+                                                    <span>{formatDateSafe(req.from_date)} to {formatDateSafe(req.to_date)}</span>
                                                     <span className="bg-slate-200 px-1.5 py-0.5 rounded text-xs font-semibold">{req.total_days} Days</span>
                                                     {req.approved_by_name && <span className="text-slate-400 text-xs ml-2 italic">Approved by: {req.approved_by_name}</span>}
                                                 </div>
@@ -441,7 +487,7 @@ const Leaves = () => {
                                             {req.status === 'PENDING' ? (
                                                 <>
                                                     <button
-                                                        onClick={() => handleReject(req.request_id)}
+                                                        onClick={() => setRejectModal({ open: true, id: req.request_id, reason: '' })}
                                                         className="px-3.5 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200"
                                                     >
                                                         Reject
@@ -476,11 +522,48 @@ const Leaves = () => {
                     <LeaveBalances employeeCode={currentEmployeeCode} />
 
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <div className="px-6 py-4 border-b border-slate-100 font-semibold text-slate-800 flex justify-between">
+                        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 font-semibold text-slate-800 flex justify-between items-center">
                             <span>Application History</span>
                             <button onClick={loadData} className="text-slate-400 hover:text-primary-600"><RefreshCw size={16} /></button>
                         </div>
-                        <div className="overflow-x-auto">
+
+                        {/* Mobile Cards View */}
+                        <div className="block sm:hidden divide-y divide-slate-100">
+                            {myHistory.length === 0 ? (
+                                <div className="p-8 text-center text-sm text-slate-500">No personal leave records found</div>
+                            ) : myHistory.map(req => (
+                                <div key={req.request_id} className="p-4 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <p className="font-bold text-slate-900 text-sm">{req.leave_name || req.leave_code}</p>
+                                            <p className="text-xs text-slate-500 font-mono">
+                                                {formatDateSafe(req.from_date)} – {formatDateSafe(req.to_date)} ({req.total_days}d)
+                                            </p>
+                                        </div>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0
+                                            ${req.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                req.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                                req.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' :
+                                                    'bg-yellow-100 text-yellow-700'}`}>
+                                            {req.status}
+                                        </span>
+                                    </div>
+                                    {req.status === 'PENDING' && (
+                                        <div className="pt-1 flex justify-end">
+                                            <button
+                                                onClick={() => handleCancel(req.request_id)}
+                                                className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200"
+                                            >
+                                                Cancel Application
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Desktop Table View */}
+                        <div className="hidden sm:block overflow-x-auto">
                             <table className="w-full text-left text-sm">
                                 <thead className="bg-slate-50 text-slate-500">
                                     <tr>
@@ -488,25 +571,37 @@ const Leaves = () => {
                                         <th className="px-6 py-3 font-semibold">Dates</th>
                                         <th className="px-6 py-3 font-semibold">Days</th>
                                         <th className="px-6 py-3 font-semibold">Status</th>
+                                        <th className="px-6 py-3 font-semibold text-right">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {myHistory.length === 0 ? (
-                                        <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">No personal leave records found</td></tr>
+                                        <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-500">No personal leave records found</td></tr>
                                     ) : myHistory.map(req => (
                                         <tr key={req.request_id} className="hover:bg-slate-50">
                                             <td className="px-6 py-4 font-medium text-slate-900">{req.leave_code}</td>
                                             <td className="px-6 py-4 text-slate-500">
-                                                {new Date(req.from_date).toLocaleDateString()} - {new Date(req.to_date).toLocaleDateString()}
+                                                {formatDateSafe(req.from_date)} - {formatDateSafe(req.to_date)}
                                             </td>
                                             <td className="px-6 py-4 text-slate-600 font-mono">{req.total_days}</td>
                                             <td className="px-6 py-4">
                                                 <span className={`px-2.5 py-1 rounded-full text-xs font-semibold 
                                                     ${req.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
                                                         req.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                                        req.status === 'CANCELLED' ? 'bg-slate-100 text-slate-600' :
                                                             'bg-yellow-100 text-yellow-700'}`}>
                                                     {req.status}
                                                 </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                {req.status === 'PENDING' && (
+                                                    <button
+                                                        onClick={() => handleCancel(req.request_id)}
+                                                        className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
@@ -526,26 +621,57 @@ const Leaves = () => {
 
             {/* Apply Leave Modal */}
             {showApplyModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="w-full max-w-md bg-white rounded-xl shadow-2xl relative animate-in zoom-in-95 duration-200 overflow-hidden">
-                        <button
-                            onClick={() => setShowApplyModal(false)}
-                            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
-                        >
-                            <XCircle size={22} />
-                        </button>
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="w-full max-w-md max-h-[90vh] bg-white rounded-xl shadow-2xl relative animate-in zoom-in-95 duration-200 overflow-y-auto">
+                            <button
+                                onClick={() => setShowApplyModal(false)}
+                                className="absolute top-4 right-4 z-10 text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <XCircle size={22} />
+                            </button>
 
-                        <div className="p-1">
-                            <ApplyLeaveForm
-                                employeeCode={currentEmployeeCode}
-                                onSuccess={() => {
-                                    setShowApplyModal(false);
-                                    loadData();
-                                }}
-                            />
+                            <div className="p-1">
+                                <ApplyLeaveForm
+                                    employeeCode={currentEmployeeCode}
+                                    onSuccess={() => {
+                                        setShowApplyModal(false);
+                                        loadData();
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
-                </div>
+                </ModalPortal>
+            )}
+
+            {/* Rejection Reason Modal */}
+            {rejectModal.open && (
+                <ModalPortal>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <form onSubmit={handleRejectSubmit} className="w-full max-w-sm bg-white rounded-xl shadow-xl overflow-hidden">
+                            <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                <h3 className="font-bold text-slate-800 text-sm">Reject Leave Request</h3>
+                                <button type="button" onClick={() => setRejectModal({ open: false, id: null, reason: '' })} className="text-slate-400 hover:text-slate-600 font-bold text-lg">&times;</button>
+                            </div>
+                            <div className="p-5 space-y-3">
+                                <label className="block text-xs font-semibold text-slate-600 uppercase">Rejection Reason *</label>
+                                <textarea
+                                    required
+                                    rows="3"
+                                    value={rejectModal.reason}
+                                    onChange={(e) => setRejectModal(prev => ({ ...prev, reason: e.target.value }))}
+                                    placeholder="Provide reason for rejecting this leave..."
+                                    className="w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:border-primary-500 focus:outline-none"
+                                />
+                                <div className="flex justify-end gap-2 pt-2">
+                                    <button type="button" onClick={() => setRejectModal({ open: false, id: null, reason: '' })} className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-lg">Cancel</button>
+                                    <button type="submit" className="px-4 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg">Reject Leave</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </ModalPortal>
             )}
         </div>
     );

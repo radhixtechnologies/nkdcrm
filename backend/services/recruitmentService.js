@@ -1,13 +1,25 @@
 const db = require('../config/database');
 
+const cleanInt = (val, fallback = null) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = parseInt(val, 10);
+    return Number.isNaN(n) ? fallback : n;
+};
+
+const cleanNum = (val, fallback = null) => {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = parseFloat(val);
+    return Number.isNaN(n) ? fallback : n;
+};
+
 const recruitmentService = {
     // --- 1. Job Requisitions ---
     async getRequisitions() {
         const query = `
             SELECT r.*,
-                   COUNT(c.candidate_id)::int as total_candidates,
-                   COUNT(CASE WHEN c.current_stage = 'INTERVIEW_SCHEDULED' THEN 1 END)::int as in_interview,
-                   COUNT(CASE WHEN c.current_stage = 'HIRED' THEN 1 END)::int as hired_count
+                   COUNT(c.candidate_id)::int AS total_candidates,
+                   COUNT(CASE WHEN c.current_stage = 'INTERVIEW_SCHEDULED' THEN 1 END)::int AS in_interview,
+                   COUNT(CASE WHEN c.current_stage = 'HIRED' THEN 1 END)::int AS hired_count
             FROM job_requisitions r
             LEFT JOIN candidates c ON c.requisition_id = r.requisition_id
             GROUP BY r.requisition_id
@@ -31,10 +43,10 @@ const recruitmentService = {
             data.title,
             data.department,
             data.job_location || 'Head Office',
-            parseInt(data.vacancies) || 1,
+            cleanInt(data.vacancies, 1),
             data.experience_required || '1-3 Years',
-            parseFloat(data.min_salary) || 0,
-            parseFloat(data.max_salary) || 0,
+            cleanNum(data.min_salary, 0),
+            cleanNum(data.max_salary, 0),
             data.employment_type || 'FULL_TIME',
             data.status || 'OPEN',
             data.job_description || null
@@ -44,41 +56,72 @@ const recruitmentService = {
     },
 
     async updateRequisition(id, data) {
+        const existingRes = await db.query('SELECT * FROM job_requisitions WHERE requisition_id = $1', [id]);
+        if (existingRes.rows.length === 0) {
+            const err = new Error('Requisition not found');
+            err.status = 404;
+            throw err;
+        }
+        const ex = existingRes.rows[0];
+
         const query = `
             UPDATE job_requisitions SET
-                title = COALESCE($1, title),
-                department = COALESCE($2, department),
-                job_location = COALESCE($3, job_location),
-                vacancies = COALESCE($4, vacancies),
-                experience_required = COALESCE($5, experience_required),
-                min_salary = COALESCE($6, min_salary),
-                max_salary = COALESCE($7, max_salary),
-                employment_type = COALESCE($8, employment_type),
-                status = COALESCE($9, status),
-                job_description = COALESCE($10, job_description),
+                title = $1,
+                department = $2,
+                job_location = $3,
+                vacancies = $4,
+                experience_required = $5,
+                min_salary = $6,
+                max_salary = $7,
+                employment_type = $8,
+                status = $9,
+                job_description = $10,
                 updated_at = CURRENT_TIMESTAMP
             WHERE requisition_id = $11
             RETURNING *
         `;
         const params = [
-            data.title, data.department, data.job_location,
-            data.vacancies ? parseInt(data.vacancies) : null,
-            data.experience_required, data.min_salary, data.max_salary,
-            data.employment_type, data.status, data.job_description, id
+            data.title !== undefined ? data.title : ex.title,
+            data.department !== undefined ? data.department : ex.department,
+            data.job_location !== undefined ? data.job_location : ex.job_location,
+            data.vacancies !== undefined ? cleanInt(data.vacancies, ex.vacancies) : ex.vacancies,
+            data.experience_required !== undefined ? (data.experience_required || null) : ex.experience_required,
+            data.min_salary !== undefined ? cleanNum(data.min_salary, ex.min_salary) : ex.min_salary,
+            data.max_salary !== undefined ? cleanNum(data.max_salary, ex.max_salary) : ex.max_salary,
+            data.employment_type !== undefined ? data.employment_type : ex.employment_type,
+            data.status !== undefined ? data.status : ex.status,
+            data.job_description !== undefined ? (data.job_description || null) : ex.job_description,
+            id
         ];
         const res = await db.query(query, params);
         return res.rows[0];
     },
 
+    async deleteRequisition(id) {
+        const res = await db.query('DELETE FROM job_requisitions WHERE requisition_id = $1 RETURNING requisition_id', [id]);
+        if (res.rows.length === 0) {
+            const err = new Error('Requisition not found');
+            err.status = 404;
+            throw err;
+        }
+        return { success: true, message: 'Requisition deleted' };
+    },
+
     // --- 2. Candidates & Interviews ---
     async getCandidates(filters = {}) {
         let query = `
-            SELECT c.*, 
-                   r.title as requisition_title, r.requisition_code, r.department,
-                   o.offer_id, o.offer_code, o.status as offer_status, o.offered_ctc, o.joining_date
+            SELECT c.*,
+                   r.title AS requisition_title, r.requisition_code, r.department,
+                   o.offer_id, o.offer_code, o.status AS offer_status, o.offered_ctc, o.joining_date
             FROM candidates c
             LEFT JOIN job_requisitions r ON c.requisition_id = r.requisition_id
-            LEFT JOIN offer_letters o ON o.candidate_id = c.candidate_id
+            LEFT JOIN LATERAL (
+                SELECT offer_id, offer_code, status, offered_ctc, joining_date
+                FROM offer_letters o2
+                WHERE o2.candidate_id = c.candidate_id
+                ORDER BY o2.created_at DESC
+                LIMIT 1
+            ) o ON TRUE
             WHERE 1=1
         `;
         const params = [];
@@ -107,18 +150,18 @@ const recruitmentService = {
             RETURNING *
         `;
         const params = [
-            data.requisition_id || null,
+            cleanInt(data.requisition_id, null),
             data.full_name,
             data.email,
             data.phone,
             data.current_company || null,
             data.current_designation || null,
-            parseFloat(data.experience_years) || 0,
+            cleanNum(data.experience_years, 0),
             data.current_stage || 'APPLIED',
-            data.interview_date || null,
+            data.interview_date && String(data.interview_date).trim() !== '' ? data.interview_date : null,
             data.interviewer_name || null,
             data.interview_feedback || null,
-            data.rating ? parseInt(data.rating) : null,
+            cleanInt(data.rating, null),
             data.resume_url || null
         ];
         const res = await db.query(query, params);
@@ -139,21 +182,37 @@ const recruitmentService = {
         `;
         const res = await db.query(query, [
             stage,
-            feedbackData.interview_date || null,
+            feedbackData.interview_date && String(feedbackData.interview_date).trim() !== '' ? feedbackData.interview_date : null,
             feedbackData.interviewer_name || null,
             feedbackData.interview_feedback || null,
-            feedbackData.rating ? parseInt(feedbackData.rating) : null,
+            cleanInt(feedbackData.rating, null),
             candidateId
         ]);
+        if (res.rows.length === 0) {
+            const err = new Error('Candidate not found');
+            err.status = 404;
+            throw err;
+        }
         return res.rows[0];
+    },
+
+    async deleteCandidate(id) {
+        const res = await db.query('DELETE FROM candidates WHERE candidate_id = $1 RETURNING candidate_id', [id]);
+        if (res.rows.length === 0) {
+            const err = new Error('Candidate not found');
+            err.status = 404;
+            throw err;
+        }
+        return { success: true, message: 'Candidate deleted' };
     },
 
     // --- 3. Offer Letters ---
     async getOffers() {
         const query = `
             SELECT o.*,
-                   c.full_name as candidate_name, c.email as candidate_email, c.phone as candidate_phone,
-                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents as candidate_documents,
+                   TO_CHAR(o.joining_date, 'YYYY-MM-DD') AS joining_date,
+                   c.full_name AS candidate_name, c.email AS candidate_email, c.phone AS candidate_phone,
+                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents AS candidate_documents,
                    s.site_name, s.site_code
             FROM offer_letters o
             JOIN candidates c ON o.candidate_id = c.candidate_id
@@ -167,8 +226,9 @@ const recruitmentService = {
     async getOfferById(offerId) {
         const query = `
             SELECT o.*,
-                   c.full_name as candidate_name, c.email as candidate_email, c.phone as candidate_phone,
-                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents as candidate_documents,
+                   TO_CHAR(o.joining_date, 'YYYY-MM-DD') AS joining_date,
+                   c.full_name AS candidate_name, c.email AS candidate_email, c.phone AS candidate_phone,
+                   c.aadhaar_number, c.pan_number, c.bank_name, c.bank_account_no, c.bank_ifsc, c.documents AS candidate_documents,
                    s.site_name, s.site_code
             FROM offer_letters o
             JOIN candidates c ON o.candidate_id = c.candidate_id
@@ -176,7 +236,7 @@ const recruitmentService = {
             WHERE o.offer_id = $1
         `;
         const res = await db.query(query, [offerId]);
-        return res.rows[0];
+        return res.rows[0] || null;
     },
 
     async createOffer(data) {
@@ -200,7 +260,7 @@ const recruitmentService = {
             data.candidate_id,
             data.designation,
             data.department,
-            data.site_id || null,
+            cleanInt(data.site_id, null),
             annualCTC,
             basic,
             hra,
@@ -211,7 +271,6 @@ const recruitmentService = {
         ];
         const res = await db.query(query, params);
 
-        // Update candidate stage to OFFER_EXTENDED
         await db.query(
             "UPDATE candidates SET current_stage = 'OFFER_EXTENDED', updated_at = CURRENT_TIMESTAMP WHERE candidate_id = $1",
             [data.candidate_id]
@@ -260,23 +319,26 @@ const recruitmentService = {
 
     async dispatchEmail(offerId) {
         const offer = await this.getOfferById(offerId);
-        if (!offer) throw new Error('Offer letter not found');
+        if (!offer) {
+            const err = new Error('Offer letter not found');
+            err.status = 404;
+            throw err;
+        }
 
         const pdfService = require('./pdfService');
         const emailService = require('./emailService');
         const pdfBuffer = await pdfService.generateAppointmentLetterBuffer(offer);
 
         const dispatchResult = await emailService.sendAppointmentLetterEmail(offer, pdfBuffer);
+        const dispatchStatus = dispatchResult.mode === 'SMTP_DISPATCHED' ? 'SENT' : 'SIMULATED';
 
-        const query = `
+        await db.query(`
             UPDATE offer_letters SET
                 email_dispatched_at = CURRENT_TIMESTAMP,
-                email_dispatch_status = 'SENT',
+                email_dispatch_status = $1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE offer_id = $1
-            RETURNING *
-        `;
-        await db.query(query, [offerId]);
+            WHERE offer_id = $2
+        `, [dispatchStatus, offerId]);
 
         return {
             ...dispatchResult,
@@ -351,74 +413,122 @@ const recruitmentService = {
         return offer;
     },
 
-    // --- 4. Convert Candidate directly to Employee (1-Click Onboarding) ---
+    // --- 4. Convert Candidate directly to Employee (Atomic + Idempotent 1-Click Onboarding) ---
     async convertToEmployee(candidateId, employeePayload = {}) {
-        // Fetch candidate details
-        const candRes = await db.query("SELECT * FROM candidates WHERE candidate_id = $1", [candidateId]);
-        if (candRes.rows.length === 0) throw new Error("Candidate not found");
-        const candidate = candRes.rows[0];
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
 
-        // Fetch offer details if any
-        const offerRes = await db.query("SELECT * FROM offer_letters WHERE candidate_id = $1 ORDER BY created_at DESC LIMIT 1", [candidateId]);
-        const offer = offerRes.rows[0] || {};
+            const candRes = await client.query('SELECT * FROM candidates WHERE candidate_id = $1 FOR UPDATE', [candidateId]);
+            if (candRes.rows.length === 0) {
+                const err = new Error('Candidate not found');
+                err.status = 404;
+                throw err;
+            }
+            const candidate = candRes.rows[0];
 
-        // Generate next employee code
-        const seqRes = await db.query("SELECT nextval('employee_code_seq') as seq");
-        const nextVal = seqRes.rows[0]?.seq || Math.floor(Math.random() * 900000 + 100000);
-        const employeeCode = `EMP-${String(nextVal).padStart(6, '0')}`;
+            const existingEmp = await client.query(
+                'SELECT employee_id, employee_code FROM employees WHERE LOWER(email) = LOWER($1) AND employment_status != $2 LIMIT 1',
+                [candidate.email, 'TERMINATED']
+            );
+            if (existingEmp.rows.length > 0 && candidate.current_stage === 'HIRED') {
+                const err = new Error(`Candidate has already been onboarded as ${existingEmp.rows[0].employee_code}`);
+                err.status = 409;
+                throw err;
+            }
 
-        const nameParts = candidate.full_name.trim().split(' ');
-        const firstName = nameParts[0];
-        const lastName = nameParts.slice(1).join(' ') || '';
+            const offerRes = await client.query(
+                'SELECT * FROM offer_letters WHERE candidate_id = $1 ORDER BY created_at DESC LIMIT 1',
+                [candidateId]
+            );
+            const offer = offerRes.rows[0] || {};
 
-        const basicSalary = offer.basic_salary ? parseFloat(offer.basic_salary) : (offer.offered_ctc ? Math.round(parseFloat(offer.offered_ctc) / 24) : 25000);
+            const seqRes = await client.query("SELECT nextval('employee_code_seq') AS seq");
+            const nextVal = seqRes.rows[0]?.seq || Math.floor(Math.random() * 900000 + 100000);
+            const employeeCode = `EMP-${String(nextVal).padStart(6, '0')}`;
 
-        const panNumber = candidate.pan_number || employeePayload.pan_number || null;
-        const aadhaarNumber = candidate.aadhaar_number || employeePayload.aadhaar_number || null;
-        const bankName = candidate.bank_name || employeePayload.bank_name || null;
-        const accountNumber = candidate.bank_account_no || employeePayload.account_number || null;
-        const ifscCode = candidate.bank_ifsc || employeePayload.ifsc_code || null;
-        const docs = candidate.documents || employeePayload.documents || {};
+            const nameParts = String(candidate.full_name || 'Employee').trim().split(/\s+/);
+            const firstName = nameParts[0];
+            const lastName = nameParts.slice(1).join(' ') || '';
 
-        const insertQuery = `
-            INSERT INTO employees (
-                employee_code, first_name, last_name, full_name, email, mobile,
-                designation, department, site_id, basic_salary, date_of_joining,
-                pan_number, aadhaar_number, bank_name, account_number, ifsc_code, documents,
-                employment_status, employment_type, wage_type, is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'ACTIVE', 'PERMANENT', 'MONTHLY', TRUE)
-            RETURNING *
-        `;
+            const monthlyGross = offer.offered_ctc ? Math.round(parseFloat(offer.offered_ctc) / 12) : 25000;
+            const basicSalary = parseFloat(offer.basic_salary) || Math.round(monthlyGross * 0.50);
+            const hraSalary = parseFloat(offer.hra) || Math.round(monthlyGross * 0.30);
+            const specialSalary = parseFloat(offer.special_allowance) || Math.max(0, monthlyGross - basicSalary - hraSalary);
 
-        const newEmp = await db.query(insertQuery, [
-            employeeCode,
-            firstName,
-            lastName,
-            candidate.full_name,
-            candidate.email,
-            candidate.phone,
-            offer.designation || candidate.current_designation || 'Staff',
-            offer.department || 'Operations',
-            offer.site_id || null,
-            basicSalary,
-            offer.joining_date || new Date().toISOString().split('T')[0],
-            panNumber,
-            aadhaarNumber,
-            bankName,
-            accountNumber,
-            ifscCode,
-            JSON.stringify(docs)
-        ]);
+            const panNumber = candidate.pan_number || employeePayload.pan_number || null;
+            const aadhaarNumber = candidate.aadhaar_number || employeePayload.aadhaar_number || null;
+            const bankName = candidate.bank_name || employeePayload.bank_name || null;
+            const accountNumber = candidate.bank_account_no || employeePayload.account_number || null;
+            const ifscCode = candidate.bank_ifsc || employeePayload.ifsc_code || null;
+            const docs = candidate.documents || employeePayload.documents || {};
 
-        // Mark candidate as HIRED
-        await db.query("UPDATE candidates SET current_stage = 'HIRED', updated_at = CURRENT_TIMESTAMP WHERE candidate_id = $1", [candidateId]);
-        if (offer.offer_id) {
-            await db.query("UPDATE offer_letters SET status = 'JOINED', acceptance_status = 'ACCEPTED', updated_at = CURRENT_TIMESTAMP WHERE offer_id = $1", [offer.offer_id]);
+            const newEmp = await client.query(`
+                INSERT INTO employees (
+                    employee_code, first_name, last_name, full_name, email, mobile,
+                    designation, department, site_id,
+                    basic_salary, hra, special_allowance,
+                    date_of_joining, pan_number, aadhaar_number, bank_name, account_number, ifsc_code, documents,
+                    employment_status, employment_type, wage_type, is_active
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6,
+                    $7, $8, $9,
+                    $10, $11, $12,
+                    $13, $14, $15, $16, $17, $18, $19,
+                    'ACTIVE', 'PERMANENT', 'MONTHLY', TRUE
+                )
+                RETURNING *
+            `, [
+                employeeCode,
+                firstName,
+                lastName,
+                candidate.full_name,
+                candidate.email ? candidate.email.toLowerCase().trim() : null,
+                candidate.phone,
+                offer.designation || candidate.current_designation || 'Staff',
+                offer.department || 'Operations',
+                cleanInt(offer.site_id, null),
+                basicSalary,
+                hraSalary,
+                specialSalary,
+                offer.joining_date || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+                panNumber,
+                aadhaarNumber,
+                bankName,
+                accountNumber,
+                ifscCode,
+                JSON.stringify(docs)
+            ]);
+
+            await client.query(
+                "UPDATE candidates SET current_stage = 'HIRED', updated_at = CURRENT_TIMESTAMP WHERE candidate_id = $1",
+                [candidateId]
+            );
+            if (offer.offer_id) {
+                await client.query(
+                    "UPDATE offer_letters SET status = 'JOINED', acceptance_status = 'ACCEPTED', updated_at = CURRENT_TIMESTAMP WHERE offer_id = $1",
+                    [offer.offer_id]
+                );
+            }
+
+            await client.query('COMMIT');
+
+            const createdEmp = newEmp.rows[0];
+            try {
+                const leaveService = require('./leaveService');
+                await leaveService.initializeLeaveBalance(createdEmp.employee_id);
+            } catch (leaveErr) {
+                console.warn('Leave init note during onboarding:', leaveErr.message);
+            }
+            if (createdEmp) delete createdEmp.password_hash;
+            return createdEmp;
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
         }
-
-        return newEmp.rows[0];
     }
 };
 
 module.exports = recruitmentService;
-

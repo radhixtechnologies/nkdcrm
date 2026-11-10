@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nkd-crm-cache-v1';
+const CACHE_NAME = 'nkd-crm-cache-v2';
 const STATIC_ASSETS = [
     '/',
     '/index.html',
@@ -31,14 +31,20 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    // Pass API calls directly to network
-    if (event.request.url.includes('/api/')) {
+    const url = event.request.url || '';
+    // Pass API calls, file uploads, and mutations directly to network
+    if (event.request.method !== 'GET' || url.includes('/api/') || url.includes('/uploads/')) {
         return;
     }
 
     event.respondWith(
-        fetch(event.request).catch(() => {
-            return caches.match(event.request);
+        fetch(event.request).catch(async () => {
+            const cached = await caches.match(event.request);
+            if (cached) return cached;
+            if (event.request.mode === 'navigate') {
+                return caches.match('/index.html');
+            }
+            return Response.error();
         })
     );
 });
