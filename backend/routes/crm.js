@@ -401,7 +401,13 @@ router.get('/employees', requirePermission('EMPLOYEES', 'can_view'), async (req,
 router.get('/employees/profile/me', async (req, res, next) => {
     try {
         const emp = await getRequesterEmployee(req.user);
-        if (!emp) return res.status(404).json({ success: false, message: 'No linked employee profile found for this account' });
+        if (!emp) {
+            return res.json({
+                success: true,
+                data: null,
+                message: 'No linked employee profile found for this account'
+            });
+        }
         const full = await employeeService.getEmployeeByCode(emp.employee_code);
         return sendData(res, full);
     } catch (error) { return sendError(next, error); }
