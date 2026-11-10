@@ -44,9 +44,10 @@ const sanitizeConnectionString = (urlStr) => {
   return `${protoMatch[1]}${encodeURIComponent(decodeURIComponent(user))}:${cleanPass}@${hostAndRest}`;
 };
 
-// Detect if connection string is in DATABASE_URL or inadvertently placed in DB_HOST
+// Detect if connection string is in DATABASE_URL or inadvertently placed in DB_HOST or DB_PASSWORD
 const rawConnectionString = process.env.DATABASE_URL ||
-  (process.env.DB_HOST && (process.env.DB_HOST.startsWith('postgres://') || process.env.DB_HOST.startsWith('postgresql://')) ? process.env.DB_HOST : null);
+  (process.env.DB_HOST && (process.env.DB_HOST.startsWith('postgres://') || process.env.DB_HOST.startsWith('postgresql://')) ? process.env.DB_HOST : null) ||
+  (process.env.DB_PASSWORD && (process.env.DB_PASSWORD.startsWith('postgres://') || process.env.DB_PASSWORD.startsWith('postgresql://')) ? process.env.DB_PASSWORD : null);
 
 const isUrlLike = rawConnectionString || (process.env.DB_HOST && process.env.DB_HOST.includes('@'));
 const finalConnectionString = sanitizeConnectionString(rawConnectionString || (isUrlLike ? `postgresql://${process.env.DB_HOST}` : null));
