@@ -229,9 +229,12 @@ app.use((err, req, res, next) => {
         || err.errors?.some?.(error => error.code === 'ECONNREFUSED');
 
     if (databaseConnectionFailed) {
+        const target = process.env.DATABASE_URL
+            ? 'cloud database (DATABASE_URL)'
+            : `${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || 5432}`;
         return res.status(503).json({
             success: false,
-            message: 'PostgreSQL database is not running on localhost:5432. Start PostgreSQL and check backend/.env.'
+            message: `PostgreSQL database is not reachable at ${target}. Please configure your Database Environment Variables in Hostinger hPanel.`
         });
     }
 
