@@ -582,6 +582,247 @@ class PDFService {
         );
     }
 
+    /**
+     * Integrity and Confidentiality Agreement (NDA)
+     * For Manpower & Contract Labour Deployment at Client Sites
+     */
+    generateIntegrityAgreement(employee, res) {
+        return new Promise((resolve, reject) => {
+            try {
+                const doc = new PDFDocument({ margin: 42, size: 'A4', bufferPages: true });
+
+                const empCode = employee.employee_code || employee.employee_id || 'EMP';
+                const filename = `Integrity_Confidentiality_Agreement_${empCode}.pdf`;
+
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader('Content-Type', 'application/pdf');
+                    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+                }
+
+                doc.pipe(res);
+
+                this.buildIntegrityAgreementDoc(employee, doc);
+
+                doc.end();
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    buildIntegrityAgreementDoc(employee, doc) {
+        const stampPath = path.join(__dirname, '../assets/nkd_stamp.png');
+
+        const primaryColor = '#000000';
+        const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Worker / Employee';
+        const fatherName = employee.father_name || 'As per Aadhaar record';
+        const designation = employee.designation || 'Technician / Site Worker';
+        const employeeCode = employee.employee_code || employee.employee_id || 'NKD-EMP';
+        const siteName = employee.site_name || 'Assigned Project Site';
+        const principalEmployer = employee.principal_employer_name || employee.site_name || 'As Assigned by NKD Power Solutions';
+
+        const doj = new Date(employee.date_of_joining || Date.now());
+        const dayNum = doj.getDate();
+        const monthName = doj.toLocaleDateString('en-GB', { month: 'long' });
+        const yearNum = doj.getFullYear();
+        const locationStr = employee.site_city || employee.site_state || employee.site_location || 'Faridabad';
+
+        // Top Header
+        doc.fontSize(13).font('Helvetica-Bold').fillColor(primaryColor).text('NKD POWER SOLUTIONS PVT LTD', { align: 'center' });
+        doc.fontSize(8.5).font('Helvetica-Oblique').fillColor('#475569').text('A-41, GF, Park Elite Floor, Sec-85, Faridabad, Haryana-121002', { align: 'center' });
+        doc.moveDown(0.3);
+        doc.fontSize(11).font('Helvetica-Bold').fillColor(primaryColor).text('INTEGRITY AND CONFIDENTIALITY AGREEMENT', { align: 'center', underline: true });
+        doc.moveDown(0.5);
+
+        doc.moveTo(42, doc.y).lineTo(553, doc.y).lineWidth(1).strokeColor('#000000').stroke();
+        doc.moveDown(0.7);
+
+        doc.fontSize(9).font('Helvetica').fillColor(primaryColor).text(
+            `This Agreement is made on this ${dayNum}th day of ${monthName}, ${yearNum}, at ${locationStr}, and is entered into between:`,
+            { lineGap: 1.5 }
+        );
+        doc.moveDown(0.7);
+
+        // Fill-in Details block
+        const detailsX = 42;
+        const labelW = 160;
+        const valW = 350;
+
+        const drawRow = (label, val) => {
+            const y = doc.y;
+            doc.font('Helvetica-Bold').fontSize(8.5).text(label, detailsX, y, { width: labelW });
+            doc.font('Helvetica').fontSize(8.5).text(`: ${val}`, detailsX + labelW, y, { width: valW });
+            doc.y = y + 14;
+        };
+
+        drawRow('Employee Full Name', fullName);
+        drawRow("Father's / Husband's Name", fatherName);
+        drawRow('Designation', designation);
+        drawRow('Employee Code / ID', String(employeeCode));
+        drawRow('Project / Site Location', siteName);
+        drawRow('Principal Employer (if contract labour)', principalEmployer);
+
+        doc.moveDown(0.5);
+        doc.fontSize(8.5).font('Helvetica-Oblique').fillColor('#334155').text(
+            '(hereinafter referred to as the "Employee", which expression shall, unless repugnant to the context, include his/her heirs, legal representatives and permitted assigns)',
+            { lineGap: 1.5 }
+        );
+        doc.moveDown(0.6);
+
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor).text('AND', { align: 'center' });
+        doc.moveDown(0.6);
+
+        doc.fontSize(8.5).font('Helvetica').fillColor(primaryColor).text(
+            'NKD POWER SOLUTIONS PVT LTD, a company incorporated under the Companies Act, 2013, having its registered office at A-41, GF, Park Elite Floor, Sec-85, Faridabad, Haryana-121002 (hereinafter referred to as the "Company", which expression shall, unless repugnant to the context, include its successors and permitted assigns).',
+            { lineGap: 1.5 }
+        );
+        doc.moveDown(0.4);
+        doc.fontSize(8.5).font('Helvetica-Oblique').text('Collectively referred to as the "Parties".');
+        doc.moveDown(0.8);
+
+        // Clause helpers
+        const printClauseHeader = (title) => {
+            doc.font('Helvetica-Bold').fontSize(9).fillColor(primaryColor).text(title);
+            doc.moveDown(0.3);
+        };
+
+        const printBullet = (text) => {
+            const bulletX = 48;
+            const textX = 58;
+            const w = 495;
+            const y = doc.y;
+            doc.font('Helvetica').fontSize(8.5).fillColor(primaryColor).text('•', bulletX, y);
+            doc.text(text, textX, y, { width: w, lineGap: 1.5 });
+            doc.moveDown(0.4);
+        };
+
+        const printPara = (text) => {
+            doc.font('Helvetica').fontSize(8.5).fillColor(primaryColor).text(text, 42, doc.y, { width: 511, lineGap: 1.5 });
+            doc.moveDown(0.5);
+        };
+
+        // 1. Purpose
+        printClauseHeader('1. Purpose');
+        printPara(
+            'The Company is engaged in the deployment of contract labour and manpower at various project sites of its principal employers. In the course of such engagement, the Employee may access, handle, or generate data, documents, and information belonging to the Company, its principal employers, clients, or vendors. This Agreement sets out the terms on which the Employee shall handle, use, and protect such data and information, both during and after the term of engagement.'
+        );
+
+        // 2. Confidentiality Obligations
+        printClauseHeader('2. Confidentiality Obligations');
+        printBullet(
+            'The Employee acknowledges that in the course of work, they may have access to confidential and proprietary information relating to the Company, its principal employers, clients, vendors, or ongoing/future projects.'
+        );
+        printBullet(
+            'The Employee agrees to hold all such information in strict confidence, and shall not disclose, share, copy, publish, reproduce, or transfer it to any third party, nor use it for personal, academic, financial, or commercial gain, without the prior written consent of the Company.'
+        );
+        printBullet(
+            '"Confidential Information" includes, without limitation: project and site data, statutory compliance records (PF/ESIC/PT/labour licence data), technical drawings, commercial terms, wage and payroll records, customer and vendor details, and any other proprietary information, whether in physical, electronic, or verbal form.'
+        );
+        printBullet(
+            'This obligation extends to information belonging to the Company’s principal employers and clients, and the Employee agrees to comply with any site-specific confidentiality or data-security protocols applicable at the principal employer’s premises.'
+        );
+
+        // 3. Data Ownership and Return of Materials
+        printClauseHeader('3. Data Ownership and Return of Materials');
+        printBullet(
+            'All data, documents, and records collected, created, or processed by the Employee during the course of engagement remain the sole and exclusive property of the Company (or, where applicable, its principal employer).'
+        );
+        printBullet(
+            'Upon cessation of employment/engagement, or earlier upon request by the Company, the Employee shall immediately return all such data, documents, access cards, IDs, and equipment (including originals, copies, and backups, in any form) without tampering, deletion, or alteration.'
+        );
+        printBullet(
+            'No data, document, or record shall be retained by the Employee, in any form, after cessation of employment/engagement.'
+        );
+
+        // 4. Prohibited Use and Conflict of Interest
+        printClauseHeader('4. Prohibited Use and Conflict of Interest');
+        printBullet(
+            'The Employee shall not use any data or information accessed during the engagement for personal, academic, freelance, or commercial purposes, whether during or after the term of engagement.'
+        );
+        printBullet(
+            'The Employee shall not, during the term of engagement, undertake any work directly or indirectly competing with the Company’s business, or engage with a competing contractor/vendor at the same principal employer site, without prior written consent of the Company.'
+        );
+        printBullet(
+            'Any unauthorized use, retention, or distribution of Company or principal employer data shall be treated as a material breach of this Agreement.'
+        );
+
+        // 5. Legal Consequences
+        printClauseHeader('5. Legal Consequences');
+        printBullet(
+            'Any violation of this Agreement shall be treated as misconduct under the Company’s HR policy and applicable Standing Orders, and may result in disciplinary action, including termination of employment/engagement, without prejudice to the Company’s other rights and remedies.'
+        );
+        printBullet(
+            'In the event of breach, the Company reserves the right to initiate civil and/or criminal proceedings, including recovery of damages, loss, or injury caused, and to inform the concerned principal employer and statutory authorities where the breach affects site security or statutory compliance.'
+        );
+        printBullet(
+            'This clause shall not be construed to override the Employee’s statutory rights, including those under the Industrial Disputes Act, 1947, and other applicable labour legislations.'
+        );
+
+        // 6. Term and Survival
+        printClauseHeader('6. Term and Survival');
+        printPara(
+            'This Agreement shall remain in force for the entire duration of the Employee’s engagement with the Company, and the obligations of confidentiality and non-use under Clauses 2 and 4 shall survive termination or cessation of employment/engagement for a period of 3 (three) years thereafter, or such longer period as may be required to protect statutory or contractual confidentiality obligations owed to a principal employer.'
+        );
+
+        // 7. Governing Law and Jurisdiction
+        printClauseHeader('7. Governing Law and Jurisdiction');
+        printPara(
+            'This Agreement shall be governed by the laws of India. Subject to applicable statutory forums (e.g., Labour Court/Industrial Tribunal), the courts at Faridabad, Haryana shall have exclusive jurisdiction over any dispute arising out of or in connection with this Agreement.'
+        );
+
+        // 8. Declaration and Acknowledgement
+        printClauseHeader('8. Declaration and Acknowledgement');
+        printPara(
+            'I, the undersigned, have read, understood, and voluntarily agree to abide by the terms stated in this Integrity and Confidentiality Agreement. I understand that any breach may result in disciplinary action and legal consequences as stated above, and I confirm that I have received a copy of this Agreement for my records.'
+        );
+        doc.moveDown(0.4);
+
+        doc.font('Helvetica-Bold').fontSize(8.5).text(`Signed on this ${dayNum}th day of ${monthName}, ${yearNum}, at ${locationStr}.`);
+        doc.moveDown(1.2);
+
+        // Check if we have enough space for signature block, else add page
+        if (doc.y > 660) {
+            doc.addPage();
+        }
+
+        const sigY = doc.y;
+
+        // Left: For the Employee
+        doc.font('Helvetica-Bold').fontSize(9).text('For the Employee:', 42, sigY);
+        doc.font('Helvetica').fontSize(8.5).text('Employee Signature: _________________________________________', 42, sigY + 22);
+        doc.text(`Name: ${fullName}`, 42, sigY + 38);
+        doc.text(`Date: ${doj.toLocaleDateString('en-GB')}`, 42, sigY + 52);
+
+        // Right: For NKD Power Solutions Pvt Ltd
+        const compX = 310;
+        doc.font('Helvetica-Bold').fontSize(9).text('For NKD Power Solutions Pvt Ltd:', compX, sigY);
+
+        if (fs.existsSync(stampPath)) {
+            doc.image(stampPath, compX + 10, sigY + 14, { width: 55 });
+        }
+
+        doc.font('Helvetica').fontSize(8.5).text('Authorized Signatory: ___________________________________', compX, sigY + 22);
+        doc.text('Name & Designation: HR & Compliance Manager', compX, sigY + 38);
+        doc.text(`Date: ${doj.toLocaleDateString('en-GB')}`, compX, sigY + 52);
+
+        // Witness
+        const witY = sigY + 75;
+        doc.font('Helvetica').fontSize(8.5).text('Witness (Name & Signature): ________________________________________________________________', 42, witY);
+
+        // Add running headers & footers on all pages
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+            doc.switchToPage(i);
+            doc.fontSize(7.5).font('Helvetica-Oblique').fillColor('#94a3b8').text(
+                `NKD Power Solutions Pvt Ltd • Integrity & Confidentiality Agreement • Page ${i + 1} of ${pages.count}`,
+                42,
+                810,
+                { align: 'center', width: 511 }
+            );
+        }
+    }
+
     getMonthName(monthIndex) {
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         return months[(parseInt(monthIndex, 10) || 1) - 1] || 'Unknown';

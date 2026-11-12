@@ -253,6 +253,9 @@ class EmployeeService {
                 e.*,
                 s.site_name,
                 s.site_code,
+                s.principal_employer_name,
+                s.city AS site_city,
+                s.state AS site_state,
                 sh.shift_name,
                 sh.start_time,
                 sh.end_time
@@ -273,6 +276,9 @@ class EmployeeService {
                 e.*,
                 s.site_name,
                 s.site_code,
+                s.principal_employer_name,
+                s.city AS site_city,
+                s.state AS site_state,
                 sh.shift_name,
                 sh.start_time,
                 sh.end_time

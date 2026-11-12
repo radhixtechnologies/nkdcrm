@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft, FileText, ShieldCheck } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -59,15 +59,26 @@ const EmployeeDetails = () => {
                         {employee.employee_code}
                     </span>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => employeeService.downloadOshAppointmentLetter(employee.employee_id || employee.employee_code, employee.employee_code)}
-                    className="ml-auto inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
-                    title="Download Official OSH Code 2020 Annexure-I Appointment Letter"
-                >
-                    <FileText size={15} />
-                    <span>Download OSH Appointment Letter (Annexure-I)</span>
-                </button>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => employeeService.downloadOshAppointmentLetter(employee.employee_id || employee.employee_code, employee.employee_code)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Download Official OSH Code 2020 Annexure-I Appointment Letter"
+                    >
+                        <FileText size={15} />
+                        <span>Download OSH Appointment Letter (Annexure-I)</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => employeeService.downloadIntegrityAgreement(employee.employee_id || employee.employee_code, employee.employee_code)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Download Integrity & Confidentiality Agreement (NDA)"
+                    >
+                        <ShieldCheck size={15} />
+                        <span>Download NDA / Integrity Agreement</span>
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 min-h-0 border border-slate-200 rounded-xl overflow-hidden shadow-sm">

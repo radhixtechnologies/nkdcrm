@@ -24,6 +24,22 @@ const employeeService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    getIntegrityAgreementUrl: (id) => {
+        const token = localStorage.getItem('token');
+        return `${getApiBaseUrl()}/employees/${id}/integrity-agreement?token=${encodeURIComponent(token || '')}`;
+    },
+    downloadIntegrityAgreement: async (id, empCode = 'WORKER') => {
+        const res = await api.get(`/employees/${id}/integrity-agreement`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Integrity_Confidentiality_Agreement_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 
