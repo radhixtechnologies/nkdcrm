@@ -2,7 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     ClipboardList, AlertTriangle, Ruler, Truck, Wrench, Plus,
     Search, Download, Building2, CheckCircle2, Clock, Trash2, Edit2, X,
-    Phone, Mail, MapPin, Users, Droplets, Activity, ExternalLink
+    Phone, Mail, MapPin, Users, Droplets, Activity, ExternalLink,
+    Folder, FolderOpen, Calendar, Image as ImageIcon, FileSpreadsheet,
+    ChevronRight, ChevronDown, Sparkles, UploadCloud, Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import siteOperationsService from '../services/siteOperationsService';
@@ -56,7 +58,8 @@ const createEmptyDprForm = () => ({
     today_activities: [{ id: 1, description: '', status: 'complete', dependencies: 'NKD', photo_ref: '' }],
     next_day_activities: [{ id: 1, description: '', dependencies: '' }],
     show_stoppers: [],
-    manpower_data: DEFAULT_MANPOWER.map((m) => ({ ...m }))
+    manpower_data: DEFAULT_MANPOWER.map((m) => ({ ...m })),
+    photos: []
 });
 
 const createEmptyConcernForm = (siteId = '') => ({
@@ -129,6 +132,12 @@ const DPRManagementHub = () => {
     const [editingDpr, setEditingDpr] = useState(null);
     const [savingDpr, setSavingDpr] = useState(false);
     const [dprForm, setDprForm] = useState(createEmptyDprForm);
+    const [archiveData, setArchiveData] = useState([]);
+    const [loadingArchive, setLoadingArchive] = useState(false);
+    const [expandedSites, setExpandedSites] = useState({});
+    const [expandedMonths, setExpandedMonths] = useState({});
+    const [uploadingDprPhoto, setUploadingDprPhoto] = useState(false);
+    const [showMasterDetails, setShowMasterDetails] = useState(false);
 
     // Module 2: Concerns State
     const [concerns, setConcerns] = useState([]);
@@ -210,6 +219,33 @@ const DPRManagementHub = () => {
         }
     }, [selectedSiteId]);
 
+    const loadArchive = useCallback(async () => {
+        setLoadingArchive(true);
+        try {
+            const res = await dprService.getSiteWiseArchive(selectedSiteId);
+            const data = res.data?.data || res.data || [];
+            setArchiveData(data);
+            if (Array.isArray(data) && data.length > 0) {
+                const initSites = {};
+                const initMonths = {};
+                data.forEach((s, idx) => {
+                    if (idx === 0 || String(s.site_id) === String(selectedSiteId)) {
+                        initSites[s.site_id] = true;
+                        if (s.months && s.months[0]) {
+                            initMonths[`${s.site_id}_${s.months[0].month_key}`] = true;
+                        }
+                    }
+                });
+                setExpandedSites((prev) => ({ ...initSites, ...prev }));
+                setExpandedMonths((prev) => ({ ...initMonths, ...prev }));
+            }
+        } catch (err) {
+            console.error('Failed to load site archive:', err);
+        } finally {
+            setLoadingArchive(false);
+        }
+    }, [selectedSiteId]);
+
     const loadConcerns = useCallback(async () => {
         setLoading(true);
         try {
@@ -278,34 +314,138 @@ const DPRManagementHub = () => {
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (activeTab === 'dpr') loadDprs();
+            if (activeTab === 'dpr') {
+                loadDprs();
+                loadArchive();
+            }
             else if (activeTab === 'concerns') loadConcerns();
             else if (activeTab === 'measurements') loadMeasurements();
             else if (activeTab === 'vendors') loadVendors();
             else if (activeTab === 'tools') loadTools();
         }, 180);
         return () => clearTimeout(timer);
-    }, [activeTab, loadDprs, loadConcerns, loadMeasurements, loadVendors, loadTools]);
+    }, [activeTab, loadDprs, loadArchive, loadConcerns, loadMeasurements, loadVendors, loadTools]);
 
     // ===================== MODULE 1: DPR HANDLERS =====================
-    const openCreateDpr = () => {
+    const openCreateDpr = async (customSiteId = null, customDate = null) => {
         if (!canCreate) return;
         setEditingDpr(null);
-        const s = sites.find((x) => String(x.site_id) === String(selectedSiteId)) || sites[0];
-        const nextForm = createEmptyDprForm();
+        setShowMasterDetails(false);
+        const targetSiteId = customSiteId || (selectedSiteId !== 'ALL' ? selectedSiteId : (sites[0]?.site_id || ''));
+        const s = sites.find((x) => String(x.site_id) === String(targetSiteId)) || sites[0];
+        let nextForm = createEmptyDprForm();
+        if (customDate) nextForm.report_date = customDate;
+
         if (s) {
             nextForm.site_id = String(s.site_id);
-            nextForm.client_name = s.principal_employer_name || '';
-            nextForm.report_no = s.site_code ? `${s.site_code}/${String(dprs.length + 1).padStart(3, '0')}` : '';
+            try {
+                const tmplRes = await dprService.getSiteTemplate(s.site_id);
+                const tmpl = tmplRes.data?.data || tmplRes.data;
+                if (tmpl) {
+                    nextForm.client_name = tmpl.client_name || s.principal_employer_name || '';
+                    nextForm.po_number = tmpl.po_number || '';
+                    nextForm.po_value = tmpl.po_value !== null ? tmpl.po_value : '';
+                    nextForm.billing_progress_pct = tmpl.billing_progress_pct !== null ? tmpl.billing_progress_pct : 0;
+                    nextForm.start_date = tmpl.start_date ? String(tmpl.start_date).slice(0, 10) : '';
+                    nextForm.completion_date = tmpl.completion_date ? String(tmpl.completion_date).slice(0, 10) : '';
+                    nextForm.report_no = tmpl.nextReportNo || (s.site_code ? `${s.site_code}/${String(dprs.length + 1).padStart(3, '0')}` : '');
+                    if (Array.isArray(tmpl.manpower_data) && tmpl.manpower_data.length > 0) {
+                        nextForm.manpower_data = tmpl.manpower_data.map((m) => ({ ...m }));
+                    }
+                    if (tmpl.isExistingDprSample) {
+                        toast.success('✨ Master details auto-filled from Site DPR template!', { duration: 3500 });
+                    }
+                }
+            } catch (_) {
+                nextForm.client_name = s.principal_employer_name || '';
+                nextForm.report_no = s.site_code ? `${s.site_code}/${String(dprs.length + 1).padStart(3, '0')}` : '';
+            }
         }
         setDprForm(nextForm);
         setShowDprModal(true);
+    };
+
+    const handleSiteChangeInModal = async (newSiteId) => {
+        const s = sites.find((x) => String(x.site_id) === String(newSiteId));
+        if (!newSiteId || !s) {
+            setDprForm((prev) => ({ ...prev, site_id: '' }));
+            return;
+        }
+        try {
+            const tmplRes = await dprService.getSiteTemplate(newSiteId);
+            const tmpl = tmplRes.data?.data || tmplRes.data;
+            if (tmpl) {
+                setDprForm((prev) => ({
+                    ...prev,
+                    site_id: String(newSiteId),
+                    client_name: tmpl.client_name || s.principal_employer_name || prev.client_name,
+                    po_number: tmpl.po_number || prev.po_number,
+                    po_value: tmpl.po_value !== null ? tmpl.po_value : prev.po_value,
+                    billing_progress_pct: tmpl.billing_progress_pct !== null ? tmpl.billing_progress_pct : prev.billing_progress_pct,
+                    start_date: tmpl.start_date ? String(tmpl.start_date).slice(0, 10) : prev.start_date,
+                    completion_date: tmpl.completion_date ? String(tmpl.completion_date).slice(0, 10) : prev.completion_date,
+                    report_no: !editingDpr ? (tmpl.nextReportNo || `${s.site_code || 'SITE'}/${String(dprs.length + 1).padStart(3, '0')}`) : prev.report_no,
+                    manpower_data: Array.isArray(tmpl.manpower_data) && tmpl.manpower_data.length > 0
+                        ? tmpl.manpower_data.map((m) => ({ ...m }))
+                        : prev.manpower_data
+                }));
+                if (tmpl.isExistingDprSample) {
+                    toast.success('✨ Master details auto-filled from Site DPR template!');
+                }
+            }
+        } catch (_) {
+            setDprForm((prev) => ({
+                ...prev,
+                site_id: String(newSiteId),
+                client_name: s.principal_employer_name || prev.client_name,
+                report_no: !editingDpr && s.site_code ? `${s.site_code}/${String(dprs.length + 1).padStart(3, '0')}` : prev.report_no
+            }));
+        }
+    };
+
+    const handleDprPhotoUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            setUploadingDprPhoto(true);
+            const res = await dprService.uploadPhoto(formData);
+            const data = res.data?.data || res.data;
+            const nextIdx = (dprForm.photos || []).length + 1;
+            const newPhoto = {
+                photo_ref: `Photo ${nextIdx}`,
+                caption: file.name.replace(/\.[^/.]+$/, ''),
+                url: data.url
+            };
+            setDprForm((prev) => ({
+                ...prev,
+                photos: [...(prev.photos || []), newPhoto]
+            }));
+            toast.success(`Photo ${nextIdx} uploaded successfully`);
+        } catch (err) {
+            toast.error(extractApiError(err, 'Failed to upload photo'));
+        } finally {
+            setUploadingDprPhoto(false);
+            e.target.value = '';
+        }
+    };
+
+    const handleRemoveDprPhoto = (index) => {
+        setDprForm((prev) => {
+            const next = (prev.photos || []).filter((_, i) => i !== index);
+            return {
+                ...prev,
+                photos: next.map((p, idx) => ({ ...p, photo_ref: `Photo ${idx + 1}` }))
+            };
+        });
     };
 
     const openEditDpr = (dpr, e) => {
         if (e) e.stopPropagation();
         if (!canUpdate || !dpr) return;
         setEditingDpr(dpr);
+        setShowMasterDetails(false);
         setDprForm({
             site_id: dpr.site_id ? String(dpr.site_id) : '',
             report_no: dpr.report_no || '',
@@ -341,7 +481,10 @@ const DPRManagementHub = () => {
                 : [],
             manpower_data: Array.isArray(dpr.manpower_data) && dpr.manpower_data.length > 0
                 ? dpr.manpower_data.map((m) => ({ ...m }))
-                : DEFAULT_MANPOWER.map((m) => ({ ...m }))
+                : DEFAULT_MANPOWER.map((m) => ({ ...m })),
+            photos: Array.isArray(dpr.photos) && dpr.photos.length > 0
+                ? dpr.photos.map((p) => ({ ...p }))
+                : []
         });
         setShowDprModal(true);
     };
@@ -359,7 +502,8 @@ const DPRManagementHub = () => {
                 site_id: parseInt(dprForm.site_id, 10),
                 today_activities: dprForm.today_activities.filter((a) => String(a.description || '').trim()),
                 next_day_activities: dprForm.next_day_activities.filter((a) => String(a.description || '').trim()),
-                show_stoppers: dprForm.show_stoppers.filter((s) => String(s.concern_area || '').trim())
+                show_stoppers: dprForm.show_stoppers.filter((s) => String(s.concern_area || '').trim()),
+                photos: (dprForm.photos || []).filter((p) => p.url)
             };
             if (editingDpr) {
                 await dprService.updateDpr(editingDpr.dpr_id, payload);
@@ -370,6 +514,7 @@ const DPRManagementHub = () => {
             }
             setShowDprModal(false);
             loadDprs();
+            loadArchive();
             loadSitesAndStats();
         } catch (err) {
             toast.error(extractApiError(err, 'Failed to save DPR'));
@@ -387,6 +532,7 @@ const DPRManagementHub = () => {
             toast.success('DPR deleted');
             if (selectedDprForView?.dpr_id === id) setSelectedDprForView(null);
             loadDprs();
+            loadArchive();
             loadSitesAndStats();
         } catch (err) {
             toast.error(extractApiError(err, 'Failed to delete DPR'));
@@ -934,6 +1080,19 @@ const DPRManagementHub = () => {
                         </button>
                         <button
                             type="button"
+                            onClick={() => {
+                                setDprSubTab('archive');
+                                loadArchive();
+                            }}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                                dprSubTab === 'archive' ? 'bg-primary-600 text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                            }`}
+                        >
+                            <Folder size={16} />
+                            Site Folders (Backdate Archive)
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setDprSubTab('trench')}
                             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                                 dprSubTab === 'trench' ? 'bg-primary-600 text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
@@ -1040,14 +1199,23 @@ const DPRManagementHub = () => {
                                                     </button>
                                                 )}
                                                 {canExport && (
-                                                    <a
-                                                        href={dprService.getPdfUrl(selectedDprForView.dpr_id)}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm"
-                                                    >
-                                                        <Download size={14} /> Download PDF
-                                                    </a>
+                                                    <>
+                                                        <a
+                                                            href={dprService.getPdfUrl(selectedDprForView.dpr_id)}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm"
+                                                        >
+                                                            <Download size={14} /> Download PDF
+                                                        </a>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => dprService.downloadExcel(selectedDprForView.dpr_id, `DPR_${selectedDprForView.report_no || selectedDprForView.dpr_id}.xlsx`)}
+                                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                                        >
+                                                            <FileSpreadsheet size={14} /> Download Excel (.xlsx)
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
@@ -1159,6 +1327,46 @@ const DPRManagementHub = () => {
                                                 </table>
                                             </div>
                                         </div>
+                                        {/* Site Progress Photos & Visual Evidence */}
+                                        <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold text-xs text-slate-700 flex justify-between items-center">
+                                                <span className="flex items-center gap-2">
+                                                    <ImageIcon size={15} className="text-primary-600" />
+                                                    Site Progress Photos & Visual Evidence ({Array.isArray(selectedDprForView.photos) ? selectedDprForView.photos.length : 0})
+                                                </span>
+                                                <span className="text-[11px] text-slate-500">Auto-embedded in PDF & Excel</span>
+                                            </div>
+                                            <div className="p-4">
+                                                {Array.isArray(selectedDprForView.photos) && selectedDprForView.photos.length > 0 ? (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {selectedDprForView.photos.map((ph, pIdx) => (
+                                                            <div key={pIdx} className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden p-2.5 flex flex-col gap-2">
+                                                                <div className="relative aspect-video w-full bg-slate-900 rounded-lg overflow-hidden flex items-center justify-center">
+                                                                    <img
+                                                                        src={getFileUrl(ph.url)}
+                                                                        alt={ph.caption || ph.photo_ref || 'Site Progress Photo'}
+                                                                        className="w-full h-full object-cover"
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.style.display = 'none';
+                                                                        }}
+                                                                    />
+                                                                    <span className="absolute top-2 left-2 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                                                        {ph.photo_ref || `Photo ${pIdx + 1}`}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-xs font-semibold text-slate-700 truncate" title={ph.caption}>
+                                                                    {ph.caption || 'Site Progress Evidence'}
+                                                                </p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-slate-400 py-3 text-center">
+                                                        No site photos attached. Click "Edit" to upload progress photos with visual evidence.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
@@ -1166,6 +1374,201 @@ const DPRManagementHub = () => {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    ) : dprSubTab === 'archive' ? (
+                        <div className="space-y-4">
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap justify-between items-center gap-3">
+                                <div>
+                                    <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                                        <FolderOpen className="text-primary-600" size={20} />
+                                        Site-Wise DPR Folders & Backdate Archive
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Browse past DPR records grouped by Site ➔ Year-Month. Add backdated DPRs with 1-click sample auto-fill.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={loadArchive}
+                                        className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold cursor-pointer"
+                                    >
+                                        Refresh Folders
+                                    </button>
+                                </div>
+                            </div>
+
+                            {loadingArchive ? (
+                                <div className="bg-white p-12 text-center text-slate-400 rounded-xl border border-slate-200">
+                                    Loading site archive folders...
+                                </div>
+                            ) : archiveData.length === 0 ? (
+                                <div className="bg-white p-12 text-center text-slate-400 rounded-xl border border-slate-200">
+                                    No archive folders available. Select a site or create your first DPR.
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {archiveData.map((siteItem) => {
+                                        const isSiteExpanded = expandedSites[siteItem.site_id];
+                                        return (
+                                            <div key={siteItem.site_id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                                                {/* Site Folder Header */}
+                                                <div
+                                                    onClick={() => setExpandedSites((prev) => ({ ...prev, [siteItem.site_id]: !isSiteExpanded }))}
+                                                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/80 border-b border-slate-100 transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center font-bold">
+                                                            {isSiteExpanded ? <FolderOpen size={20} /> : <Folder size={20} />}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <h4 className="font-bold text-slate-900 text-sm sm:text-base">{siteItem.site_name}</h4>
+                                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-semibold">
+                                                                    {siteItem.site_code}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-400 mt-0.5">
+                                                                {siteItem.total_dprs} DPR Reports • Latest: {formatIstDate(siteItem.latest_report_date)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        {canCreate && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    openCreateDpr(siteItem.site_id);
+                                                                }}
+                                                                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                                                            >
+                                                                <Plus size={14} /> Add DPR for Site
+                                                            </button>
+                                                        )}
+                                                        {isSiteExpanded ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronRight size={18} className="text-slate-400" />}
+                                                    </div>
+                                                </div>
+
+                                                {/* Site Month Folders */}
+                                                {isSiteExpanded && (
+                                                    <div className="p-4 bg-slate-50/50 space-y-3">
+                                                        {(!siteItem.months || siteItem.months.length === 0) ? (
+                                                            <p className="text-xs text-slate-400 py-3 text-center">No reports in this folder.</p>
+                                                        ) : (
+                                                            siteItem.months.map((month) => {
+                                                                const mKey = `${siteItem.site_id}_${month.month_key}`;
+                                                                const isMonthExpanded = expandedMonths[mKey];
+                                                                return (
+                                                                    <div key={mKey} className="bg-white rounded-xl border border-slate-200/90 overflow-hidden shadow-2xs">
+                                                                        <div
+                                                                            onClick={() => setExpandedMonths((prev) => ({ ...prev, [mKey]: !isMonthExpanded }))}
+                                                                            className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors"
+                                                                        >
+                                                                            <div className="flex items-center gap-2.5">
+                                                                                <Calendar size={16} className="text-slate-500" />
+                                                                                <span className="font-bold text-xs sm:text-sm text-slate-800">{month.month_label}</span>
+                                                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+                                                                                    {month.total_reports} {month.total_reports === 1 ? 'Report' : 'Reports'}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                {isMonthExpanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Report List Inside Month */}
+                                                                        {isMonthExpanded && (
+                                                                            <div className="divide-y divide-slate-100 border-t border-slate-100">
+                                                                                {month.reports.map((rep) => (
+                                                                                    <div
+                                                                                        key={rep.dpr_id}
+                                                                                        className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors"
+                                                                                    >
+                                                                                        <div className="space-y-1">
+                                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                                <span className="font-mono font-bold text-xs text-primary-700 bg-primary-50 px-2 py-0.5 rounded">
+                                                                                                    {rep.report_no || `DPR #${rep.dpr_id}`}
+                                                                                                </span>
+                                                                                                <span className="text-xs font-semibold text-slate-700">
+                                                                                                    {formatIstDate(rep.report_date)}
+                                                                                                </span>
+                                                                                                {rep.has_photos && (
+                                                                                                    <span className="inline-flex items-center gap-1 text-[10px] bg-sky-50 text-sky-700 font-semibold px-2 py-0.5 rounded-full">
+                                                                                                        <ImageIcon size={10} /> {rep.photo_count} photos
+                                                                                                    </span>
+                                                                                                )}
+                                                                                            </div>
+                                                                                            <p className="text-xs text-slate-500">
+                                                                                                Client: <span className="font-medium text-slate-700">{rep.client_name || 'N/A'}</span> • {rep.activities_count} activities • {rep.manpower_available} manpower
+                                                                                            </p>
+                                                                                        </div>
+
+                                                                                        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={async () => {
+                                                                                                    const full = await dprService.getDprById(rep.dpr_id);
+                                                                                                    const dprData = full.data?.data || full.data;
+                                                                                                    setSelectedDprForView(dprData);
+                                                                                                    setDprSubTab('reports');
+                                                                                                }}
+                                                                                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+                                                                                                title="View DPR"
+                                                                                            >
+                                                                                                <Eye size={13} /> View
+                                                                                            </button>
+                                                                                            {canExport && (
+                                                                                                <>
+                                                                                                    <a
+                                                                                                        href={dprService.getPdfUrl(rep.dpr_id)}
+                                                                                                        target="_blank"
+                                                                                                        rel="noreferrer"
+                                                                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-2xs"
+                                                                                                        title="Download PDF"
+                                                                                                    >
+                                                                                                        <Download size={13} /> PDF
+                                                                                                    </a>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => dprService.downloadExcel(rep.dpr_id, `DPR_${rep.report_no || rep.dpr_id}.xlsx`)}
+                                                                                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-2xs cursor-pointer"
+                                                                                                        title="Download Excel"
+                                                                                                    >
+                                                                                                        <FileSpreadsheet size={13} /> Excel
+                                                                                                    </button>
+                                                                                                </>
+                                                                                            )}
+                                                                                            {canUpdate && (
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={async () => {
+                                                                                                        const full = await dprService.getDprById(rep.dpr_id);
+                                                                                                        const dprData = full.data?.data || full.data;
+                                                                                                        openEditDpr(dprData);
+                                                                                                    }}
+                                                                                                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+                                                                                                    title="Edit DPR"
+                                                                                                >
+                                                                                                    <Edit2 size={13} />
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <TrenchDewateringRegister selectedSiteId={selectedSiteId} sites={sites} />
@@ -1732,22 +2135,14 @@ const DPRManagementHub = () => {
                             </div>
 
                             <form onSubmit={handleSaveDpr} className="flex-1 overflow-y-auto p-6 space-y-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     <div>
                                         <label className="text-xs font-semibold text-slate-700 block mb-1">Select Site / Project *</label>
                                         <select
                                             value={dprForm.site_id}
-                                            onChange={(e) => {
-                                                const s = sites.find((x) => String(x.site_id) === String(e.target.value));
-                                                setDprForm((prev) => ({
-                                                    ...prev,
-                                                    site_id: e.target.value,
-                                                    client_name: s?.principal_employer_name || prev.client_name,
-                                                    report_no: (!editingDpr && s?.site_code) ? `${s.site_code}/${String(dprs.length + 1).padStart(3, '0')}` : prev.report_no
-                                                }));
-                                            }}
+                                            onChange={(e) => handleSiteChangeInModal(e.target.value)}
                                             required
-                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 bg-white"
                                         >
                                             <option value="">Choose Site...</option>
                                             {sites.map((s) => (
@@ -1761,8 +2156,8 @@ const DPRManagementHub = () => {
                                             type="text"
                                             value={dprForm.report_no}
                                             onChange={(e) => setDprForm((prev) => ({ ...prev, report_no: e.target.value }))}
-                                            placeholder="Auto or custom ref"
-                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 font-mono"
+                                            placeholder="Auto-incremented or custom ref"
+                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 font-mono font-bold text-primary-700 bg-slate-50"
                                         />
                                     </div>
                                     <div>
@@ -1775,65 +2170,114 @@ const DPRManagementHub = () => {
                                             className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-semibold text-slate-700 block mb-1">Client Name</label>
-                                        <input
-                                            type="text"
-                                            value={dprForm.client_name}
-                                            onChange={(e) => setDprForm((prev) => ({ ...prev, client_name: e.target.value }))}
-                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-semibold text-slate-700 block mb-1">PO Number</label>
-                                        <input
-                                            type="text"
-                                            value={dprForm.po_number}
-                                            onChange={(e) => setDprForm((prev) => ({ ...prev, po_number: e.target.value }))}
-                                            className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 font-mono"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-semibold text-slate-700 block mb-1">PO Value (INR) & Billing %</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <input
-                                                type="number"
-                                                placeholder="PO Value"
-                                                value={dprForm.po_value}
-                                                onChange={(e) => setDprForm((prev) => ({ ...prev, po_value: e.target.value }))}
-                                                className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
-                                            />
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="100"
-                                                step="0.01"
-                                                placeholder="%"
-                                                value={dprForm.billing_progress_pct}
-                                                onChange={(e) => setDprForm((prev) => ({ ...prev, billing_progress_pct: e.target.value }))}
-                                                className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
-                                            />
+                                </div>
+
+                                {/* Collapsible Site Master Profile Accordion */}
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+                                    <div
+                                        onClick={() => setShowMasterDetails((p) => !p)}
+                                        className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-slate-100 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Sparkles size={16} className="text-amber-500" />
+                                            <span className="text-xs font-bold text-slate-800">
+                                                Site Master Details (Auto-filled from previous DPR / Site setup)
+                                            </span>
+                                            {dprForm.client_name && (
+                                                <span className="text-[11px] font-semibold text-primary-700 bg-primary-50 px-2 py-0.5 rounded">
+                                                    Client: {dprForm.client_name}
+                                                </span>
+                                            )}
                                         </div>
+                                        <span className="text-xs font-semibold text-primary-600">
+                                            {showMasterDetails ? 'Hide Master Details' : 'View / Edit Master Details'}
+                                        </span>
                                     </div>
+
+                                    {showMasterDetails && (
+                                        <div className="p-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white">
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 block mb-1">Client Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={dprForm.client_name}
+                                                    onChange={(e) => setDprForm((prev) => ({ ...prev, client_name: e.target.value }))}
+                                                    placeholder="e.g. GTPL LUMINA"
+                                                    className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 block mb-1">PO Number</label>
+                                                <input
+                                                    type="text"
+                                                    value={dprForm.po_number}
+                                                    onChange={(e) => setDprForm((prev) => ({ ...prev, po_number: e.target.value }))}
+                                                    placeholder="e.g. GTPL/PO/2026/04"
+                                                    className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2 font-mono"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 block mb-1">PO Value (INR) & Billing %</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="PO Value ₹"
+                                                        value={dprForm.po_value}
+                                                        onChange={(e) => setDprForm((prev) => ({ ...prev, po_value: e.target.value }))}
+                                                        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        step="0.01"
+                                                        placeholder="Progress %"
+                                                        value={dprForm.billing_progress_pct}
+                                                        onChange={(e) => setDprForm((prev) => ({ ...prev, billing_progress_pct: e.target.value }))}
+                                                        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 block mb-1">Contract Start & Completion</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input
+                                                        type="date"
+                                                        value={dprForm.start_date}
+                                                        onChange={(e) => setDprForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                                                        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                        title="Start Date"
+                                                    />
+                                                    <input
+                                                        type="date"
+                                                        value={dprForm.completion_date}
+                                                        onChange={(e) => setDprForm((prev) => ({ ...prev, completion_date: e.target.value }))}
+                                                        className="w-full text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                        title="Completion Date"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Multi-row Today Activities */}
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-xs font-bold text-slate-700">Today's Work Activities</label>
+                                        <label className="text-xs font-bold text-slate-700">Today's Work Activities (Status & Evidence Reference)</label>
                                         <button
                                             type="button"
                                             onClick={() => setDprForm((p) => ({
                                                 ...p,
                                                 today_activities: [...p.today_activities, { id: p.today_activities.length + 1, description: '', status: 'complete', dependencies: 'NKD', photo_ref: '' }]
                                             }))}
-                                            className="text-xs font-bold text-primary-600"
+                                            className="text-xs font-bold text-primary-600 hover:text-primary-700 cursor-pointer"
                                         >
                                             + Add Activity
                                         </button>
                                     </div>
                                     {dprForm.today_activities.map((act, idx) => (
-                                        <div key={idx} className="flex flex-col sm:flex-row gap-2">
+                                        <div key={idx} className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
                                             <input
                                                 type="text"
                                                 placeholder="Describe progress activity..."
@@ -1843,9 +2287,9 @@ const DPRManagementHub = () => {
                                                     next[idx] = { ...next[idx], description: e.target.value };
                                                     setDprForm((p) => ({ ...p, today_activities: next }));
                                                 }}
-                                                className="flex-1 text-sm border border-slate-300 rounded-xl px-3 py-2"
+                                                className="flex-1 text-sm border border-slate-300 rounded-xl px-3 py-2 w-full"
                                             />
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 w-full sm:w-auto">
                                                 <select
                                                     value={act.status}
                                                     onChange={(e) => {
@@ -1853,16 +2297,27 @@ const DPRManagementHub = () => {
                                                         next[idx] = { ...next[idx], status: e.target.value };
                                                         setDprForm((p) => ({ ...p, today_activities: next }));
                                                     }}
-                                                    className="text-xs border border-slate-300 rounded-xl px-2.5 py-2 flex-1 sm:w-28"
+                                                    className="text-xs border border-slate-300 rounded-xl px-2.5 py-2 w-28 bg-white"
                                                 >
                                                     <option value="complete">Complete</option>
                                                     <option value="in_progress">In Progress</option>
                                                 </select>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Photo Ref (e.g. Photo 1)"
+                                                    value={act.photo_ref || ''}
+                                                    onChange={(e) => {
+                                                        const next = [...dprForm.today_activities];
+                                                        next[idx] = { ...next[idx], photo_ref: e.target.value };
+                                                        setDprForm((p) => ({ ...p, today_activities: next }));
+                                                    }}
+                                                    className="text-xs border border-slate-300 rounded-xl px-2 py-2 w-28 font-mono"
+                                                />
                                                 {dprForm.today_activities.length > 1 && (
                                                     <button
                                                         type="button"
                                                         onClick={() => setDprForm((p) => ({ ...p, today_activities: p.today_activities.filter((_, i) => i !== idx) }))}
-                                                        className="p-2 text-slate-400 hover:text-rose-600"
+                                                        className="p-2 text-slate-400 hover:text-rose-600 cursor-pointer"
                                                     >
                                                         <Trash2 size={14} />
                                                     </button>
@@ -1882,7 +2337,7 @@ const DPRManagementHub = () => {
                                                 ...p,
                                                 next_day_activities: [...p.next_day_activities, { id: p.next_day_activities.length + 1, description: '', dependencies: '' }]
                                             }))}
-                                            className="text-xs font-bold text-primary-600"
+                                            className="text-xs font-bold text-primary-600 hover:text-primary-700 cursor-pointer"
                                         >
                                             + Add Task
                                         </button>
@@ -1904,7 +2359,7 @@ const DPRManagementHub = () => {
                                                 <button
                                                     type="button"
                                                     onClick={() => setDprForm((p) => ({ ...p, next_day_activities: p.next_day_activities.filter((_, i) => i !== idx) }))}
-                                                    className="p-2 text-slate-400 hover:text-rose-600"
+                                                    className="p-2 text-slate-400 hover:text-rose-600 cursor-pointer"
                                                 >
                                                     <Trash2 size={14} />
                                                 </button>
@@ -1935,6 +2390,76 @@ const DPRManagementHub = () => {
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+
+                                {/* Site Progress Photos & Visual Evidence Upload */}
+                                <div className="space-y-3 pt-2 border-t border-slate-100">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                <ImageIcon size={15} className="text-primary-600" />
+                                                Site Progress Photos & Visual Evidence ({dprForm.photos?.length || 0})
+                                            </label>
+                                            <span className="text-[11px] text-slate-400">Photos will be embedded in both PDF and Excel reports</span>
+                                        </div>
+                                        <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold shadow-xs cursor-pointer ${uploadingDprPhoto ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            <UploadCloud size={14} />
+                                            {uploadingDprPhoto ? 'Uploading...' : 'Upload Site Photo'}
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={handleDprPhotoUpload}
+                                                className="hidden"
+                                                disabled={uploadingDprPhoto}
+                                            />
+                                        </label>
+                                    </div>
+
+                                    {Array.isArray(dprForm.photos) && dprForm.photos.length > 0 ? (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {dprForm.photos.map((p, pIdx) => (
+                                                <div key={pIdx} className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex gap-3 items-center">
+                                                    <div className="relative w-20 h-16 bg-slate-900 rounded-lg overflow-hidden shrink-0">
+                                                        <img
+                                                            src={getFileUrl(p.url)}
+                                                            alt={p.caption || 'Site Photo'}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                        />
+                                                        <span className="absolute bottom-1 left-1 bg-slate-900/90 text-white text-[9px] font-bold px-1 rounded">
+                                                            {p.photo_ref || `Photo ${pIdx + 1}`}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0 space-y-1">
+                                                        <input
+                                                            type="text"
+                                                            value={p.caption || ''}
+                                                            onChange={(e) => {
+                                                                const next = [...dprForm.photos];
+                                                                next[pIdx] = { ...next[pIdx], caption: e.target.value };
+                                                                setDprForm((prev) => ({ ...prev, photos: next }));
+                                                            }}
+                                                            placeholder="Caption / description of photo"
+                                                            className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 bg-white font-medium text-slate-800"
+                                                        />
+                                                        <span className="text-[10px] text-slate-400 block truncate">Tag in activity as: <strong>{p.photo_ref || `Photo ${pIdx + 1}`}</strong></span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveDprPhoto(pIdx)}
+                                                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg shrink-0 cursor-pointer"
+                                                        title="Remove Photo"
+                                                    >
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="p-4 border border-dashed border-slate-300 rounded-xl text-center text-xs text-slate-400">
+                                            No photos added yet. Upload live progress photos to include them in the PDF gallery & Excel sheet.
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">

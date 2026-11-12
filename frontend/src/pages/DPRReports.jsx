@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     ClipboardList, Plus, Search, Download, Building2, Users,
-    AlertTriangle, CheckCircle2, Trash2, Edit2, X, DollarSign, Droplets
+    AlertTriangle, CheckCircle2, Trash2, Edit2, X, DollarSign, Droplets,
+    FileSpreadsheet
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dprService from '../services/dprService';
@@ -585,14 +586,23 @@ const DPRReports = () => {
                                                 </button>
                                             )}
                                             {canExport && (
-                                                <a
-                                                    href={dprService.getPdfUrl(activeDpr.dpr_id)}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold shadow-xs transition-transform active:scale-95"
-                                                >
-                                                    <Download size={14} /> Download Signed PDF
-                                                </a>
+                                                <>
+                                                    <a
+                                                        href={dprService.getPdfUrl(activeDpr.dpr_id)}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold shadow-xs transition-transform active:scale-95"
+                                                    >
+                                                        <Download size={14} /> Download PDF
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => dprService.downloadExcel(activeDpr.dpr_id, `DPR_${activeDpr.report_no || activeDpr.dpr_id}.xlsx`)}
+                                                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                                    >
+                                                        <FileSpreadsheet size={14} /> Download Excel (.xlsx)
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     </div>

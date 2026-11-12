@@ -1683,6 +1683,40 @@ router.get('/dpr', requirePermission('DPR', 'can_view'), async (req, res, next) 
     } catch (error) { return sendError(next, error); }
 });
 
+router.get('/dpr/template/:siteId', requirePermission('DPR', 'can_view'), async (req, res, next) => {
+    try {
+        const template = await dprService.getSiteTemplate(req.params.siteId);
+        if (!template) return res.status(404).json({ success: false, message: 'Site not found' });
+        return sendData(res, template);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/archive/site-wise', requirePermission('DPR', 'can_view'), async (req, res, next) => {
+    try {
+        const { site_id } = req.query;
+        const archive = await dprService.getSiteWiseArchive({ site_id });
+        return sendData(res, archive);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/dpr/upload-photo', requireAnyPermission('DPR.can_create', 'DPR.can_update'), upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No photo file uploaded' });
+        }
+        const fileUrl = `/uploads/${req.file.filename}`;
+        return res.json({
+            success: true,
+            url: fileUrl,
+            message: 'DPR photo uploaded successfully',
+            filename: req.file.originalname,
+            storage_filename: req.file.filename
+        });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 router.get('/dpr/:id(\\d+)', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);
@@ -1715,6 +1749,14 @@ router.get('/dpr/:id(\\d+)/pdf', requirePermission('DPR', 'can_view'), async (re
         const dpr = await dprService.getDprById(req.params.id);
         if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
         await dprService.generateDprPdf(dpr, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/dpr/:id(\\d+)/excel', requirePermission('DPR', 'can_view'), async (req, res, next) => {
+    try {
+        const dpr = await dprService.getDprById(req.params.id);
+        if (!dpr) return res.status(404).json({ success: false, message: 'DPR not found' });
+        await dprService.generateDprExcel(dpr, res);
     } catch (error) { return sendError(next, error); }
 });
 

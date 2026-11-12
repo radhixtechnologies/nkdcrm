@@ -1,5 +1,8 @@
 const { pool } = require('../config/database');
 const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
+const fs = require('fs');
+const path = require('path');
 
 const cleanDate = (val) => {
     if (val === undefined || val === null) return null;
@@ -450,6 +453,164 @@ class DprService {
     }
 
     /**
+     * Get Site Master DPR Template & Auto-increment next report number
+     * Enables 1-click DPR creation without re-entering client & PO details daily
+     */
+    async getSiteTemplate(siteId) {
+        await this.ensureDprTable();
+        const id = cleanInt(siteId);
+        if (!id) return null;
+
+        const siteRes = await pool.query(`
+            SELECT site_id, site_code, site_name, principal_employer_name, main_contractor_name
+            FROM sites WHERE site_id = $1
+        `, [id]);
+        if (siteRes.rows.length === 0) return null;
+        const site = siteRes.rows[0];
+
+        const lastDprRes = await pool.query(`
+            SELECT * FROM daily_progress_reports
+            WHERE site_id = $1
+            ORDER BY report_date DESC, dpr_id DESC
+            LIMIT 1
+        `, [id]);
+
+        let nextReportNo = '';
+        if (lastDprRes.rows.length > 0) {
+            const lastNo = String(lastDprRes.rows[0].report_no || '').trim();
+            const match = lastNo.match(/^(.*?)(\d+)$/);
+            if (match) {
+                const prefix = match[1];
+                const numStr = match[2];
+                const nextNum = parseInt(numStr, 10) + 1;
+                nextReportNo = `${prefix}${String(nextNum).padStart(numStr.length, '0')}`;
+            } else {
+                nextReportNo = `${lastNo}/001`;
+            }
+
+            const last = lastDprRes.rows[0];
+            return {
+                has_prior_dpr: true,
+                isExistingDprSample: true,
+                site_id: site.site_id,
+                site_name: site.site_name,
+                site_code: site.site_code,
+                client_name: last.client_name || site.principal_employer_name || '',
+                contractor_name: last.contractor_name || 'NKD POWER SOLUTIONS PVT LTD',
+                po_number: last.po_number || '',
+                po_value: last.po_value ? parseFloat(last.po_value) : 0,
+                current_billing_value: last.current_billing_value ? parseFloat(last.current_billing_value) : 0,
+                billing_progress_pct: last.billing_progress_pct ? parseFloat(last.billing_progress_pct) : 0,
+                start_date: last.start_date ? String(last.start_date).slice(0, 10) : '',
+                completion_date: last.completion_date ? String(last.completion_date).slice(0, 10) : '',
+                suggested_report_no: nextReportNo,
+                nextReportNo: nextReportNo,
+                default_manpower: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null,
+                manpower_data: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null
+            };
+        }
+
+        nextReportNo = `${site.site_code || 'DPR'}/001`;
+        return {
+            has_prior_dpr: false,
+            isExistingDprSample: false,
+            site_id: site.site_id,
+            site_name: site.site_name,
+            site_code: site.site_code,
+            client_name: site.principal_employer_name || '',
+            contractor_name: 'NKD POWER SOLUTIONS PVT LTD',
+            po_number: '',
+            po_value: 0,
+            current_billing_value: 0,
+            billing_progress_pct: 0,
+            start_date: '',
+            completion_date: '',
+            suggested_report_no: nextReportNo,
+            nextReportNo: nextReportNo,
+            default_manpower: null,
+            manpower_data: null
+        };
+    }
+
+    /**
+     * Get Site-wise Archive & Folders for Backdated DPRs
+     * Groups reports by Site, Year-Month, and Date for dedicated site folders
+     */
+    async getSiteWiseArchive({ site_id } = {}) {
+        await this.ensureDprTable();
+        let whereClause = '';
+        const params = [];
+        if (site_id && site_id !== 'ALL') {
+            params.push(cleanInt(site_id));
+            whereClause = `WHERE d.site_id = $1`;
+        }
+
+        const query = `
+            SELECT
+                d.dpr_id,
+                d.report_no,
+                d.site_id,
+                COALESCE(s.site_name, 'Project Site') AS site_name,
+                COALESCE(s.site_code, 'SITE') AS site_code,
+                TO_CHAR(d.report_date, 'YYYY-MM-DD') AS report_date,
+                TO_CHAR(d.report_date, 'YYYY-MM') AS month_key,
+                TO_CHAR(d.report_date, 'FMMonth YYYY') AS month_label,
+                d.client_name,
+                d.contractor_name,
+                d.po_number,
+                d.po_value,
+                d.billing_progress_pct,
+                d.today_activities,
+                d.next_day_activities,
+                d.manpower_data,
+                d.photos
+            FROM daily_progress_reports d
+            LEFT JOIN sites s ON d.site_id = s.site_id
+            ${whereClause}
+            ORDER BY s.site_name ASC, d.report_date DESC, d.dpr_id DESC
+        `;
+        const res = await pool.query(query, params);
+
+        const siteMap = new Map();
+        for (const row of res.rows) {
+            const sId = row.site_id || 0;
+            if (!siteMap.has(sId)) {
+                siteMap.set(sId, {
+                    site_id: row.site_id,
+                    site_name: row.site_name,
+                    site_code: row.site_code,
+                    total_reports: 0,
+                    monthsMap: new Map()
+                });
+            }
+            const siteGroup = siteMap.get(sId);
+            siteGroup.total_reports++;
+
+            const mKey = row.month_key || 'Unknown';
+            if (!siteGroup.monthsMap.has(mKey)) {
+                siteGroup.monthsMap.set(mKey, {
+                    month_key: mKey,
+                    month_label: (row.month_label || mKey).trim(),
+                    reports: []
+                });
+            }
+            siteGroup.monthsMap.get(mKey).reports.push({
+                ...row,
+                manpower_total: computeManpowerTotal(row.manpower_data),
+                photos_count: Array.isArray(row.photos) ? row.photos.length : 0
+            });
+        }
+
+        return Array.from(siteMap.values()).map(s => ({
+            site_id: s.site_id,
+            site_name: s.site_name,
+            site_code: s.site_code,
+            total_reports: s.total_reports,
+            months: Array.from(s.monthsMap.values())
+        }));
+    }
+
+    /**
      * Generate official printable PDF for DPR (with pagination safety)
      */
     async generateDprPdf(dpr, res) {
@@ -618,6 +779,78 @@ class DprService {
             curY += 10;
         }
 
+        // Section: Site Progress Photos & Visual Evidence
+        const photos = Array.isArray(dpr.photos) ? dpr.photos : [];
+        if (photos.length > 0) {
+            checkPageSpace(60);
+            doc.rect(36, curY, 523, 18).fill('#0f172a');
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9)
+                .text('SITE PROGRESS PHOTOS & VISUAL EVIDENCE', 44, curY + 4);
+            curY += 26;
+
+            const photoBoxW = 250;
+            const photoBoxH = 140;
+            const photoPad = 15;
+
+            for (let i = 0; i < photos.length; i += 2) {
+                checkPageSpace(photoBoxH + 30);
+                const p1 = photos[i];
+                const p2 = photos[i + 1];
+
+                const drawPhotoCard = (photo, x, y, idx) => {
+                    doc.rect(x, y, photoBoxW, photoBoxH).stroke('#cbd5e1');
+                    doc.rect(x, y, photoBoxW, 18).fill('#f1f5f9');
+                    doc.fillColor('#0284c7').font('Helvetica-Bold').fontSize(8)
+                        .text(photo.photo_ref || `Photo ${idx + 1}`, x + 8, y + 5);
+
+                    let imageDrawn = false;
+                    if (photo.url) {
+                        const candidates = [
+                            path.resolve(__dirname, '..', photo.url.replace(/^\//, '')),
+                            path.resolve(__dirname, '../../', photo.url.replace(/^\//, '')),
+                            path.resolve(__dirname, '../../uploads', path.basename(photo.url)),
+                            path.resolve(__dirname, '../uploads', path.basename(photo.url))
+                        ];
+                        for (const cand of candidates) {
+                            try {
+                                if (fs.existsSync(cand) && !cand.endsWith('.svg')) {
+                                    doc.image(cand, x + 6, y + 22, {
+                                        fit: [photoBoxW - 12, photoBoxH - 52],
+                                        align: 'center',
+                                        valign: 'center'
+                                    });
+                                    imageDrawn = true;
+                                    break;
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
+                    if (!imageDrawn) {
+                        doc.rect(x + 6, y + 22, photoBoxW - 12, photoBoxH - 52).fill('#f8fafc');
+                        doc.fillColor('#64748b').font('Helvetica-Bold').fontSize(9)
+                            .text('📸 SITE PROGRESS PHOTO', x + 10, y + 45, { align: 'center', width: photoBoxW - 20 });
+                        doc.font('Helvetica').fontSize(7).fillColor('#94a3b8')
+                            .text(photo.url ? path.basename(photo.url) : 'Verified on Site', x + 10, y + 62, { align: 'center', width: photoBoxW - 20 });
+                    }
+
+                    doc.rect(x, y + photoBoxH - 26, photoBoxW, 26).fill('#0f172a');
+                    doc.fillColor('#ffffff').font('Helvetica').fontSize(7.5)
+                        .text(photo.caption || 'Site Activity Progress Evidence', x + 6, y + photoBoxH - 21, {
+                            width: photoBoxW - 12,
+                            height: 20,
+                            ellipsis: true
+                        });
+                };
+
+                drawPhotoCard(p1, 36, curY, i);
+                if (p2) {
+                    drawPhotoCard(p2, 36 + photoBoxW + photoPad, curY, i + 1);
+                }
+                curY += photoBoxH + 16;
+            }
+        }
+
         // Signatures block safely placed
         if (curY > 710) {
             doc.addPage();
@@ -636,6 +869,299 @@ class DprService {
             .text(dpr.client_name || 'LUMINA', 380, signY + 16);
 
         doc.end();
+    }
+
+    /**
+     * Generate official Excel export matching the exact format shared by client
+     */
+    async generateDprExcel(dpr, res) {
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'NKD Power Solutions CRM';
+        workbook.created = new Date();
+
+        const sheet = workbook.addWorksheet('Daily Progress Report', {
+            views: [{ showGridLines: true }]
+        });
+
+        sheet.columns = [
+            { key: 'A', width: 8 },
+            { key: 'B', width: 34 },
+            { key: 'C', width: 18 },
+            { key: 'D', width: 18 },
+            { key: 'E', width: 16 },
+            { key: 'F', width: 8 },
+            { key: 'G', width: 38 },
+            { key: 'H', width: 22 }
+        ];
+
+        // Row 1: Header
+        sheet.mergeCells('A1:H1');
+        const titleRow = sheet.getCell('A1');
+        titleRow.value = `Daily Site Progress Report - ${dpr.site_name || 'PROJECT SITE'}, MUMBAI - ${dpr.contractor_name || 'NKD POWER SOLUTIONS PVT LTD'} - Date: ${formatDisplayDate(dpr.report_date)}`;
+        titleRow.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        titleRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        titleRow.alignment = { vertical: 'middle', horizontal: 'center' };
+        sheet.getRow(1).height = 28;
+
+        // Row 2: Report Number
+        sheet.mergeCells('B2:E2');
+        sheet.getCell('A2').value = 'Report No:';
+        sheet.getCell('A2').font = { bold: true };
+        sheet.getCell('B2').value = dpr.report_no || '-';
+        sheet.getCell('B2').font = { bold: true, color: { argb: 'FF0284C7' } };
+        sheet.getRow(2).height = 20;
+
+        // Rows 3-6: Project Details Grid
+        const details = [
+            { l1: 'End Client Name:', v1: dpr.client_name || '-', l2: 'PO Value in INR Cr.:', v2: dpr.po_value ? Number(dpr.po_value) : 0, isCur: true },
+            { l1: 'PO No. | Date:', v1: dpr.po_number || '-', l2: 'Current Billing Value in INR Cr.:', v2: dpr.current_billing_value ? Number(dpr.current_billing_value) : 0, isCur: true },
+            { l1: 'Start Date:', v1: formatDisplayDate(dpr.start_date), l2: 'Billing Progress:', v2: `${dpr.billing_progress_pct || 0}%`, isPct: true },
+            { l1: 'Completion Date:', v1: formatDisplayDate(dpr.completion_date), l2: 'Total Manpower On Site:', v2: dpr.manpower_total || 0 }
+        ];
+
+        let rIdx = 3;
+        details.forEach(d => {
+            sheet.getCell(`A${rIdx}`).value = d.l1;
+            sheet.getCell(`A${rIdx}`).font = { bold: true, size: 9 };
+            sheet.getCell(`B${rIdx}`).value = d.v1;
+            sheet.getCell(`B${rIdx}`).font = { size: 9 };
+            sheet.mergeCells(`B${rIdx}:D${rIdx}`);
+
+            sheet.getCell(`E${rIdx}`).value = d.l2;
+            sheet.getCell(`E${rIdx}`).font = { bold: true, size: 9 };
+            sheet.getCell(`F${rIdx}`).value = d.v2;
+            sheet.getCell(`F${rIdx}`).font = { bold: true, size: 9 };
+            if (d.isCur) sheet.getCell(`F${rIdx}`).numFmt = '₹#,##0.00';
+            sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+
+            sheet.getRow(rIdx).height = 18;
+            rIdx++;
+        });
+
+        rIdx++;
+
+        // Activity Section Header
+        sheet.mergeCells(`A${rIdx}:E${rIdx}`);
+        const actLeft = sheet.getCell(`A${rIdx}`);
+        actLeft.value = 'Today Activity Status';
+        actLeft.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        actLeft.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+        actLeft.alignment = { horizontal: 'center' };
+
+        sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+        const actRight = sheet.getCell(`F${rIdx}`);
+        actRight.value = 'Activity Planned for Next Day';
+        actRight.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        actRight.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+        actRight.alignment = { horizontal: 'center' };
+        sheet.getRow(rIdx).height = 22;
+        rIdx++;
+
+        // Activity Columns Sub-header
+        sheet.getCell(`A${rIdx}`).value = 'S. No.';
+        sheet.getCell(`B${rIdx}`).value = 'Planned Work Description';
+        sheet.getCell(`C${rIdx}`).value = 'Completion Status';
+        sheet.getCell(`D${rIdx}`).value = 'Dependencies Responsible';
+        sheet.getCell(`E${rIdx}`).value = 'Photo Reference';
+        sheet.getCell(`F${rIdx}`).value = 'S. No.';
+        sheet.mergeCells(`G${rIdx}:H${rIdx}`);
+        sheet.getCell(`G${rIdx}`).value = 'Planned in this & next week (including carry forward if any)';
+
+        ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+            const c = sheet.getCell(`${col}${rIdx}`);
+            c.font = { bold: true, size: 8.5 };
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+            c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        });
+        sheet.getRow(rIdx).height = 24;
+        rIdx++;
+
+        const todayActs = Array.isArray(dpr.today_activities) ? dpr.today_activities : [];
+        const nextActs = Array.isArray(dpr.next_day_activities) ? dpr.next_day_activities : [];
+        const maxActs = Math.max(todayActs.length, nextActs.length, 5);
+
+        for (let i = 0; i < maxActs; i++) {
+            const t = todayActs[i];
+            const n = nextActs[i];
+
+            sheet.getCell(`A${rIdx}`).value = i + 1;
+            sheet.getCell(`B${rIdx}`).value = t ? (t.description || '') : '';
+            sheet.getCell(`C${rIdx}`).value = t ? (t.status || 'In Progress') : '';
+            sheet.getCell(`D${rIdx}`).value = t ? (t.dependencies || 'NKD') : '';
+            sheet.getCell(`E${rIdx}`).value = t ? (t.photo_ref || (t.photo_id ? `Photo ${t.photo_id}` : '')) : '';
+
+            sheet.getCell(`F${rIdx}`).value = i + 1;
+            sheet.mergeCells(`G${rIdx}:H${rIdx}`);
+            sheet.getCell(`G${rIdx}`).value = n ? (n.description || '') : '';
+
+            sheet.getRow(rIdx).height = 20;
+            rIdx++;
+        }
+
+        rIdx++;
+
+        // Show Stoppers Section
+        sheet.mergeCells(`A${rIdx}:H${rIdx}`);
+        const stopHeader = sheet.getCell(`A${rIdx}`);
+        stopHeader.value = 'Show Stoppers / Concern Areas (since nos. of weeks)';
+        stopHeader.font = { bold: true, color: { argb: 'FF991B1B' } };
+        stopHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+        sheet.getRow(rIdx).height = 20;
+        rIdx++;
+
+        sheet.getCell(`A${rIdx}`).value = 'S. No.';
+        sheet.mergeCells(`B${rIdx}:E${rIdx}`);
+        sheet.getCell(`B${rIdx}`).value = 'Concern Areas / Blockers';
+        sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+        sheet.getCell(`F${rIdx}`).value = '1st Intimation Date';
+        ['A', 'B', 'F'].forEach(c => {
+            sheet.getCell(`${c}${rIdx}`).font = { bold: true, size: 8.5 };
+            sheet.getCell(`${c}${rIdx}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        });
+        sheet.getRow(rIdx).height = 18;
+        rIdx++;
+
+        const stoppers = Array.isArray(dpr.show_stoppers) ? dpr.show_stoppers : [];
+        if (stoppers.length === 0) {
+            sheet.getCell(`A${rIdx}`).value = '-';
+            sheet.mergeCells(`B${rIdx}:E${rIdx}`);
+            sheet.getCell(`B${rIdx}`).value = 'No critical show stoppers reported.';
+            sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+            sheet.getCell(`F${rIdx}`).value = '-';
+            rIdx++;
+        } else {
+            stoppers.forEach((st, idx) => {
+                sheet.getCell(`A${rIdx}`).value = idx + 1;
+                sheet.mergeCells(`B${rIdx}:E${rIdx}`);
+                sheet.getCell(`B${rIdx}`).value = st.concern_area || '';
+                sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+                sheet.getCell(`F${rIdx}`).value = formatDisplayDate(st.intimation_date);
+                rIdx++;
+            });
+        }
+
+        rIdx++;
+
+        // Manpower Deployment Section
+        sheet.mergeCells(`A${rIdx}:H${rIdx}`);
+        const mpHeader = sheet.getCell(`A${rIdx}`);
+        mpHeader.value = 'Daily Progress for Manpower (Type & Count)';
+        mpHeader.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        mpHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        sheet.getRow(rIdx).height = 20;
+        rIdx++;
+
+        sheet.getCell(`A${rIdx}`).value = 'S. No.';
+        sheet.mergeCells(`B${rIdx}:D${rIdx}`);
+        sheet.getCell(`B${rIdx}`).value = 'Trade / Designation';
+        sheet.mergeCells(`E${rIdx}:F${rIdx}`);
+        sheet.getCell(`E${rIdx}`).value = 'Required';
+        sheet.mergeCells(`G${rIdx}:H${rIdx}`);
+        sheet.getCell(`G${rIdx}`).value = 'Available On Site';
+
+        ['A', 'B', 'E', 'G'].forEach(c => {
+            sheet.getCell(`${c}${rIdx}`).font = { bold: true, size: 8.5 };
+            sheet.getCell(`${c}${rIdx}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        });
+        rIdx++;
+
+        const manpower = Array.isArray(dpr.manpower_data) && dpr.manpower_data.length > 0 ? dpr.manpower_data : [
+            { trade: 'EHS Officer', required: 1, available: 1 },
+            { trade: 'Electrician', required: 2, available: 0 },
+            { trade: 'Engineer', required: 1, available: 0 },
+            { trade: 'Fitter', required: 1, available: 0 },
+            { trade: 'Welder', required: 1, available: 0 },
+            { trade: 'Helper', required: 7, available: 7 },
+            { trade: 'Supervisor', required: 1, available: 0 },
+            { trade: 'Testing Engineer', required: 1, available: 0 },
+            { trade: 'Cable Jointer', required: 2, available: 0 },
+            { trade: 'Scaffolding Team', required: 4, available: 0 },
+            { trade: 'Site Manager', required: 1, available: 1 }
+        ];
+
+        let totReq = 0;
+        let totAvail = 0;
+        manpower.forEach((mp, idx) => {
+            const req = parseInt(mp.required || 0, 10) || 0;
+            const avail = parseInt(mp.available || 0, 10) || 0;
+            totReq += req;
+            totAvail += avail;
+
+            sheet.getCell(`A${rIdx}`).value = idx + 1;
+            sheet.mergeCells(`B${rIdx}:D${rIdx}`);
+            sheet.getCell(`B${rIdx}`).value = mp.trade || '';
+            sheet.mergeCells(`E${rIdx}:F${rIdx}`);
+            sheet.getCell(`E${rIdx}`).value = req;
+            sheet.mergeCells(`G${rIdx}:H${rIdx}`);
+            sheet.getCell(`G${rIdx}`).value = avail;
+            rIdx++;
+        });
+
+        // Manpower Total Row
+        sheet.getCell(`A${rIdx}`).value = '';
+        sheet.mergeCells(`B${rIdx}:D${rIdx}`);
+        sheet.getCell(`B${rIdx}`).value = 'TOTAL MANPOWER ENGAGED';
+        sheet.getCell(`B${rIdx}`).font = { bold: true };
+        sheet.mergeCells(`E${rIdx}:F${rIdx}`);
+        sheet.getCell(`E${rIdx}`).value = totReq;
+        sheet.getCell(`E${rIdx}`).font = { bold: true };
+        sheet.mergeCells(`G${rIdx}:H${rIdx}`);
+        sheet.getCell(`G${rIdx}`).value = totAvail;
+        sheet.getCell(`G${rIdx}`).font = { bold: true, color: { argb: 'FF0284C7' } };
+        sheet.getRow(rIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        rIdx++;
+
+        rIdx++;
+
+        // Photos Log Section
+        const photosList = Array.isArray(dpr.photos) ? dpr.photos : [];
+        if (photosList.length > 0) {
+            sheet.mergeCells(`A${rIdx}:H${rIdx}`);
+            const pHeader = sheet.getCell(`A${rIdx}`);
+            pHeader.value = 'Site Progress Photos & Visual Evidence Log';
+            pHeader.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+            pHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+            rIdx++;
+
+            sheet.getCell(`A${rIdx}`).value = 'S. No.';
+            sheet.getCell(`B${rIdx}`).value = 'Photo Reference';
+            sheet.mergeCells(`C${rIdx}:E${rIdx}`);
+            sheet.getCell(`C${rIdx}`).value = 'Caption & Area Details';
+            sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+            sheet.getCell(`F${rIdx}`).value = 'File Name / Status';
+            ['A', 'B', 'C', 'F'].forEach(c => {
+                sheet.getCell(`${c}${rIdx}`).font = { bold: true, size: 8.5 };
+                sheet.getCell(`${c}${rIdx}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+            });
+            rIdx++;
+
+            photosList.forEach((p, idx) => {
+                sheet.getCell(`A${rIdx}`).value = idx + 1;
+                sheet.getCell(`B${rIdx}`).value = p.photo_ref || `Photo ${idx + 1}`;
+                sheet.getCell(`B${rIdx}`).font = { bold: true, color: { argb: 'FF0284C7' } };
+                sheet.mergeCells(`C${rIdx}:E${rIdx}`);
+                sheet.getCell(`C${rIdx}`).value = p.caption || '';
+                sheet.mergeCells(`F${rIdx}:H${rIdx}`);
+                sheet.getCell(`F${rIdx}`).value = p.url ? path.basename(p.url) : 'Verified on Site';
+                rIdx++;
+            });
+        }
+
+        sheet.eachRow((row) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                };
+            });
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="DPR-${String(dpr.report_no || dpr.dpr_id).replace(/[^a-zA-Z0-9]/g, '_')}.xlsx"`);
+        await workbook.xlsx.write(res);
+        res.end();
     }
 }
 
