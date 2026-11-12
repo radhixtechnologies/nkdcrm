@@ -181,7 +181,7 @@ const Employees = () => {
                             type="file"
                             ref={importInputRef}
                             className="hidden"
-                            accept=".xlsx, .xls"
+                            accept=".xlsx, .xls, .csv"
                             onChange={handleImportRegister}
                         />
                         <button
