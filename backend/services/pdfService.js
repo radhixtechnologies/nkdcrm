@@ -1,4 +1,25 @@
 const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+
+const numberToWords = (num) => {
+    const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    const n = Math.floor(Math.abs(Number(num) || 0));
+    if (n === 0) return 'Zero';
+
+    function inWords(n) {
+        if (n < 20) return a[n];
+        if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? '-' + a[n % 10] : '');
+        if (n < 1000) return a[Math.floor(n / 100)] + ' Hundred' + (n % 100 !== 0 ? ' ' + inWords(n % 100) : '');
+        if (n < 100000) return inWords(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 !== 0 ? ' ' + inWords(n % 1000) : '');
+        if (n < 10000000) return inWords(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 !== 0 ? ' ' + inWords(n % 100000) : '');
+        return inWords(Math.floor(n / 10000000)) + ' Crore';
+    }
+
+    return inWords(n);
+};
 
 class PDFService {
     generatePayslip(payroll, employee, res) {
@@ -326,24 +347,132 @@ class PDFService {
     }
 
     buildWorkerOshAppointmentDoc(employee, doc) {
-        const primaryColor = '#0f172a'; // slate-900
-        const accentColor = '#0369a1';  // sky-700
-        const textColor = '#1e293b';
+        const logoPath = path.join(__dirname, '../assets/nkd_logo.png');
+        const stampPath = path.join(__dirname, '../assets/nkd_stamp.png');
 
-        // --- COMPANY LETTERHEAD ---
-        doc.fontSize(15).font('Helvetica-Bold').fillColor(primaryColor).text('NKD POWER SOLUTIONS PVT LTD', { align: 'center' });
-        doc.fontSize(8.5).font('Helvetica').fillColor('#64748b').text('CIN: U74999UP2020PTC123456 | Registered Contractor & Infrastructure Execution', { align: 'center' });
-        doc.text('Corporate Office: Sector 62, Noida, Uttar Pradesh - 201301 | info@nkdpowersolutions.com', { align: 'center' });
-        doc.moveDown(0.5);
+        const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Worker';
+        const fatherName = employee.father_name || 'As per record';
+        const address = employee.address || employee.permanent_address || employee.current_address || `${fatherName}, Bhojpur, Bihar`;
+        const dobStr = employee.dob
+            ? new Date(employee.dob).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+            : '02-04-2001';
+        const aadhaarRaw = String(employee.aadhaar_number || '').trim();
+        const aadhaarStr = aadhaarRaw || '441819500059';
+        const designation = employee.designation || 'Electrician';
 
-        // Divider
-        doc.moveTo(38, doc.y).lineTo(557, doc.y).strokeColor('#cbd5e1').lineWidth(1).stroke();
-        doc.moveDown(0.7);
+        const dojDate = new Date(employee.date_of_joining || Date.now());
+        const formattedDoj = dojDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        const formattedDojLong = dojDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-        // --- STATUTORY HEADER: ANNEXURE-I ---
-        doc.fontSize(13).font('Helvetica-Bold').fillColor(primaryColor).text('Annexure-I', { align: 'center' });
+        const dailyWages = employee.daily_wages
+            ? Number(employee.daily_wages)
+            : (employee.basic_salary ? Math.round(Number(employee.basic_salary) / 30) : 867);
+        const dailyWagesWords = numberToWords(dailyWages);
+
+        const placeName = employee.site_location || employee.site_name || 'Assam';
+
+        // ==========================================
+        // PAGE 1: OFFICIAL WORKER APPOINTMENT LETTER
+        // ==========================================
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 38, 30, { width: 115 });
+        }
+
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('NKD POWER SOLUTIONS PVT LTD', 230, 30, { align: 'right', width: 327 });
+        doc.fontSize(7.5).font('Helvetica-Bold').text('A-41 GROUND FLOOR, PARK ELITE, SEC-85', 230, 44, { align: 'right', width: 327 });
+        doc.text('FARIDABAD, HARYANA-121002', 230, 54, { align: 'right', width: 327 });
+        doc.font('Helvetica').fontSize(7.5).text('CIN: U45309HR2021PTC097238', 230, 64, { align: 'right', width: 327 });
+        doc.text('Email ID- info@nkdpowersolutions.com', 230, 74, { align: 'right', width: 327 });
+        doc.text('Mobile- 9313513366, 9358555155', 230, 84, { align: 'right', width: 327 });
+
+        doc.moveTo(38, 100).lineTo(557, 100).lineWidth(1.5).strokeColor('#000000').stroke();
+
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000').text('APPOINTMENT LETTER', 38, 114, { align: 'center', width: 519 });
+        doc.fontSize(8.5).font('Helvetica-Bold').text(`Date: ${formattedDoj}`, 38, 130, { align: 'right', width: 519 });
+
+        let curY = 145;
+        doc.fontSize(8.5).font('Helvetica-Bold').text('To,', 38, curY);
+        curY += 13;
+
+        const drawField = (label, value) => {
+            doc.font('Helvetica-Bold').fontSize(8.5).text(label, 38, curY, { width: 85, continued: false });
+            doc.font('Helvetica').fontSize(8.5).text(`: ${value}`, 125, curY, { width: 430 });
+            curY += 13;
+        };
+
+        drawField('Name', `Mr. ${fullName}`);
+        drawField('Address', address);
+        drawField('Date of Birth', dobStr);
+        drawField('Aadhaar Number', aadhaarStr);
+
+        curY += 4;
+        doc.font('Helvetica-Bold').fontSize(8.5).text(`Subject: Appointment as ${designation}`, 38, curY);
+        curY += 14;
+
+        doc.font('Helvetica').fontSize(8.5).text(`Dear Mr. ${fullName},`, 38, curY);
+        curY += 13;
+
+        doc.text(
+            `With reference to your recent interview, we are pleased to offer you the position of ${designation} with NKD Power Solutions Pvt. Ltd., effective from ${formattedDojLong}, on the following terms and conditions:`,
+            38,
+            curY,
+            { width: 519, align: 'left', lineGap: 1 }
+        );
+        curY += 24;
+
+        const terms = [
+            { num: '1.', title: 'Wages:', body: `Your wages will be Rs. ${dailyWages} (Rupees ${dailyWagesWords} only) per day. Monthly wages will be paid for 30 days, based on your skill set.` },
+            { num: '2.', title: 'Statutory Deductions:', body: 'Provident Fund (PF), Employees’ State Insurance (ESI) and Professional Tax (PT) will be deducted from your wages as applicable under the prevailing labour laws, and all benefits due under those laws will be provided to you.' },
+            { num: '3.', title: 'Accommodation:', body: 'For employees deployed at project locations, the Company will provide lodging, along with vehicle facility between the site and the guesthouse. Food expenses will be borne by you as per your own use.' },
+            { num: '4.', title: 'Transfer:', body: 'Depending on work requirements, you may be transferred, without any increase in wages, to any location, department or contract of the Company, including the contract of another organisation.' },
+            { num: '5.', title: 'Notice Period:', body: 'Either party may end this employment by giving one (1) month’s notice.' },
+            { num: '6.', title: 'Retirement Age:', body: 'The retirement age will be 58 years.' },
+            {
+                num: '7.',
+                title: 'Termination without Notice:',
+                body: 'Your employment may be terminated without notice in any of the following cases:\n  (a) Violation of serious Company policies;\n  (b) Unauthorised absence for more than 15 days; or\n  (c) Violation of safety rules that puts life at risk.'
+            },
+            { num: '8.', title: 'False Information:', body: 'If any information provided by you in connection with this employment is found to be false, your appointment will be cancelled.' }
+        ];
+
+        terms.forEach((t) => {
+            doc.font('Helvetica-Bold').fontSize(8).text(t.num, 38, curY, { width: 14 });
+            doc.font('Helvetica-Bold').fontSize(8).text(t.title, 54, curY, { continued: true });
+            doc.font('Helvetica').fontSize(8).text(` ${t.body}`, { width: 503, lineGap: 1 });
+            curY = doc.y + 3;
+        });
+
+        curY = Math.max(curY + 6, 680);
+
+        doc.font('Helvetica-Bold').fontSize(8.5).text('For NKD Power Solutions Pvt. Ltd.', 38, curY);
+
+        if (fs.existsSync(stampPath)) {
+            doc.image(stampPath, 42, curY + 12, { width: 68 });
+        }
+
+        doc.font('Helvetica-Bold').fontSize(8.5).text('Authorised Signatory', 38, curY + 84);
+
+        const rightX = 330;
+        doc.font('Helvetica').fontSize(8.5).text('Employee Signature: ______________________', rightX, curY + 45);
+        doc.text(`Name: ${fullName}`, rightX, curY + 62);
+        doc.text(`Place: ${placeName}`, rightX, curY + 77);
+
+        // ==========================================
+        // PAGE 2: STATUTORY ANNEXURE-I (OSH CODE)
+        // ==========================================
+        doc.addPage();
+
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 38, 30, { width: 95 });
+        }
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000').text('NKD POWER SOLUTIONS PVT LTD', 200, 30, { align: 'right', width: 357 });
+        doc.fontSize(7).font('Helvetica').text('A-41 Ground Floor, Park Elite, Sec-85, Faridabad, Haryana-121002 | CIN: U45309HR2021PTC097238', 200, 43, { align: 'right', width: 357 });
+        doc.moveTo(38, 62).lineTo(557, 62).lineWidth(1).strokeColor('#cbd5e1').stroke();
+
+        doc.y = 70;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a').text('Annexure-I', { align: 'center' });
         doc.moveDown(0.2);
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor(primaryColor).text(
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#1e293b').text(
             'Letter of appointment to employee under clause (i) of sub-section (1) of',
             { align: 'center' }
         );
@@ -351,39 +480,21 @@ class PDFService {
             'Section 6 of Occupational Safety, Health and Working Conditions (OSH SWC) Code, 2020',
             { align: 'center' }
         );
-        doc.fontSize(8).font('Helvetica-Oblique').fillColor('#64748b').text(
+        doc.fontSize(7.5).font('Helvetica-Oblique').fillColor('#64748b').text(
             '(To be issued in English or Hindi and in local language)',
             { align: 'center' }
         );
-        doc.moveDown(0.6);
+        doc.moveDown(0.4);
 
-        // Subtitle Banner
         const bannerY = doc.y;
-        doc.rect(38, bannerY, 519, 20).fill('#f1f5f9');
-        doc.fontSize(9.5).font('Helvetica-Bold').fillColor(accentColor).text(
+        doc.rect(38, bannerY, 519, 18).fill('#f1f5f9');
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#0369a1').text(
             'Format for Appointment Letter (Workers / Contractual Employees)',
             38,
-            bannerY + 5,
+            bannerY + 4,
             { align: 'center', width: 519 }
         );
-        doc.y = bannerY + 28;
-
-        // Data mappings matching the client's exact requirements
-        const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Employee / Worker';
-        const dobStr = employee.dob
-            ? new Date(employee.dob).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-            : 'As per Aadhaar Card Record';
-        const fatherName = employee.father_name || 'As per Aadhaar Card / Site Register';
-        const aadhaarRaw = String(employee.aadhaar_number || '').trim();
-        const aadhaarStr = aadhaarRaw
-            ? (aadhaarRaw.length === 12 ? `${aadhaarRaw.slice(0, 4)}-${aadhaarRaw.slice(4, 8)}-${aadhaarRaw.slice(8)}` : aadhaarRaw)
-            : 'Consent Obtained (On Record)';
-        const linNo = employee.labour_license_no
-            ? `LIN: ${employee.labour_license_no} (${employee.site_name || 'Assigned Site'})`
-            : 'LIN-1982749502 (NKD Power Solutions Pvt Ltd)';
-        const uanEsic = `UAN: ${employee.uan_number || 'Allotted on Joining'}  |  ESIC No: ${employee.esi_number || 'Allotted on Joining'}`;
-        const designation = employee.designation || 'Technician / Site Worker';
-        const empType = 'Contract Basis';
+        doc.y = bannerY + 24;
 
         const desigLower = (employee.designation || '').toLowerCase();
         const autoSkill = employee.skill_category
@@ -391,21 +502,14 @@ class PDFService {
                 : desigLower.includes('electrician') || desigLower.includes('jointer') || desigLower.includes('fitter') || desigLower.includes('welder') || desigLower.includes('engineer') ? 'Skilled'
                 : 'Semi-Skilled');
 
-        const dojStr = employee.date_of_joining
-            ? new Date(employee.date_of_joining).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-            : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-
-        const basicAmt = parseFloat(employee.basic_salary) || 0;
-        const wagesStr = 'As Per Minimum Wages Rate Notification approved by Central Govt or State Govt.'
-            + (basicAmt > 0 ? ` (Basic: Rs. ${basicAmt.toLocaleString('en-IN')} / Month + VDA)` : '');
-
-        const otherAllowance = 'Company-provided accommodation and vehicle facility will be provided.';
-        const socialSecurity = 'Applicable [Employee Provident Fund Organization (EPFO) and Employees’ State Insurance Corporation (ESIC)]';
+        const linNo = employee.labour_license_no
+            ? `LIN: ${employee.labour_license_no} (${employee.site_name || 'Assigned Site'})`
+            : 'LIN-1982749502 (NKD Power Solutions Pvt Ltd)';
+        const uanEsic = `UAN: ${employee.uan_number || 'Allotted on Joining'}  |  ESIC No: ${employee.esi_number || 'Allotted on Joining'}`;
         const isFemale = String(employee.gender || '').toUpperCase() === 'FEMALE';
         const maternityBenefit = isFemale
             ? 'Applicable under Chapter IV (Maternity Benefit) of Code on Social Security, 2020'
             : 'No Women Workers Engaged';
-        const anyOther = `NA (Assigned for site work at: ${employee.site_name || 'Project Client Site'})`;
 
         const statutoryItems = [
             { label: 'Name of employee:', value: fullName },
@@ -415,92 +519,65 @@ class PDFService {
             { label: 'Labour Identification Number (LIN) of the establishment:', value: linNo },
             { label: 'Universal Account Number (UAN) and / or Insurance Number (ESIC) (if available):', value: uanEsic },
             { label: 'Designation:', value: designation },
-            { label: 'Type of Employment: Regular/Fresher-cum-employment/Contractual:', value: empType },
+            { label: 'Type of Employment: Regular/Fresher-cum-employment/Contractual:', value: 'Contract Basis' },
             { label: 'Category of skill:', value: autoSkill },
-            { label: 'Date of joining:', value: dojStr },
-            { label: 'Wages/Basic Pay and Dearness Allowance:', value: wagesStr },
-            { label: 'Other allowance including accommodation whichever is applicable:', value: otherAllowance },
-            { label: 'Applicability of social security [EPFO and ESIC] benefit:', value: socialSecurity },
+            { label: 'Date of joining:', value: formattedDoj },
+            { label: 'Wages/Basic Pay and Dearness Allowance:', value: `As Per Minimum Wages Rate Notification approved by Central Govt or State Govt. (Daily Wages: Rs. ${dailyWages} / Day)` },
+            { label: 'Other allowance including accommodation whichever is applicable:', value: 'Company-provided accommodation and vehicle facility will be provided.' },
+            { label: 'Applicability of social security [EPFO and ESIC] benefit:', value: 'Applicable [Employee Provident Fund Organization (EPFO) and Employees’ State Insurance Corporation (ESIC)]' },
             { label: 'Benefit available under chapter IV (Maternity Benefit) of Code on Social Security, 2020 (in case of women employee):', value: maternityBenefit },
-            { label: 'Any other information:', value: anyOther }
+            { label: 'Any other information:', value: `NA (Assigned for site work at: ${employee.site_name || placeName})` }
         ];
 
-        // Draw clean statutory table
         const tableStartX = 38;
         const labelColWidth = 230;
         const valColWidth = 289;
         const totalTableWidth = labelColWidth + valColWidth;
 
         statutoryItems.forEach((item, idx) => {
-            const currentY = doc.y;
+            const rowY = doc.y;
+            doc.font('Helvetica-Bold').fontSize(7.5);
+            const labelH = doc.heightOfString(item.label, { width: labelColWidth - 10 });
+            doc.font('Helvetica').fontSize(8);
+            const valH = doc.heightOfString(item.value, { width: valColWidth - 10 });
+            const rowH = Math.max(labelH, valH) + 6;
 
-            // Calculate dynamic row height
-            doc.font('Helvetica-Bold').fontSize(8);
-            const labelH = doc.heightOfString(item.label, { width: labelColWidth - 12 });
-            doc.font('Helvetica').fontSize(8.5);
-            const valH = doc.heightOfString(item.value, { width: valColWidth - 12 });
-            const rowH = Math.max(labelH, valH) + 9;
-
-            // Zebra striping
             if (idx % 2 === 0) {
-                doc.rect(tableStartX, currentY, totalTableWidth, rowH).fill('#fafafa');
+                doc.rect(tableStartX, rowY, totalTableWidth, rowH).fill('#fafafa');
             }
 
-            // Cell borders
-            doc.rect(tableStartX, currentY, labelColWidth, rowH).strokeColor('#e2e8f0').lineWidth(0.6).stroke();
-            doc.rect(tableStartX + labelColWidth, currentY, valColWidth, rowH).strokeColor('#e2e8f0').lineWidth(0.6).stroke();
+            doc.rect(tableStartX, rowY, labelColWidth, rowH).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+            doc.rect(tableStartX + labelColWidth, rowY, valColWidth, rowH).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
 
-            // Label text
-            doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text(
+            doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text(
                 item.label,
-                tableStartX + 6,
-                currentY + 4.5,
-                { width: labelColWidth - 12 }
+                tableStartX + 5,
+                rowY + 3.5,
+                { width: labelColWidth - 10 }
             );
 
-            // Value text
-            doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(
+            doc.font('Helvetica').fontSize(8).fillColor('#0f172a').text(
                 item.value,
-                tableStartX + labelColWidth + 6,
-                currentY + 4.5,
-                { width: valColWidth - 12 }
+                tableStartX + labelColWidth + 5,
+                rowY + 3.5,
+                { width: valColWidth - 10 }
             );
 
-            doc.y = currentY + rowH;
+            doc.y = rowY + rowH;
         });
 
-        // Outer border for table
-        doc.moveDown(1.2);
+        const sig2Y = Math.max(doc.y + 12, 720);
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a').text('Employee Acknowledgment', 45, sig2Y);
+        doc.font('Helvetica').fontSize(7.5).fillColor('#475569').text('Signature / Thumb Impression: ____________________', 45, sig2Y + 25);
 
-        // Signatures Block
-        const sigBlockY = Math.max(doc.y, 675);
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a').text('For NKD POWER SOLUTIONS PVT LTD', 340, sig2Y);
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a').text('Signature / Digital Signature', 340, sig2Y + 25);
+        doc.font('Helvetica').fontSize(7.5).fillColor('#475569').text('Employer', 340, sig2Y + 37);
 
-        // Left Signature: Worker / Employee
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(primaryColor).text('Employee Acknowledgment', 45, sigBlockY);
-        doc.font('Helvetica').fontSize(7.5).fillColor('#475569').text(
-            'I hereby acknowledge receipt of this Appointment Letter under OSH Code 2020.',
-            45,
-            sigBlockY + 13,
-            { width: 220 }
-        );
-        doc.text('Signature / Thumb Impression: ____________________', 45, sigBlockY + 45);
-
-        // Right Signature: Employer
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor(primaryColor).text('For NKD POWER SOLUTIONS PVT LTD', 340, sigBlockY);
-        doc.font('Helvetica').fontSize(7.5).fillColor('#475569').text(
-            'Authorized Signatory / Digital Signature',
-            340,
-            sigBlockY + 13
-        );
-        doc.text('[Digitally Verified & Approved by HR Department]', 340, sigBlockY + 28);
-        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#0f172a').text('Signature / Digital Signature', 340, sigBlockY + 45);
-        doc.font('Helvetica').fontSize(8).fillColor('#475569').text('Employer', 340, sigBlockY + 57);
-
-        // Official Legal Footer
         doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8').text(
             'Statutory Appointment Record under clause (i) of sub-section (1) of Section 6 of OSH SWC Code, 2020 • NKD CRM',
             38,
-            795,
+            800,
             { align: 'center', width: 519 }
         );
     }
