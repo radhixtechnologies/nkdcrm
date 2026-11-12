@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, User, Edit, Trash, Eye, UploadCloud } from 'lucide-react';
+import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -294,6 +294,14 @@ const Employees = () => {
                                             >
                                                 <Eye size={15} />
                                             </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => employeeService.downloadOshAppointmentLetter(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg border border-slate-200"
+                                                title="Download OSH Code Annexure-I Worker Appointment Letter"
+                                            >
+                                                <FileText size={15} />
+                                            </button>
                                             {canUpdate && (
                                                 <button
                                                     onClick={() => handleEdit(emp)}
@@ -365,6 +373,14 @@ const Employees = () => {
                                                         title="View Profile Details"
                                                     >
                                                         <Eye size={16} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => employeeService.downloadOshAppointmentLetter(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                        className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors btn-press"
+                                                        title="Download OSH Code Annexure-I Worker Appointment Letter"
+                                                    >
+                                                        <FileText size={16} />
                                                     </button>
                                                     {canUpdate && (
                                                         <button

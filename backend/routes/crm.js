@@ -461,6 +461,31 @@ router.post(
     }
 );
 
+// Statutory Worker Appointment Letter under OSH Code 2020 (Annexure-I)
+router.get('/employees/:id/osh-appointment-letter', async (req, res, next) => {
+    try {
+        const id = req.params.id;
+        let employee = await employeeService.getEmployeeById(id);
+        if (!employee) {
+            employee = await employeeService.getEmployeeByCode(id);
+        }
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Worker / Employee not found' });
+        }
+
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(employee.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
+        await pdfService.generateWorkerOshAppointmentLetter(employee, res);
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
 router.get('/employees/:employeeCode', async (req, res, next) => {
     try {
         let employee = await employeeService.getEmployeeByCode(req.params.employeeCode);

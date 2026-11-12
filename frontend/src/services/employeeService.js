@@ -1,4 +1,4 @@
-import api from './api';
+import api, { getApiBaseUrl } from './api';
 
 const employeeService = {
     getEmployees: (params) => api.get('/employees', { params }),
@@ -9,6 +9,22 @@ const employeeService = {
     updateMyProfile: (data) => api.put('/employees/profile/update', data),
     changePassword: (data) => api.post('/auth/change-password', data),
     deleteEmployee: (id) => api.delete(`/employees/${id}`),
+    getOshAppointmentLetterUrl: (id) => {
+        const token = localStorage.getItem('token');
+        return `${getApiBaseUrl()}/employees/${id}/osh-appointment-letter?token=${encodeURIComponent(token || '')}`;
+    },
+    downloadOshAppointmentLetter: async (id, empCode = 'WORKER') => {
+        const res = await api.get(`/employees/${id}/osh-appointment-letter`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Appointment_Letter_OSH_Annexure_I_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    }
 };
 
 export default employeeService;
