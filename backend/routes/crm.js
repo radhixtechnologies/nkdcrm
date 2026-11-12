@@ -1717,6 +1717,24 @@ router.post('/dpr/upload-photo', requireAnyPermission('DPR.can_create', 'DPR.can
     }
 });
 
+router.post('/dpr/import-excel', requireAnyPermission('DPR.can_create', 'DPR.can_update'), upload.uploadExcel.single('file'), async (req, res, next) => {
+    try {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ success: false, message: 'Please upload an Excel file (.xlsx, .xls)' });
+        }
+        const filePath = file.path;
+        const parsed = await dprService.parseExcelFile(filePath);
+        try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) {}
+        return sendData(res, parsed);
+    } catch (error) {
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            try { fs.unlinkSync(req.file.path); } catch (_) {}
+        }
+        return sendError(next, error);
+    }
+});
+
 router.get('/dpr/:id(\\d+)', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);

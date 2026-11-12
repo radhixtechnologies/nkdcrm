@@ -9,6 +9,7 @@ import dprService from '../services/dprService';
 import siteService from '../services/siteService';
 import trenchDewateringService from '../services/trenchDewateringService';
 import TrenchDewateringRegister from '../components/dpr/TrenchDewateringRegister';
+import DprExcelGrid from '../components/dpr/DprExcelGrid';
 import { useAuth } from '../context/AuthContext';
 import { extractApiError } from '../services/api';
 import ModalPortal from '../components/common/ModalPortal';
@@ -55,7 +56,8 @@ const createEmptyForm = () => ({
     today_activities: [{ id: 1, description: '', status: 'complete', dependencies: 'NKD', photo_ref: '' }],
     next_day_activities: [{ id: 1, description: '', dependencies: '' }],
     show_stoppers: [],
-    manpower_data: DEFAULT_MANPOWER.map((m) => ({ ...m }))
+    manpower_data: DEFAULT_MANPOWER.map((m) => ({ ...m })),
+    excel_grid: null
 });
 
 const DPRReports = () => {
@@ -170,7 +172,8 @@ const DPRReports = () => {
                 : [],
             manpower_data: Array.isArray(dpr.manpower_data) && dpr.manpower_data.length > 0
                 ? dpr.manpower_data.map((m) => ({ ...m }))
-                : DEFAULT_MANPOWER.map((m) => ({ ...m }))
+                : DEFAULT_MANPOWER.map((m) => ({ ...m })),
+            excel_grid: dpr.excel_grid || null
         });
         setShowDprModal(true);
     };
@@ -752,7 +755,23 @@ const DPRReports = () => {
                                             </div>
                                         </div>
 
-                                        {/* SECTION 4: SHOW STOPPERS / CONCERN AREAS */}
+                                        {/* SECTION 4: CUSTOM SITE EXCEL SPREADSHEET */}
+                                        {activeDpr.excel_grid && Array.isArray(activeDpr.excel_grid.rows) && activeDpr.excel_grid.rows.length > 0 && (
+                                            <div>
+                                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                                                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                                                        <FileSpreadsheet size={16} className="text-emerald-600" />
+                                                        Site Custom Work Sheet / Breakdown
+                                                    </h3>
+                                                </div>
+                                                <DprExcelGrid
+                                                    value={activeDpr.excel_grid}
+                                                    readOnly={true}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* SECTION 5: SHOW STOPPERS / CONCERN AREAS */}
                                         {(activeDpr.show_stoppers || []).length > 0 && (
                                             <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200">
                                                 <h3 className="text-xs font-bold text-rose-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -1036,10 +1055,30 @@ const DPRReports = () => {
                                     </div>
                                 </div>
 
+                                {/* Custom Dynamic Interactive Excel Spreadsheet */}
+                                <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                                                <FileSpreadsheet size={15} className="text-emerald-600" />
+                                                5. Interactive Site Spreadsheet / Custom Excel Sheet
+                                            </h3>
+                                            <p className="text-[11px] text-slate-500">
+                                                Add custom columns, add rows, or import an Excel file (.xlsx). Automatically included in Excel & PDF downloads.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <DprExcelGrid
+                                        value={formData.excel_grid}
+                                        onChange={(newGrid) => setFormData((p) => ({ ...p, excel_grid: newGrid }))}
+                                        readOnly={false}
+                                    />
+                                </div>
+
                                 {/* Showstoppers */}
                                 <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
                                     <div className="flex items-center justify-between">
-                                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">5. Show Stoppers / Issues (If Any)</h3>
+                                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">6. Show Stoppers / Issues (If Any)</h3>
                                         <button type="button" onClick={handleAddShowstopper} className="text-xs font-bold text-rose-600 hover:text-rose-800">
                                             + Add Blocker
                                         </button>

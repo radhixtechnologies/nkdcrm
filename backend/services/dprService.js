@@ -80,6 +80,7 @@ class DprService {
                     );
                     CREATE INDEX IF NOT EXISTS idx_dpr_site ON daily_progress_reports(site_id);
                     CREATE INDEX IF NOT EXISTS idx_dpr_date ON daily_progress_reports(report_date);
+                    ALTER TABLE daily_progress_reports ADD COLUMN IF NOT EXISTS excel_grid JSONB DEFAULT NULL;
                 `);
 
                 // Seed sample GTPL LUMINA/124 report if table is empty
@@ -305,14 +306,14 @@ class DprService {
                 report_no, site_id, report_date, client_name, contractor_name,
                 po_number, po_value, current_billing_value, billing_progress_pct,
                 start_date, completion_date,
-                today_activities, next_day_activities, show_stoppers, manpower_data, photos,
+                today_activities, next_day_activities, show_stoppers, manpower_data, photos, excel_grid,
                 created_by
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9,
                 $10, $11,
-                $12, $13, $14, $15, $16,
-                $17
+                $12, $13, $14, $15, $16, $17,
+                $18
             ) RETURNING *,
               TO_CHAR(report_date, 'YYYY-MM-DD') AS report_date,
               TO_CHAR(start_date, 'YYYY-MM-DD') AS start_date,
@@ -336,6 +337,7 @@ class DprService {
             JSON.stringify(Array.isArray(data.show_stoppers) ? data.show_stoppers : []),
             JSON.stringify(Array.isArray(data.manpower_data) ? data.manpower_data : []),
             JSON.stringify(Array.isArray(data.photos) ? data.photos : []),
+            JSON.stringify(data.excel_grid && typeof data.excel_grid === 'object' ? data.excel_grid : null),
             cleanInt(userId)
         ];
 
@@ -396,8 +398,9 @@ class DprService {
                 show_stoppers = $14,
                 manpower_data = $15,
                 photos = $16,
+                excel_grid = $17,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE dpr_id = $17
+            WHERE dpr_id = $18
             RETURNING *,
               TO_CHAR(report_date, 'YYYY-MM-DD') AS report_date,
               TO_CHAR(start_date, 'YYYY-MM-DD') AS start_date,
@@ -421,6 +424,7 @@ class DprService {
             JSON.stringify(data.show_stoppers !== undefined ? (data.show_stoppers || []) : (ex.show_stoppers || [])),
             JSON.stringify(data.manpower_data !== undefined ? (data.manpower_data || []) : (ex.manpower_data || [])),
             JSON.stringify(data.photos !== undefined ? (data.photos || []) : (ex.photos || [])),
+            JSON.stringify(data.excel_grid !== undefined ? (data.excel_grid || null) : (ex.excel_grid || null)),
             dprId
         ];
 
@@ -506,7 +510,8 @@ class DprService {
                 suggested_report_no: nextReportNo,
                 nextReportNo: nextReportNo,
                 default_manpower: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null,
-                manpower_data: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null
+                manpower_data: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null,
+                excel_grid: last.excel_grid || null
             };
         }
 
@@ -528,7 +533,8 @@ class DprService {
             suggested_report_no: nextReportNo,
             nextReportNo: nextReportNo,
             default_manpower: null,
-            manpower_data: null
+            manpower_data: null,
+            excel_grid: null
         };
     }
 
@@ -608,6 +614,102 @@ class DprService {
             total_reports: s.total_reports,
             months: Array.from(s.monthsMap.values())
         }));
+    }
+
+    /**
+     * Parse an uploaded Excel spreadsheet file into dynamic columns and rows
+     */
+    async parseExcelFile(filePath) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const worksheet = workbook.worksheets[0];
+        if (!worksheet) {
+            throw new Error('Excel workbook contains no readable sheets');
+        }
+
+        const columns = [];
+        const rows = [];
+        let headerRowIdx = 1;
+        let headerRow = worksheet.getRow(1);
+
+        for (let r = 1; r <= 5; r++) {
+            const candidate = worksheet.getRow(r);
+            const vals = Array.isArray(candidate.values) ? candidate.values.filter(Boolean) : [];
+            if (vals.length > 0) {
+                headerRowIdx = r;
+                headerRow = candidate;
+                break;
+            }
+        }
+
+        const rawHeaders = Array.isArray(headerRow.values) ? headerRow.values : [];
+        const colKeys = [];
+
+        rawHeaders.forEach((val, idx) => {
+            if (idx === 0) return;
+            let title = '';
+            if (typeof val === 'object' && val !== null) {
+                title = val.text || val.result || JSON.stringify(val);
+            } else {
+                title = String(val ?? '').trim();
+            }
+            if (!title) title = `Column ${idx}`;
+            const key = `col_${idx}`;
+            colKeys.push({ idx, key });
+            columns.push({
+                key,
+                title,
+                width: Math.max(100, Math.min(260, title.length * 12))
+            });
+        });
+
+        if (columns.length === 0) {
+            return {
+                columns: [
+                    { key: 'col_1', title: 'S.No', width: 60 },
+                    { key: 'col_2', title: 'Description / Activity', width: 240 },
+                    { key: 'col_3', title: 'Location / Grid', width: 140 },
+                    { key: 'col_4', title: 'Planned Qty', width: 100 },
+                    { key: 'col_5', title: 'Executed Qty', width: 100 },
+                    { key: 'col_6', title: 'Unit', width: 80 },
+                    { key: 'col_7', title: 'Status', width: 120 },
+                    { key: 'col_8', title: 'Remarks', width: 180 }
+                ],
+                rows: []
+            };
+        }
+
+        let rowCounter = 1;
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber <= headerRowIdx) return;
+            const rowValues = row.values;
+            if (!rowValues || !Array.isArray(rowValues)) return;
+
+            const rowData = { id: `row_${rowCounter++}` };
+            let hasAnyVal = false;
+            colKeys.forEach(({ idx, key }) => {
+                let cellVal = rowValues[idx];
+                if (cellVal !== undefined && cellVal !== null) {
+                    if (typeof cellVal === 'object') {
+                        if (cellVal.result !== undefined) cellVal = cellVal.result;
+                        else if (cellVal.text !== undefined) cellVal = cellVal.text;
+                        else if (cellVal instanceof Date) cellVal = cellVal.toISOString().slice(0, 10);
+                        else cellVal = JSON.stringify(cellVal);
+                    }
+                    cellVal = String(cellVal).trim();
+                    if (cellVal) hasAnyVal = true;
+                } else {
+                    cellVal = '';
+                }
+                rowData[key] = cellVal;
+            });
+
+            if (hasAnyVal) {
+                rows.push(rowData);
+            }
+        });
+
+        return { columns, rows };
     }
 
     /**
@@ -849,6 +951,46 @@ class DprService {
                 }
                 curY += photoBoxH + 16;
             }
+        }
+
+        // Custom Dynamic Excel Grid Table if present
+        if (dpr.excel_grid && Array.isArray(dpr.excel_grid.columns) && dpr.excel_grid.columns.length > 0 && Array.isArray(dpr.excel_grid.rows) && dpr.excel_grid.rows.length > 0) {
+            checkPageSpace(60);
+            doc.rect(36, curY, 523, 18).fill('#0f172a');
+            doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9)
+                .text('CUSTOM SITE WORK BREAKDOWN SHEET', 44, curY + 4);
+            curY += 24;
+
+            const cols = dpr.excel_grid.columns.slice(0, 8);
+            const colWidth = Math.floor(523 / cols.length);
+
+            checkPageSpace(20);
+            doc.rect(36, curY, 523, 16).fill('#f1f5f9');
+            cols.forEach((col, idx) => {
+                doc.fillColor('#1e293b').font('Helvetica-Bold').fontSize(7.5)
+                    .text(col.title || `Col ${idx + 1}`, 36 + (idx * colWidth) + 4, curY + 4, {
+                        width: colWidth - 8,
+                        ellipsis: true
+                    });
+            });
+            curY += 18;
+
+            dpr.excel_grid.rows.forEach((r, rIdx) => {
+                checkPageSpace(16);
+                if (rIdx % 2 === 1) {
+                    doc.rect(36, curY - 2, 523, 14).fill('#f8fafc');
+                }
+                cols.forEach((col, idx) => {
+                    const val = String(r[col.key] ?? '');
+                    doc.fillColor('#334155').font('Helvetica').fontSize(7)
+                        .text(val, 36 + (idx * colWidth) + 4, curY, {
+                            width: colWidth - 8,
+                            ellipsis: true
+                        });
+                });
+                curY += 14;
+            });
+            curY += 10;
         }
 
         // Signatures block safely placed
@@ -1157,6 +1299,54 @@ class DprService {
                 };
             });
         });
+
+        // Include Custom Interactive Excel Grid / Sheet if present
+        if (dpr.excel_grid && Array.isArray(dpr.excel_grid.columns) && dpr.excel_grid.columns.length > 0) {
+            const gridCols = dpr.excel_grid.columns;
+            const gridRows = Array.isArray(dpr.excel_grid.rows) ? dpr.excel_grid.rows : [];
+            const customSheet = workbook.addWorksheet('Custom Site Sheet', {
+                views: [{ showGridLines: true }]
+            });
+
+            customSheet.mergeCells(1, 1, 1, Math.max(gridCols.length, 1));
+            const banner = customSheet.getCell(1, 1);
+            banner.value = `Site Work Breakdown & Custom Table • ${dpr.report_no || 'DPR'} (${formatDate(dpr.report_date)})`;
+            banner.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+            banner.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+            banner.alignment = { horizontal: 'center', vertical: 'middle' };
+            customSheet.getRow(1).height = 28;
+
+            const cHeaderRow = customSheet.getRow(2);
+            cHeaderRow.height = 24;
+            gridCols.forEach((col, cIdx) => {
+                const cell = cHeaderRow.getCell(cIdx + 1);
+                cell.value = col.title || `Column ${cIdx + 1}`;
+                cell.font = { bold: true, size: 9.5, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                customSheet.getColumn(cIdx + 1).width = Math.max(14, Math.round((col.width || 120) / 7.5));
+            });
+
+            gridRows.forEach((rData, rNum) => {
+                const row = customSheet.getRow(rNum + 3);
+                row.height = 20;
+                gridCols.forEach((col, cIdx) => {
+                    const cell = row.getCell(cIdx + 1);
+                    cell.value = rData[col.key] ?? '';
+                    cell.font = { size: 9 };
+                    cell.alignment = { vertical: 'middle' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                    };
+                    if (rNum % 2 === 1) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                    }
+                });
+            });
+        }
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="DPR-${String(dpr.report_no || dpr.dpr_id).replace(/[^a-zA-Z0-9]/g, '_')}.xlsx"`);

@@ -12,6 +12,7 @@ import dprService from '../services/dprService';
 import siteService from '../services/siteService';
 import trenchDewateringService from '../services/trenchDewateringService';
 import TrenchDewateringRegister from '../components/dpr/TrenchDewateringRegister';
+import DprExcelGrid from '../components/dpr/DprExcelGrid';
 import { useAuth } from '../context/AuthContext';
 import { extractApiError, getFileUrl } from '../services/api';
 import ModalPortal from '../components/common/ModalPortal';
@@ -59,7 +60,8 @@ const createEmptyDprForm = () => ({
     next_day_activities: [{ id: 1, description: '', dependencies: '' }],
     show_stoppers: [],
     manpower_data: DEFAULT_MANPOWER.map((m) => ({ ...m })),
-    photos: []
+    photos: [],
+    excel_grid: null
 });
 
 const createEmptyConcernForm = (siteId = '') => ({
@@ -352,6 +354,9 @@ const DPRManagementHub = () => {
                     if (Array.isArray(tmpl.manpower_data) && tmpl.manpower_data.length > 0) {
                         nextForm.manpower_data = tmpl.manpower_data.map((m) => ({ ...m }));
                     }
+                    if (tmpl.excel_grid) {
+                        nextForm.excel_grid = tmpl.excel_grid;
+                    }
                     if (tmpl.isExistingDprSample) {
                         toast.success('✨ Master details auto-filled from Site DPR template!', { duration: 3500 });
                     }
@@ -484,7 +489,8 @@ const DPRManagementHub = () => {
                 : DEFAULT_MANPOWER.map((m) => ({ ...m })),
             photos: Array.isArray(dpr.photos) && dpr.photos.length > 0
                 ? dpr.photos.map((p) => ({ ...p }))
-                : []
+                : [],
+            excel_grid: dpr.excel_grid || null
         });
         setShowDprModal(true);
     };
@@ -503,7 +509,8 @@ const DPRManagementHub = () => {
                 today_activities: dprForm.today_activities.filter((a) => String(a.description || '').trim()),
                 next_day_activities: dprForm.next_day_activities.filter((a) => String(a.description || '').trim()),
                 show_stoppers: dprForm.show_stoppers.filter((s) => String(s.concern_area || '').trim()),
-                photos: (dprForm.photos || []).filter((p) => p.url)
+                photos: (dprForm.photos || []).filter((p) => p.url),
+                excel_grid: dprForm.excel_grid || null
             };
             if (editingDpr) {
                 await dprService.updateDpr(editingDpr.dpr_id, payload);
@@ -1367,6 +1374,25 @@ const DPRManagementHub = () => {
                                                 )}
                                             </div>
                                         </div>
+
+                                        {/* Custom Site Excel Sheet / Work Breakdown Table */}
+                                        {selectedDprForView.excel_grid && Array.isArray(selectedDprForView.excel_grid.columns) && selectedDprForView.excel_grid.columns.length > 0 && (
+                                            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                                                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 font-bold text-xs text-slate-700 flex justify-between items-center">
+                                                    <span className="flex items-center gap-2">
+                                                        <FileSpreadsheet size={15} className="text-emerald-600" />
+                                                        Custom Site Work Breakdown Table ({selectedDprForView.excel_grid.columns.length} cols × {selectedDprForView.excel_grid.rows?.length || 0} rows)
+                                                    </span>
+                                                    <span className="text-[11px] text-slate-500">Auto-embedded in Excel & PDF downloads</span>
+                                                </div>
+                                                <div className="p-3">
+                                                    <DprExcelGrid
+                                                        value={selectedDprForView.excel_grid}
+                                                        readOnly={true}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
@@ -2390,6 +2416,26 @@ const DPRManagementHub = () => {
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+
+                                {/* Dynamic Interactive Excel Spreadsheet */}
+                                <div className="space-y-3 pt-3 border-t border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                                                <FileSpreadsheet size={16} className="text-emerald-600" />
+                                                Interactive Site Spreadsheet / Excel Sheet (Dynamic Rows & Columns)
+                                            </label>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                                Add custom columns, add rows, or import an Excel file (.xlsx). Automatically included in Excel & PDF downloads.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <DprExcelGrid
+                                        value={dprForm.excel_grid}
+                                        onChange={(newGrid) => setDprForm((p) => ({ ...p, excel_grid: newGrid }))}
+                                        readOnly={false}
+                                    />
                                 </div>
 
                                 {/* Site Progress Photos & Visual Evidence Upload */}

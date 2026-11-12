@@ -13,6 +13,9 @@ const dprService = {
     uploadPhoto: (formData) => api.post('/dpr/upload-photo', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
+    importExcelGrid: (formData) => api.post('/dpr/import-excel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    }),
     getPdfUrl: (id) => {
         const token = localStorage.getItem('token');
         return `${getApiBaseUrl()}/dpr/${id}/pdf?token=${encodeURIComponent(token || '')}`;
