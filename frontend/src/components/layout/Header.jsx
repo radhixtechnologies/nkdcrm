@@ -60,7 +60,9 @@ const Header = ({ toggleMobileSidebar }) => {
                         Live Operations
                     </span>
                     <span className="text-slate-300">•</span>
-                    <span className="text-slate-600 font-medium">Security & Facility Workforce Management</span>
+                    <span className="text-slate-700 font-bold">NKD Power Solutions</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-500 font-medium">Power, Solar & Electrical Site Operations</span>
                 </div>
             </div>
 

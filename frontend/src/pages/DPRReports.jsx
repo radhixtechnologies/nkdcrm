@@ -10,6 +10,7 @@ import siteService from '../services/siteService';
 import trenchDewateringService from '../services/trenchDewateringService';
 import TrenchDewateringRegister from '../components/dpr/TrenchDewateringRegister';
 import DprExcelGrid from '../components/dpr/DprExcelGrid';
+import DprLiveSheetHub from '../components/dpr/DprLiveSheetHub';
 import { useAuth } from '../context/AuthContext';
 import { extractApiError } from '../services/api';
 import ModalPortal from '../components/common/ModalPortal';
@@ -361,6 +362,22 @@ const DPRReports = () => {
 
                 <button
                     type="button"
+                    onClick={() => setActiveMainTab('live_sheet')}
+                    className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold transition-all whitespace-nowrap btn-press ${
+                        activeMainTab === 'live_sheet'
+                            ? 'border-emerald-600 text-emerald-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <FileSpreadsheet size={17} className={activeMainTab === 'live_sheet' ? 'text-emerald-600' : 'text-slate-400'} />
+                    <span>Live Excel & Google Sheet</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-extrabold uppercase">
+                        Live Sheet
+                    </span>
+                </button>
+
+                <button
+                    type="button"
                     onClick={() => setActiveMainTab('trench')}
                     className={`flex items-center gap-2 py-3 px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold transition-all whitespace-nowrap btn-press ${
                         activeMainTab === 'trench'
@@ -378,6 +395,8 @@ const DPRReports = () => {
 
             {activeMainTab === 'trench' ? (
                 <TrenchDewateringRegister selectedSiteId={selectedSiteId} sites={sites} />
+            ) : activeMainTab === 'live_sheet' ? (
+                <DprLiveSheetHub sites={sites} selectedSiteId={selectedSiteId} onSiteChange={(id) => setSelectedSiteId(id)} />
             ) : (
                 <>
                     {/* Filter Bar */}

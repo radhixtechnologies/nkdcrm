@@ -81,6 +81,9 @@ class DprService {
                     CREATE INDEX IF NOT EXISTS idx_dpr_site ON daily_progress_reports(site_id);
                     CREATE INDEX IF NOT EXISTS idx_dpr_date ON daily_progress_reports(report_date);
                     ALTER TABLE daily_progress_reports ADD COLUMN IF NOT EXISTS excel_grid JSONB DEFAULT NULL;
+                    ALTER TABLE daily_progress_reports ADD COLUMN IF NOT EXISTS google_sheet_url TEXT;
+                    ALTER TABLE sites ADD COLUMN IF NOT EXISTS google_sheet_url TEXT;
+                    ALTER TABLE sites ADD COLUMN IF NOT EXISTS excel_grid JSONB DEFAULT NULL;
                 `);
 
                 // Seed sample GTPL LUMINA/124 report if table is empty
@@ -466,7 +469,7 @@ class DprService {
         if (!id) return null;
 
         const siteRes = await pool.query(`
-            SELECT site_id, site_code, site_name, principal_employer_name, main_contractor_name
+            SELECT site_id, site_code, site_name, principal_employer_name, main_contractor_name, google_sheet_url, excel_grid
             FROM sites WHERE site_id = $1
         `, [id]);
         if (siteRes.rows.length === 0) return null;
@@ -511,7 +514,8 @@ class DprService {
                 nextReportNo: nextReportNo,
                 default_manpower: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null,
                 manpower_data: Array.isArray(last.manpower_data) && last.manpower_data.length > 0 ? last.manpower_data : null,
-                excel_grid: last.excel_grid || null
+                excel_grid: last.excel_grid || site.excel_grid || null,
+                google_sheet_url: last.google_sheet_url || site.google_sheet_url || ''
             };
         }
 
@@ -534,7 +538,8 @@ class DprService {
             nextReportNo: nextReportNo,
             default_manpower: null,
             manpower_data: null,
-            excel_grid: null
+            excel_grid: site.excel_grid || null,
+            google_sheet_url: site.google_sheet_url || ''
         };
     }
 
@@ -1352,6 +1357,49 @@ class DprService {
         res.setHeader('Content-Disposition', `attachment; filename="DPR-${String(dpr.report_no || dpr.dpr_id).replace(/[^a-zA-Z0-9]/g, '_')}.xlsx"`);
         await workbook.xlsx.write(res);
         res.end();
+    }
+
+    /**
+     * Get or set Site Google Sheet & Live Excel Grid
+     */
+    async getSiteSheet(siteId) {
+        await this.ensureDprTable();
+        const id = cleanInt(siteId);
+        if (!id) return null;
+        const res = await pool.query(
+            'SELECT site_id, site_code, site_name, principal_employer_name, google_sheet_url, excel_grid FROM sites WHERE site_id = $1',
+            [id]
+        );
+        if (res.rows.length === 0) return null;
+        return res.rows[0];
+    }
+
+    async saveSiteSheet(siteId, { google_sheet_url, excel_grid }) {
+        await this.ensureDprTable();
+        const id = cleanInt(siteId);
+        if (!id) throw new Error('Invalid site ID');
+
+        const fields = [];
+        const params = [];
+        let pIdx = 1;
+
+        if (google_sheet_url !== undefined) {
+            fields.push(`google_sheet_url = $${pIdx++}`);
+            params.push(google_sheet_url ? String(google_sheet_url).trim() : null);
+        }
+        if (excel_grid !== undefined) {
+            fields.push(`excel_grid = $${pIdx++}`);
+            params.push(excel_grid && typeof excel_grid === 'object' ? JSON.stringify(excel_grid) : null);
+        }
+
+        if (fields.length === 0) return this.getSiteSheet(id);
+
+        fields.push(`updated_at = CURRENT_TIMESTAMP`);
+        params.push(id);
+
+        const sql = `UPDATE sites SET ${fields.join(', ')} WHERE site_id = $${pIdx} RETURNING site_id, site_code, site_name, google_sheet_url, excel_grid`;
+        const res = await pool.query(sql, params);
+        return res.rows[0];
     }
 }
 

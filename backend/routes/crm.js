@@ -1735,6 +1735,21 @@ router.post('/dpr/import-excel', requireAnyPermission('DPR.can_create', 'DPR.can
     }
 });
 
+router.get('/dpr/site-sheet/:siteId', requirePermission('DPR', 'can_view'), async (req, res, next) => {
+    try {
+        const sheet = await dprService.getSiteSheet(req.params.siteId);
+        if (!sheet) return res.status(404).json({ success: false, message: 'Site not found' });
+        return sendData(res, sheet);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/dpr/site-sheet/:siteId', requireAnyPermission('DPR.can_create', 'DPR.can_update'), async (req, res, next) => {
+    try {
+        const updated = await dprService.saveSiteSheet(req.params.siteId, req.body);
+        return sendData(res, updated);
+    } catch (error) { return sendError(next, error); }
+});
+
 router.get('/dpr/:id(\\d+)', requirePermission('DPR', 'can_view'), async (req, res, next) => {
     try {
         const dpr = await dprService.getDprById(req.params.id);

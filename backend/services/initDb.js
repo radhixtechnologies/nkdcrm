@@ -34,6 +34,8 @@ const ensureCoreSchema = async () => {
         ALTER TABLE sites ADD COLUMN IF NOT EXISTS labour_license_expiry DATE;
         ALTER TABLE sites ADD COLUMN IF NOT EXISTS max_labour_capacity INTEGER DEFAULT 50;
         ALTER TABLE sites ADD COLUMN IF NOT EXISTS license_authority VARCHAR(150);
+        ALTER TABLE sites ADD COLUMN IF NOT EXISTS google_sheet_url TEXT;
+        ALTER TABLE sites ADD COLUMN IF NOT EXISTS excel_grid JSONB DEFAULT NULL;
 
         CREATE TABLE IF NOT EXISTS shifts (
             shift_id SERIAL PRIMARY KEY,

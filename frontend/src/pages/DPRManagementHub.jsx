@@ -13,6 +13,7 @@ import siteService from '../services/siteService';
 import trenchDewateringService from '../services/trenchDewateringService';
 import TrenchDewateringRegister from '../components/dpr/TrenchDewateringRegister';
 import DprExcelGrid from '../components/dpr/DprExcelGrid';
+import DprLiveSheetHub from '../components/dpr/DprLiveSheetHub';
 import { useAuth } from '../context/AuthContext';
 import { extractApiError, getFileUrl } from '../services/api';
 import ModalPortal from '../components/common/ModalPortal';
@@ -861,30 +862,31 @@ const DPRManagementHub = () => {
     return (
         <div className="space-y-6 pb-20 sm:pb-12 animate-in fade-in duration-300">
             {/* Header & Site Selector */}
-            <div className="bg-gradient-to-r from-slate-900 via-primary-950 to-slate-900 text-white rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
-                <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-primary-500/20 to-transparent pointer-events-none" />
+            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-primary-950 text-white rounded-3xl p-6 sm:p-7 shadow-2xl relative overflow-hidden border border-slate-800/80">
+                <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-radial from-primary-500/15 via-emerald-500/10 to-transparent pointer-events-none" />
+                <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
                     <div>
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/20 text-primary-300 text-xs font-semibold mb-2 border border-primary-500/30">
-                            <Activity size={14} />
-                            Site Execution & Operations Management
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-bold mb-2.5 border border-emerald-500/30 backdrop-blur-md">
+                            <Activity size={14} className="animate-pulse" />
+                            <span>Power, Solar & Site Execution Operations</span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white flex items-center gap-2.5">
                             DPR Management Hub
                         </h1>
-                        <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl">
-                            Multi-site Daily Progress Reports, Showstoppers, M-Book Measurements, Vendor Mapping, and TPI Calibration Registers.
+                        <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                            Multi-site Daily Progress Reports, Interactive Excel Spreadsheets, Showstoppers, M-Book Measurements, and TPI Calibration Registers.
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                        <div className="bg-white/10 backdrop-blur-md rounded-xl p-2 border border-white/15 flex items-center gap-2 text-white">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                        <div className="bg-white/10 backdrop-blur-md rounded-xl p-2 border border-white/20 flex items-center gap-2 text-white shadow-inner">
                             <Building2 size={18} className="text-primary-300 shrink-0 ml-1" />
                             <select
                                 value={selectedSiteId}
                                 onChange={(e) => setSelectedSiteId(e.target.value)}
-                                className="bg-transparent text-white text-sm font-semibold focus:outline-none cursor-pointer pr-4 w-full sm:w-auto"
+                                className="bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer pr-4 w-full sm:w-auto"
                             >
                                 <option value="ALL" className="text-slate-900">All Sites & Projects</option>
                                 {sites.map((s) => (
@@ -895,11 +897,21 @@ const DPRManagementHub = () => {
                             </select>
                         </div>
 
+                        {/* Quick Shortcut to Live Sheet */}
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('live_sheet')}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/40 transition-all active:scale-95 cursor-pointer"
+                        >
+                            <FileSpreadsheet size={17} />
+                            <span>Live Site Sheet</span>
+                        </button>
+
                         {activeTab === 'dpr' && dprSubTab === 'reports' && canCreate && (
                             <button
                                 type="button"
                                 onClick={openCreateDpr}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-bold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
                             >
                                 <Plus size={18} />
                                 New DPR (With Backdate)
@@ -909,7 +921,7 @@ const DPRManagementHub = () => {
                             <button
                                 type="button"
                                 onClick={openCreateConcern}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm shadow-md transition-all active:scale-95 cursor-pointer"
+                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
                             >
                                 <Plus size={18} />
                                 Report Site Concern
@@ -955,52 +967,62 @@ const DPRManagementHub = () => {
 
                 {/* KPI Metrics Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mt-6 pt-6 border-t border-white/10">
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                        <span className="text-[11px] text-slate-300 font-medium">Daily Reports Logged</span>
-                        <div className="flex items-center justify-between mt-1">
-                            <span className="text-xl sm:text-2xl font-black">{stats?.dprs?.total_dprs ?? dprs.length}</span>
-                            <ClipboardList size={18} className="text-sky-400" />
+                    <div className="bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md transition-all">
+                        <span className="text-[11px] text-slate-300 font-semibold block uppercase tracking-wider">Daily Reports Logged</span>
+                        <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-xl sm:text-2xl font-black text-white">{stats?.dprs?.total_dprs ?? dprs.length}</span>
+                            <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center">
+                                <ClipboardList size={18} />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                        <span className="text-[11px] text-slate-300 font-medium">Open Showstoppers</span>
-                        <div className="flex items-center justify-between mt-1">
+                    <div className="bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md transition-all">
+                        <span className="text-[11px] text-slate-300 font-semibold block uppercase tracking-wider">Open Showstoppers</span>
+                        <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xl sm:text-2xl font-black text-rose-300">{stats?.concerns?.open_concerns || 0}</span>
-                            <AlertTriangle size={18} className="text-rose-400" />
+                            <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center">
+                                <AlertTriangle size={18} />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                        <span className="text-[11px] text-slate-300 font-medium">Measured Work (Qty)</span>
-                        <div className="flex items-center justify-between mt-1">
+                    <div className="bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md transition-all">
+                        <span className="text-[11px] text-slate-300 font-semibold block uppercase tracking-wider">Measured Work (Qty)</span>
+                        <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xl sm:text-2xl font-black text-emerald-300">{parseFloat(stats?.measurements?.total_measured_qty || 0).toLocaleString()}</span>
-                            <Ruler size={18} className="text-emerald-400" />
+                            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                                <Ruler size={18} />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-                        <span className="text-[11px] text-slate-300 font-medium">Mapped Suppliers</span>
-                        <div className="flex items-center justify-between mt-1">
-                            <span className="text-xl sm:text-2xl font-black">{stats?.vendors?.total_vendors ?? vendors.length}</span>
-                            <Truck size={18} className="text-amber-400" />
+                    <div className="bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md transition-all">
+                        <span className="text-[11px] text-slate-300 font-semibold block uppercase tracking-wider">Mapped Suppliers</span>
+                        <div className="flex items-center justify-between mt-1.5">
+                            <span className="text-xl sm:text-2xl font-black text-white">{stats?.vendors?.total_vendors ?? vendors.length}</span>
+                            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                                <Truck size={18} />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 rounded-xl p-3 border border-white/10 col-span-2 sm:col-span-1">
-                        <span className="text-[11px] text-slate-300 font-medium">Tools & TPI Valid</span>
-                        <div className="flex items-center justify-between mt-1">
+                    <div className="bg-white/[0.06] hover:bg-white/[0.1] rounded-2xl p-3.5 border border-white/10 backdrop-blur-md col-span-2 sm:col-span-1 transition-all">
+                        <span className="text-[11px] text-slate-300 font-semibold block uppercase tracking-wider">Tools & TPI Valid</span>
+                        <div className="flex items-center justify-between mt-1.5">
                             <span className="text-xl sm:text-2xl font-black text-indigo-300">
                                 {stats?.tools?.valid_tools || 0} <span className="text-xs text-slate-400 font-normal">/ {stats?.tools?.total_tools || 0}</span>
                             </span>
-                            <Wrench size={18} className="text-indigo-400" />
+                            <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                                <Wrench size={18} />
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* 5 Primary Modules Tab Navigation */}
-            <div className="flex border-b border-slate-200 bg-white rounded-xl shadow-xs px-2 sm:px-4 overflow-x-auto scrollbar-thin">
+            {/* 6 Primary Modules Tab Navigation */}
+            <div className="flex border-b border-slate-200 bg-white rounded-2xl shadow-xs px-2 sm:px-4 overflow-x-auto scrollbar-thin">
                 <button
                     type="button"
                     onClick={() => setActiveTab('dpr')}
@@ -1009,9 +1031,23 @@ const DPRManagementHub = () => {
                     }`}
                 >
                     <ClipboardList size={18} />
-                    1. DPR Module
+                    1. DPR Reports
                     <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">
                         {stats?.dprs?.total_dprs ?? dprs.length}
+                    </span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('live_sheet')}
+                    className={`flex items-center gap-2 px-4 py-3.5 text-xs sm:text-sm font-bold border-b-2 whitespace-nowrap transition-all shrink-0 ${
+                        activeTab === 'live_sheet' ? 'border-emerald-600 text-emerald-600 bg-emerald-50/50' : 'border-transparent text-slate-600 hover:text-slate-900'
+                    }`}
+                >
+                    <FileSpreadsheet size={18} className="text-emerald-600" />
+                    2. Live Excel & Google Sheet
+                    <span className="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold uppercase tracking-wide">
+                        Live Sheet
                     </span>
                 </button>
 
@@ -1023,7 +1059,7 @@ const DPRManagementHub = () => {
                     }`}
                 >
                     <AlertTriangle size={18} />
-                    2. Concerns & Issues
+                    3. Concerns & Issues
                     <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">
                         {stats?.concerns?.open_concerns ?? concerns.filter((c) => c.status !== 'RESOLVED').length}
                     </span>
@@ -1037,7 +1073,7 @@ const DPRManagementHub = () => {
                     }`}
                 >
                     <Ruler size={18} />
-                    3. Measurement Sheet (M-Book)
+                    4. Measurement Sheet (M-Book)
                     <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
                         {stats?.measurements?.total_entries ?? measurements.length}
                     </span>
@@ -1051,7 +1087,7 @@ const DPRManagementHub = () => {
                     }`}
                 >
                     <Truck size={18} />
-                    4. Vendor Mapping
+                    5. Vendor Mapping
                     <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
                         {stats?.vendors?.total_vendors ?? vendors.length}
                     </span>
@@ -1065,7 +1101,7 @@ const DPRManagementHub = () => {
                     }`}
                 >
                     <Wrench size={18} />
-                    5. Tools & TPI
+                    6. Tools & TPI
                     <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-semibold">
                         {stats?.tools?.total_tools ?? tools.length}
                     </span>
@@ -1602,7 +1638,16 @@ const DPRManagementHub = () => {
                 </div>
             )}
 
-            {/* TAB 2: CONCERNS & ISSUE REPORTING */}
+            {/* TAB 2: LIVE EXCEL & GOOGLE SHEET SPREADSHEET HUB */}
+            {activeTab === 'live_sheet' && (
+                <DprLiveSheetHub
+                    sites={sites}
+                    selectedSiteId={selectedSiteId}
+                    onSiteChange={(newSiteId) => setSelectedSiteId(newSiteId)}
+                />
+            )}
+
+            {/* TAB 3: CONCERNS & ISSUE REPORTING */}
             {activeTab === 'concerns' && (
                 <div className="space-y-4">
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">

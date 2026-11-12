@@ -16,6 +16,8 @@ const dprService = {
     importExcelGrid: (formData) => api.post('/dpr/import-excel', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
     }),
+    getSiteSheet: (siteId) => api.get(`/dpr/site-sheet/${siteId}`),
+    saveSiteSheet: (siteId, data) => api.put(`/dpr/site-sheet/${siteId}`, data),
     getPdfUrl: (id) => {
         const token = localStorage.getItem('token');
         return `${getApiBaseUrl()}/dpr/${id}/pdf?token=${encodeURIComponent(token || '')}`;
