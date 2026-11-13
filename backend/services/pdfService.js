@@ -987,6 +987,274 @@ class PDFService {
         }
     }
 
+    /**
+     * IT Asset Handover Form (Internal Use Only)
+     * For Laptops, Mobile Devices, and IT Equipment accountability
+     */
+    generateAssetHandoverForm(data, res) {
+        return new Promise((resolve, reject) => {
+            try {
+                const doc = new PDFDocument({ margin: 38, size: 'A4', bufferPages: true });
+
+                const code = data.employee_code || data.employee_id || data.allocation_id || 'ASSET';
+                const filename = `IT_Asset_Handover_Form_${code}.pdf`;
+
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader('Content-Type', 'application/pdf');
+                    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+                }
+
+                doc.pipe(res);
+
+                this.buildAssetHandoverFormDoc(data, doc);
+
+                doc.end();
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    buildAssetHandoverFormDoc(data, doc) {
+        const digitalSignPath = path.join(__dirname, '../assets/arbaaz_digital_sign.png');
+
+        const primaryColor = '#000000';
+        const bannerBg = '#1e3a8a';
+        const tableBorderColor = '#cbd5e1';
+
+        const formatDotDate = (d) => {
+            if (!d) return 'N/A';
+            const str = String(d).split('T')[0];
+            const parts = str.split('-');
+            if (parts.length === 3) return `${parts[2]}.${parts[1]}.${parts[0]}`;
+            return d;
+        };
+
+        const empName = data.employee_name || data.full_name || 'Staff Employee';
+        const phone = data.phone || data.mobile || 'N/A';
+        const designation = data.designation || 'Project Coordinator';
+        const empCode = data.employee_code || (data.employee_id ? `EMP-${data.employee_id}` : 'N/A');
+        const deptOrSite = data.department || data.site_name || 'Office';
+        const issuedDate = formatDotDate(data.issued_date || Date.now());
+        const returnDueDate = data.return_due_date ? formatDotDate(data.return_due_date) : 'N/A (Temporary / As per project)';
+        const handedOverBy = data.handed_over_by || 'Arbaaz Ansari (HR Manager)';
+
+        // Prepare assets list
+        let assetList = [];
+        if (Array.isArray(data.assets) && data.assets.length > 0) {
+            assetList = data.assets;
+        } else if (data.asset_name || data.brand_model) {
+            assetList = [{
+                asset_type: data.category || data.asset_type || data.asset_name || 'Laptop',
+                brand_model: data.brand_model || data.asset_name || 'Dell 15 DC15250',
+                serial_number: data.serial_number || '4GNZBH4',
+                quantity: data.quantity || 1,
+                accessories: data.remarks || data.asset_notes || 'Charger, Mouse'
+            }];
+        } else {
+            assetList = [{
+                asset_type: 'Dell Laptop',
+                brand_model: 'Dell 15 DC15250',
+                serial_number: '4GNZBH4',
+                quantity: 1,
+                accessories: 'Charger, Mouse'
+            }];
+        }
+
+        // ==========================================
+        // PAGE 1: HEADER, PARTICULARS, ASSET TABLE, DECLARATION 1-4
+        // ==========================================
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(primaryColor).text('NKD POWER SOLUTIONS PVT LTD', { align: 'center' });
+        doc.fontSize(8).font('Helvetica').fillColor('#334155').text('A-41, GF Park Elite Floor, Parkland BPTP, Sector-85, Faridabad-121002 (Haryana)', { align: 'center' });
+        doc.moveDown(0.3);
+        doc.fontSize(10.5).font('Helvetica-Bold').fillColor(primaryColor).text('IT ASSET HANDOVER FORM', { align: 'center', underline: true });
+        doc.fontSize(7.5).font('Helvetica-Oblique').fillColor('#64748b').text('(Internal Use Only)', { align: 'center' });
+        doc.moveDown(0.4);
+
+        doc.moveTo(38, doc.y).lineTo(557, doc.y).lineWidth(1.2).strokeColor('#000000').stroke();
+        doc.moveDown(0.6);
+
+        const drawSectionBanner = (title) => {
+            const y = doc.y;
+            doc.rect(38, y, 519, 16).fill(bannerBg);
+            doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#ffffff').text(title, 45, y + 4, { width: 505 });
+            doc.y = y + 20;
+        };
+
+        // Section 1: HANDOVER PARTICULARS
+        drawSectionBanner('HANDOVER PARTICULARS');
+
+        const partY = doc.y;
+        const leftColW = 259.5;
+        const rightColW = 259.5;
+        const rowH = 18;
+
+        const drawGridRow = (lLabel, lVal, rLabel, rVal, y) => {
+            // Left cell
+            doc.rect(38, y, leftColW, rowH).strokeColor(tableBorderColor).lineWidth(0.8).stroke();
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text(lLabel, 43, y + 5, { width: 95, continued: false });
+            doc.font('Helvetica').fontSize(8).fillColor('#0f172a').text(lVal, 140, y + 5, { width: 150 });
+
+            // Right cell
+            doc.rect(38 + leftColW, y, rightColW, rowH).strokeColor(tableBorderColor).lineWidth(0.8).stroke();
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text(rLabel, 43 + leftColW, y + 5, { width: 110, continued: false });
+            doc.font('Helvetica').fontSize(8).fillColor('#0f172a').text(rVal, 155 + leftColW, y + 5, { width: 140 });
+        };
+
+        drawGridRow('Handed Over To:', empName, 'Contact Number:', `- ${phone}`, partY);
+        drawGridRow('Designation:', designation, 'Employee Code / ID:', empCode, partY + rowH);
+        drawGridRow('Department / Site:', deptOrSite, 'Date of Issue:', `- ${issuedDate}`, partY + rowH * 2);
+        drawGridRow('Handed Over By:', handedOverBy, 'Expected Return Date:', returnDueDate, partY + rowH * 3);
+
+        doc.y = partY + rowH * 4 + 10;
+
+        // Section 2: ASSET DESCRIPTION
+        drawSectionBanner('ASSET DESCRIPTION');
+
+        const thY = doc.y;
+        const colWs = [35, 105, 115, 85, 35, 144]; // Total = 519
+        const headers = ['Sr. No.', 'Asset Type (Laptop/Other)', 'Make & Model', 'Serial No. / IMEI No.', 'Qty', 'Accessories Issued (Charger/Bag/Mouse etc.)'];
+
+        let curX = 38;
+        doc.rect(38, thY, 519, 22).fill('#1e293b');
+        headers.forEach((h, i) => {
+            doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#ffffff').text(h, curX + 2, thY + 4, { width: colWs[i] - 4, align: 'center' });
+            curX += colWs[i];
+        });
+
+        let tableRowY = thY + 22;
+        assetList.forEach((ast, idx) => {
+            let x = 38;
+            const rowVals = [
+                String(idx + 1),
+                ast.asset_type || 'Laptop',
+                ast.brand_model || ast.asset_name || 'Dell 15 DC15250',
+                ast.serial_number || '4GNZBH4',
+                String(ast.quantity || 1),
+                ast.accessories || 'Charger, Mouse'
+            ];
+
+            doc.rect(38, tableRowY, 519, 20).fill(idx % 2 === 0 ? '#ffffff' : '#f8fafc');
+
+            rowVals.forEach((val, i) => {
+                doc.rect(x, tableRowY, colWs[i], 20).strokeColor(tableBorderColor).lineWidth(0.8).stroke();
+                doc.font('Helvetica').fontSize(8).fillColor('#0f172a').text(val, x + 2, tableRowY + 5, { width: colWs[i] - 4, align: 'center' });
+                x += colWs[i];
+            });
+            tableRowY += 20;
+        });
+
+        doc.y = tableRowY + 10;
+
+        // Section 3: ASSET HANDOVER ACKNOWLEDGEMENT AND DECLARATION BY RECIPIENT
+        drawSectionBanner('ASSET HANDOVER ACKNOWLEDGEMENT AND DECLARATION BY RECIPIENT');
+
+        const declarations = [
+            '1. I hereby acknowledge receipt of the above-mentioned asset(s) in good working order, complete with the accessories listed above.',
+            '2. The asset(s) will remain in my possession solely for official use during my engagement with NKD Power Solutions Pvt Ltd, and will not be transferred to any other person without prior written approval.',
+            '3. I shall take reasonable and diligent care of the asset(s), keep them password-protected, and ensure they remain in good working condition at all times.',
+            '4. I acknowledge that the asset(s) handed over to me are my responsibility until I formally return them to the Company and obtain a return acknowledgement.',
+            '5. If the asset(s) are stolen, lost, or damaged due to my negligence while in my care, I will be liable to replace them or reimburse their depreciated value, as determined by the Company, at my own cost. In case of theft or loss, I shall file a police complaint and submit a copy of the FIR/report to the Company within 48 hours of discovery.',
+            '6. I will not use the asset(s) for personal purposes, and will not install unauthorized/unlicensed software, alter device configurations, or attempt unauthorized repair without the Company\'s prior written approval.',
+            '7. I shall not store, forward, or retain any confidential Company or client data on personal devices/accounts, and shall comply with the Company\'s IT and data-security policy at all times.',
+            '8. If I use the asset(s) for any illegal or unauthorized activity, I shall be solely responsible for the consequences, and NKD Power Solutions Pvt Ltd shall bear no liability whatsoever.',
+            '9. Upon cessation of my employment/engagement, transfer, or upon request by the Company, I shall immediately return the asset(s) along with all data, accessories, chargers, and original packaging, in good working condition (normal wear and tear excepted).'
+        ];
+
+        // Points 1 to 4 on Page 1
+        for (let i = 0; i < 4; i++) {
+            doc.font('Helvetica').fontSize(7.8).fillColor('#0f172a').text(declarations[i], 38, doc.y, { width: 519, lineGap: 1.5 });
+            doc.moveDown(0.35);
+        }
+
+        // ==========================================
+        // PAGE 2: DECLARATION 5-9, SIGNATURES, RETURN & OFFICE USE
+        // ==========================================
+        doc.addPage();
+        doc.y = 40;
+
+        for (let i = 4; i < declarations.length; i++) {
+            doc.font('Helvetica').fontSize(7.8).fillColor('#0f172a').text(declarations[i], 38, doc.y, { width: 519, lineGap: 1.5 });
+            doc.moveDown(0.35);
+        }
+
+        doc.moveDown(0.8);
+
+        // Handover Signatures Block
+        const sigY = doc.y;
+
+        doc.moveTo(38, sigY + 30).lineTo(180, sigY + 30).lineWidth(0.8).strokeColor('#64748b').stroke();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text("Recipient's Signature & Name", 38, sigY + 34);
+
+        const hrX = 350;
+        if (fs.existsSync(digitalSignPath)) {
+            doc.image(digitalSignPath, hrX, sigY - 5, { width: 120 });
+            doc.moveTo(hrX, sigY + 30).lineTo(hrX + 140, sigY + 30).lineWidth(0.8).strokeColor('#64748b').stroke();
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('(HR)', hrX + 55, sigY + 34);
+        } else {
+            doc.moveTo(hrX, sigY + 30).lineTo(hrX + 140, sigY + 30).lineWidth(0.8).strokeColor('#64748b').stroke();
+            doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('(HR)', hrX + 55, sigY + 34);
+        }
+
+        doc.y = sigY + 60;
+
+        // Section 4: ASSET RETURN ACKNOWLEDGEMENT AND DECLARATION BY RECIPIENT
+        drawSectionBanner('ASSET RETURN ACKNOWLEDGEMENT AND DECLARATION BY RECIPIENT');
+        doc.font('Helvetica').fontSize(8).fillColor('#0f172a').text(
+            'I hereby confirm that I have returned the above asset(s) to NKD Power Solutions Pvt Ltd in the condition noted below, and that no data, document, or copy relating to the Company has been retained by me in any form.',
+            38,
+            doc.y,
+            { width: 519, lineGap: 1.5 }
+        );
+        doc.moveDown(1.2);
+
+        const retSigY = doc.y;
+        doc.moveTo(38, retSigY + 20).lineTo(180, retSigY + 20).lineWidth(0.8).strokeColor('#64748b').stroke();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text("Recipient's Signature & Name", 38, retSigY + 24);
+
+        doc.moveTo(350, retSigY + 20).lineTo(470, retSigY + 20).lineWidth(0.8).strokeColor('#64748b').stroke();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Date of Return', 350, retSigY + 24);
+
+        doc.y = retSigY + 48;
+
+        // Section 5: FOR OFFICE USE ONLY
+        drawSectionBanner('FOR OFFICE USE ONLY');
+
+        const offY = doc.y;
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Asset(s) Received Back By (Name & Designation): ', 38, offY, { continued: true });
+        doc.font('Helvetica').text('________________________________________________________');
+        doc.moveDown(0.7);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Condition on Return: ', 38, doc.y, { continued: true });
+        doc.font('Helvetica').text('Good [   ]        Damaged [   ]        Not Returned [   ]');
+        doc.moveDown(0.7);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Data Wiped / Formatted: ', 38, doc.y, { continued: true });
+        doc.font('Helvetica').text('Yes [   ]        No [   ]        N/A [   ]');
+        doc.moveDown(0.7);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Remarks: ', 38, doc.y, { continued: true });
+        doc.font('Helvetica').text('____________________________________________________________________________________');
+        doc.moveDown(1.2);
+
+        const offSigY = doc.y;
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(primaryColor).text('Authorized Signatory (Company): _____________________________', 38, offSigY);
+        doc.text('Date: ______________', 380, offSigY);
+
+        // Running footers
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+            doc.switchToPage(i);
+            doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8').text(
+                `NKD Power Solutions Pvt Ltd • IT Asset Handover & Accountability Form • Page ${i + 1} of ${pages.count}`,
+                38,
+                805,
+                { align: 'center', width: 519 }
+            );
+        }
+    }
+
     getMonthName(monthIndex) {
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         return months[(parseInt(monthIndex, 10) || 1) - 1] || 'Unknown';

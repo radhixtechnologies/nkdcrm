@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Shield, HardHat, Laptop, Shirt, Smartphone,
-    Plus, Search, RotateCcw, UserCheck, Trash2, Edit3, X
+    Plus, Search, RotateCcw, UserCheck, Trash2, Edit3, X, FileText
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import assetService from '../services/assetService';
@@ -629,26 +629,34 @@ const Assets = () => {
                                                         {al.status}
                                                     </span>
                                                 </td>
-                                                {canUpdate && (
                                                     <td className="py-3 px-4 text-right">
-                                                        {al.status === 'ISSUED' && (
+                                                        <div className="inline-flex items-center gap-1.5 justify-end">
                                                             <button
-                                                                onClick={() => {
-                                                                    setSelectedAllocation(al);
-                                                                    setReturnForm({
-                                                                        returned_date: getIstToday(),
-                                                                        condition_on_return: 'GOOD',
-                                                                        remarks: ''
-                                                                    });
-                                                                    setShowReturnModal(true);
-                                                                }}
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-md transition-colors"
+                                                                type="button"
+                                                                onClick={() => assetService.downloadHandoverForm(al.allocation_id, `${al.employee_name || 'Staff'}_${al.asset_name}`)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-md transition-colors"
+                                                                title="Download IT Asset Handover Form PDF"
                                                             >
-                                                                <RotateCcw size={12} /> Return
+                                                                <FileText size={12} /> Handover Form
                                                             </button>
-                                                        )}
+                                                            {canUpdate && al.status === 'ISSUED' && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSelectedAllocation(al);
+                                                                        setReturnForm({
+                                                                            returned_date: getIstToday(),
+                                                                            condition_on_return: 'GOOD',
+                                                                            remarks: ''
+                                                                        });
+                                                                        setShowReturnModal(true);
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-md transition-colors"
+                                                                >
+                                                                    <RotateCcw size={12} /> Return
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
-                                                )}
                                             </tr>
                                         ))
                                     )}
@@ -683,20 +691,28 @@ const Assets = () => {
                                         <span>Issued: {formatIstDate(al.issued_date)}</span>
                                         <span>{al.status === 'RETURNED' ? `Returned: ${formatIstDate(al.returned_date)}` : (al.site_name || 'Main Office')}</span>
                                     </div>
-                                    {canUpdate && al.status === 'ISSUED' && (
-                                        <div className="flex justify-end pt-1 border-t border-slate-100">
+                                    <div className="flex flex-wrap justify-end gap-2 pt-1 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => assetService.downloadHandoverForm(al.allocation_id, `${al.employee_name || 'Staff'}_${al.asset_name}`)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 font-semibold rounded-lg text-xs"
+                                            title="Download IT Asset Handover Form PDF"
+                                        >
+                                            <FileText size={12} /> Handover Form
+                                        </button>
+                                        {canUpdate && al.status === 'ISSUED' && (
                                             <button
                                                 onClick={() => {
                                                     setSelectedAllocation(al);
                                                     setReturnForm({ returned_date: getIstToday(), condition_on_return: 'GOOD', remarks: '' });
                                                     setShowReturnModal(true);
                                                 }}
-                                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 font-semibold rounded-lg"
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-700 font-semibold rounded-lg text-xs"
                                             >
                                                 <RotateCcw size={12} /> Return Asset
                                             </button>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             ))
                         )}

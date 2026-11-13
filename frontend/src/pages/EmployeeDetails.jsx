@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, ShieldCheck, FileCheck } from 'lucide-react';
+import { ArrowLeft, FileText, ShieldCheck, FileCheck, Laptop } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -86,6 +86,15 @@ const EmployeeDetails = () => {
                     >
                         <FileCheck size={15} />
                         <span>Download Staff Joining Letter</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => employeeService.downloadAssetHandoverForm(employee.employee_id || employee.employee_code, employee.employee_code)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Download IT Asset Handover Form (Laptop / Devices)"
+                    >
+                        <Laptop size={15} />
+                        <span>Download Asset Handover Form</span>
                     </button>
                 </div>
             </div>

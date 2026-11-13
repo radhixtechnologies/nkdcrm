@@ -131,8 +131,8 @@ const assetService = {
                    TO_CHAR(al.issued_date, 'YYYY-MM-DD') AS issued_date,
                    TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
                    TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
-                   a.asset_name, a.asset_code, a.category,
-                   e.full_name AS employee_name, e.employee_code, e.designation,
+                   a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
                    s.site_name
             FROM asset_allocations al
             JOIN assets a ON al.asset_id = a.asset_id
@@ -151,6 +151,45 @@ const assetService = {
         }
         query += ` ORDER BY al.created_at DESC`;
         const res = await db.query(query, params);
+        return res.rows;
+    },
+
+    async getAllocationById(id) {
+        const query = `
+            SELECT al.*,
+                   TO_CHAR(al.issued_date, 'YYYY-MM-DD') AS issued_date,
+                   TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
+                   TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
+                   a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
+                   s.site_name
+            FROM asset_allocations al
+            JOIN assets a ON al.asset_id = a.asset_id
+            JOIN employees e ON al.employee_id = e.employee_id
+            LEFT JOIN sites s ON al.site_id = s.site_id
+            WHERE al.allocation_id = $1
+        `;
+        const res = await db.query(query, [id]);
+        return res.rows[0] || null;
+    },
+
+    async getEmployeeAllocations(employeeId) {
+        const query = `
+            SELECT al.*,
+                   TO_CHAR(al.issued_date, 'YYYY-MM-DD') AS issued_date,
+                   TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
+                   TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
+                   a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
+                   s.site_name
+            FROM asset_allocations al
+            JOIN assets a ON al.asset_id = a.asset_id
+            JOIN employees e ON al.employee_id = e.employee_id
+            LEFT JOIN sites s ON al.site_id = s.site_id
+            WHERE al.employee_id = $1
+            ORDER BY al.created_at DESC
+        `;
+        const res = await db.query(query, [employeeId]);
         return res.rows;
     },
 

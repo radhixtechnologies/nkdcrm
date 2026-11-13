@@ -536,6 +536,45 @@ router.get('/employees/:id/staff-joining-letter', async (req, res, next) => {
     }
 });
 
+// IT Asset Handover Form (Internal Use Only) for Employees
+router.get('/employees/:id/asset-handover-form', async (req, res, next) => {
+    try {
+        const id = req.params.id;
+        let employee = await employeeService.getEmployeeById(id);
+        if (!employee) {
+            employee = await employeeService.getEmployeeByCode(id);
+        }
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Worker / Employee not found' });
+        }
+
+        const hasDirView = (await checkUserPermission(req.user, 'EMPLOYEES', 'can_view')) || (await checkUserPermission(req.user, 'ASSETS', 'can_view'));
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(employee.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing permission' });
+        }
+
+        const allocations = await assetService.getEmployeeAllocations(employee.employee_id);
+        const assetPayload = {
+            ...employee,
+            employee_name: employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim(),
+            assets: allocations.length > 0 ? allocations.map((al, idx) => ({
+                sr_no: idx + 1,
+                asset_type: al.category || al.asset_name || 'Laptop',
+                brand_model: al.brand_model || al.asset_name || 'Dell 15 DC15250',
+                serial_number: al.serial_number || '4GNZBH4',
+                quantity: al.quantity || 1,
+                accessories: al.remarks || al.asset_notes || 'Charger, Mouse'
+            })) : undefined
+        };
+
+        await pdfService.generateAssetHandoverForm(assetPayload, res);
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
 router.get('/employees/:employeeCode', async (req, res, next) => {
     try {
         let employee = await employeeService.getEmployeeByCode(req.params.employeeCode);
@@ -1676,6 +1715,27 @@ router.get('/assets/allocations', requirePermission('ASSETS', 'can_view'), async
     try {
         return sendData(res, await assetService.getAllocations(req.query));
     } catch (error) { return sendError(next, error); }
+});
+
+// IT Asset Handover Form by allocation ID
+router.get('/assets/allocations/:id/handover-form', async (req, res, next) => {
+    try {
+        const allocation = await assetService.getAllocationById(req.params.id);
+        if (!allocation) {
+            return res.status(404).json({ success: false, message: 'Asset allocation not found' });
+        }
+
+        const hasDirView = (await checkUserPermission(req.user, 'ASSETS', 'can_view')) || (await checkUserPermission(req.user, 'EMPLOYEES', 'can_view'));
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(allocation.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing ASSETS.can_view permission' });
+        }
+
+        await pdfService.generateAssetHandoverForm(allocation, res);
+    } catch (error) {
+        return sendError(next, error);
+    }
 });
 
 router.post('/assets/allocate', requirePermission('ASSETS', 'can_create'), async (req, res, next) => {

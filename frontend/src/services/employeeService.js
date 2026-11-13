@@ -56,6 +56,22 @@ const employeeService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    getAssetHandoverFormUrl: (id) => {
+        const token = localStorage.getItem('token');
+        return `${getApiBaseUrl()}/employees/${id}/asset-handover-form?token=${encodeURIComponent(token || '')}`;
+    },
+    downloadAssetHandoverForm: async (id, empCode = 'STAFF') => {
+        const res = await api.get(`/employees/${id}/asset-handover-form`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `IT_Asset_Handover_Form_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 
