@@ -823,6 +823,170 @@ class PDFService {
         }
     }
 
+    /**
+     * Official Staff Joining Letter (Corporate / Management / Site Staff)
+     * Matches the exact 10 terms format with HR Manager digital signature
+     */
+    generateStaffJoiningLetter(employee, res) {
+        return new Promise((resolve, reject) => {
+            try {
+                const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
+
+                const empCode = employee.employee_code || employee.employee_id || 'STAFF';
+                const filename = `Joining_Letter_${empCode}.pdf`;
+
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader('Content-Type', 'application/pdf');
+                    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+                }
+
+                doc.pipe(res);
+
+                this.buildStaffJoiningLetterDoc(employee, doc);
+
+                doc.end();
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    buildStaffJoiningLetterDoc(employee, doc) {
+        const logoPath = path.join(__dirname, '../assets/nkd_logo.png');
+        const digitalSignPath = path.join(__dirname, '../assets/arbaaz_digital_sign.png');
+
+        const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Staff Employee';
+        const designation = employee.designation || 'Project Coordinator';
+        const genderPrefix = String(employee.gender || '').toUpperCase() === 'FEMALE' ? 'Ms' : 'Mr';
+
+        const dojDate = new Date(employee.date_of_joining || Date.now());
+        const formattedDoj = dojDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-');
+        const formattedDojFull = dojDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }).replace(/ /g, '-');
+
+        // Determine age for deductions exemption (60+ years)
+        let isOver60 = false;
+        if (employee.dob) {
+            const birthDate = new Date(employee.dob);
+            const ageDiff = Date.now() - birthDate.getTime();
+            const ageDate = new Date(ageDiff);
+            const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+            if (age >= 60) isOver60 = true;
+        }
+
+        const salaryNum = parseFloat(employee.gross_salary || employee.basic_salary || employee.salary) || 47000;
+        const salaryFormatted = Math.round(salaryNum);
+        const salaryCTC = `${salaryFormatted} Rs/Month CTC (${salaryFormatted} Rs/Month In-Hand)`;
+
+        const deductionsText = isOver60
+            ? 'No deduction towards Provident Fund (PF) and Professional Tax (PT) shall be made, as the employee has attained the age of 60 years and is exempt from such deductions as per applicable provisions.'
+            : 'Standard statutory deductions towards Provident Fund (PF), Employees’ State Insurance (ESI) and Professional Tax (PT) shall be made as applicable under prevailing labour laws.';
+
+        const workMode = (employee.site_name && employee.site_name.toLowerCase().includes('home'))
+            ? 'Work from Home'
+            : (employee.site_name ? `Project Site: ${employee.site_name}` : 'Work from Home');
+
+        // ==========================================
+        // PAGE 1: HEADER & TERMS 1 TO 6
+        // ==========================================
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 40, 30, { width: 115 });
+        }
+
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#000000').text('NKD POWER SOLUTIONS PVT LTD', 230, 30, { align: 'right', width: 325 });
+        doc.fontSize(7.5).font('Helvetica-Bold').text('A-41 GROUND FLOOR, PARK ELITE, SEC-85', 230, 44, { align: 'right', width: 325 });
+        doc.text('FARIDABAD, HARYANA-121002', 230, 54, { align: 'right', width: 325 });
+        doc.font('Helvetica').fontSize(7.5).text('CIN: U45309HR2021PTC097238', 230, 64, { align: 'right', width: 325 });
+        doc.text('Email ID- info@nkdpowersolutions.com', 230, 74, { align: 'right', width: 325 });
+        doc.text('Mobile- 9313513366, 9358555155', 230, 84, { align: 'right', width: 325 });
+
+        doc.moveTo(40, 100).lineTo(555, 100).lineWidth(1.5).strokeColor('#000000').stroke();
+
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000').text('JOINING LETTER', 40, 118, { align: 'center', width: 515, underline: true });
+
+        let curY = 150;
+        doc.font('Helvetica').fontSize(9.5).text(`Dear ${genderPrefix} ${fullName},`, 40, curY);
+        curY += 18;
+
+        doc.font('Helvetica-Bold').fontSize(9.5).text(`Designation: ${designation}`, 40, curY);
+        curY += 22;
+
+        doc.font('Helvetica').fontSize(9).text(
+            `We refer to your recent interview for the above position and are pleased to inform that we are offering you the position with our company effective from Date ${formattedDoj} under the following terms and conditions:`,
+            40,
+            curY,
+            { width: 515, lineGap: 2.5 }
+        );
+        curY = doc.y + 14;
+
+        const terms = [
+            { num: '1)', title: 'Salary:', text: `Your salary will be ${salaryCTC}` },
+            { num: '2)', title: 'Deductions:', text: deductionsText },
+            { num: '3)', title: 'Accommodation:', text: 'Accommodation, lodging, and meals will be your responsibility.' },
+            { num: '4)', title: 'Working Hours:', text: 'Working hours are 9 am to 8 pm however you shall be flexible to work as per site condition.' },
+            { num: '5)', title: 'Leave Policy:', text: 'You are entitled to claim 10 leave per half years as paid leave that is excluded from national holidays.' },
+            { num: '6)', title: 'Notice Period:', text: 'If you decide to resign, please serve a one-month notice period, Failure to do so will result in withholding your salary for the current month.' },
+            { num: '7)', title: 'Client Site Restrictions:', text: 'You are not allowed to seek employment at any of our client sites or with competitors working on-site. Violation of this policy will result in legal action.' },
+            { num: '8)', title: 'Facilities Usage:', text: 'Make prudent use of company-provided facilities, including laptop. Any intentional damage may lead to salary deductions.' },
+            {
+                num: '9)',
+                title: 'Termination Clause:',
+                text: 'NKD Power Solutions reserves the right to terminate your employment without prior notice in cases like:\n  a) Incompetence or inability to perform assigned duties due to ill health or lack of skills.\n  b) Misbehaviour, disobedience, theft, or breach of the company’s code of conduct.\n  c) Habitual tardiness or dishonesty.\n  d) Breach of confidentiality or non-disclosure agreements.\n  e) Other analogous reasons.'
+            },
+            { num: '10)', title: 'Joining Date:', text: `Your Joining will be (${workMode}) and you are requested to join the organization on or before ${formattedDojFull}. This joining letter will be null and void if not joining on requested date.` }
+        ];
+
+        // Terms 1 to 6 on Page 1
+        for (let i = 0; i < 6; i++) {
+            const t = terms[i];
+            doc.font('Helvetica-Bold').fontSize(8.5).text(`${t.num} `, 40, curY, { continued: true });
+            doc.text(`${t.title} `, { continued: true });
+            doc.font('Helvetica').text(t.text, { lineGap: 2 });
+            curY = doc.y + 7;
+        }
+
+        // ==========================================
+        // PAGE 2: TERMS 7 TO 10 & DIGITAL SIGNATURE
+        // ==========================================
+        doc.addPage();
+        curY = 50;
+
+        for (let i = 6; i < terms.length; i++) {
+            const t = terms[i];
+            doc.font('Helvetica-Bold').fontSize(8.5).text(`${t.num} `, 40, curY, { continued: true });
+            doc.text(`${t.title} `, { continued: true });
+            doc.font('Helvetica').text(t.text, { lineGap: 2 });
+            curY = doc.y + 8;
+        }
+
+        curY += 25;
+
+        // Authorized Signatory Block with Arbaaz Ansari Digital Signature
+        if (fs.existsSync(digitalSignPath)) {
+            doc.image(digitalSignPath, 40, curY, { width: 140 });
+        } else {
+            doc.font('Helvetica').fontSize(9).text('Authorized Signatory', 40, curY);
+            curY += 15;
+            doc.font('Helvetica-Bold').fontSize(11).text('ARBAAZ ANSARI', 40, curY);
+            curY += 15;
+            doc.font('Helvetica').fontSize(8).fillColor('#475569').text('Digitally signed by ARBAAZ ANSARI', 40, curY);
+            doc.text(`Date: ${new Date().toISOString()}`, 40, curY + 10);
+            doc.font('Helvetica-Bold').fontSize(9).fillColor('#000000').text('HR Manager', 40, curY + 25);
+        }
+
+        // Running footers
+        const pages = doc.bufferedPageRange();
+        for (let i = 0; i < pages.count; i++) {
+            doc.switchToPage(i);
+            doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8').text(
+                `NKD Power Solutions Pvt Ltd • Official Staff Joining Letter • Page ${i + 1} of ${pages.count}`,
+                40,
+                805,
+                { align: 'center', width: 515 }
+            );
+        }
+    }
+
     getMonthName(monthIndex) {
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         return months[(parseInt(monthIndex, 10) || 1) - 1] || 'Unknown';

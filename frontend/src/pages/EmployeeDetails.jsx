@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, FileText, ShieldCheck, FileCheck } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -77,6 +77,15 @@ const EmployeeDetails = () => {
                     >
                         <ShieldCheck size={15} />
                         <span>Download NDA / Integrity Agreement</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => employeeService.downloadStaffJoiningLetter(employee.employee_id || employee.employee_code, employee.employee_code)}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Download Official Staff Joining Letter (10 Terms + HR Signature)"
+                    >
+                        <FileCheck size={15} />
+                        <span>Download Staff Joining Letter</span>
                     </button>
                 </div>
             </div>

@@ -40,6 +40,22 @@ const employeeService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    getStaffJoiningLetterUrl: (id) => {
+        const token = localStorage.getItem('token');
+        return `${getApiBaseUrl()}/employees/${id}/staff-joining-letter?token=${encodeURIComponent(token || '')}`;
+    },
+    downloadStaffJoiningLetter: async (id, empCode = 'STAFF') => {
+        const res = await api.get(`/employees/${id}/staff-joining-letter`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Joining_Letter_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 
