@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { X, Save, User, Briefcase, CreditCard, FileText, CheckCircle, Upload, Eye, Trash2 } from 'lucide-react';
+import { X, Save, User, Briefcase, CreditCard, FileText, CheckCircle, Upload, Eye, Trash2, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api, { getFileUrl, extractApiError } from '../../services/api';
 import shiftService from '../../services/shiftService';
@@ -380,6 +380,74 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                         <fieldset disabled={viewOnly} className="block w-full min-w-0 border-0 p-0 m-0 space-y-6" style={{ minInlineSize: 0 }}>
                             {activeTab === 'basic' && (
                                 <div className="space-y-5 sm:space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                                    {/* Employee Photo Upload Card */}
+                                    <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-5">
+                                        <div className="relative group shrink-0">
+                                            {(formik.values.documents?.employee_photo || formik.values.documents?.photo) ? (
+                                                <img
+                                                    src={getFileUrl(formik.values.documents?.employee_photo || formik.values.documents?.photo)}
+                                                    alt="Employee Photo"
+                                                    className="w-24 h-24 rounded-full object-cover border-2 border-primary-500 shadow-md ring-4 ring-primary-50"
+                                                />
+                                            ) : (
+                                                <div className="w-24 h-24 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                                                    <User size={36} />
+                                                    <span className="text-[10px] mt-1 font-medium">No Photo</span>
+                                                </div>
+                                            )}
+                                            {!viewOnly && (
+                                                <label
+                                                    htmlFor="basic-photo-input"
+                                                    className="absolute bottom-0 right-0 p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-md cursor-pointer transition-transform hover:scale-105 active:scale-95"
+                                                    title="Upload Photo"
+                                                >
+                                                    <Camera size={14} />
+                                                </label>
+                                            )}
+                                        </div>
+
+                                        <div className="flex-1 text-center sm:text-left space-y-1.5 min-w-0">
+                                            <h4 className="text-sm font-bold text-slate-800">Employee Photograph</h4>
+                                            <p className="text-xs text-slate-500">
+                                                Upload clear passport-size photo (PNG, JPG, WEBP). Stored in employee joining dossier.
+                                            </p>
+                                            {!viewOnly && (
+                                                <div className="flex items-center justify-center sm:justify-start gap-2 pt-1 flex-wrap">
+                                                    <input
+                                                        type="file"
+                                                        id="basic-photo-input"
+                                                        className="hidden"
+                                                        accept="image/*"
+                                                        onChange={(e) => handleFileUpload(e, 'employee_photo')}
+                                                        disabled={uploading['employee_photo']}
+                                                    />
+                                                    <label
+                                                        htmlFor="basic-photo-input"
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 text-primary-700 hover:bg-primary-100 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                                                            uploading['employee_photo'] ? 'opacity-50 pointer-events-none' : ''
+                                                        }`}
+                                                    >
+                                                        <Upload size={13} />
+                                                        {uploading['employee_photo'] ? 'Uploading...' : ((formik.values.documents?.employee_photo || formik.values.documents?.photo) ? 'Change Photo' : 'Upload Photo')}
+                                                    </label>
+                                                    {(formik.values.documents?.employee_photo || formik.values.documents?.photo) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                removeDocument('employee_photo');
+                                                                if (formik.values.documents?.photo) removeDocument('photo');
+                                                            }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-colors"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                            Remove
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </section>
+
                                     <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Personal Details</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -703,7 +771,7 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                         <p className="text-sm text-slate-500 mb-6">Upload clear copies of the following documents. Supported formats: PDF, JPG, PNG.</p>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            {['Aadhaar Card', 'PAN Card', 'Bank Proof', 'Offer Letter', 'Joining Report', 'Resume'].map((docName) => {
+                                            {['Employee Photo', 'Aadhaar Card', 'PAN Card', 'Bank Proof', 'Offer Letter', 'Joining Report', 'Resume'].map((docName) => {
                                                 const docKey = docName.toLowerCase().replace(' ', '_');
                                                 const fileUrl = formik.values.documents[docKey];
                                                 const isUploading = uploading[docKey];

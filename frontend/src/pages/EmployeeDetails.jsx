@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileText, ShieldCheck, FileCheck, Laptop } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
-import api, { extractApiError } from '../services/api';
+import api, { extractApiError, getFileUrl } from '../services/api';
 import employeeService from '../services/employeeService';
 import toast from 'react-hot-toast';
 
@@ -51,13 +51,32 @@ const EmployeeDetails = () => {
                 >
                     <ArrowLeft size={20} className="text-slate-600" />
                 </button>
-                <div className="min-w-0 flex flex-wrap items-center gap-2">
-                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">
-                        {employee.first_name} {employee.last_name}
-                    </h1>
-                    <span className="font-mono text-xs sm:text-sm text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg">
-                        {employee.employee_code}
-                    </span>
+                <div className="flex items-center gap-3.5 min-w-0">
+                    {(employee.documents?.employee_photo || employee.documents?.photo) ? (
+                        <img
+                            src={getFileUrl(employee.documents?.employee_photo || employee.documents?.photo)}
+                            alt=""
+                            className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md ring-2 ring-primary-500/20 shrink-0"
+                        />
+                    ) : (
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center shadow-md shrink-0">
+                            {(employee.first_name?.[0] || 'E')}{(employee.last_name?.[0] || '')}
+                        </div>
+                    )}
+                    <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">
+                                {employee.first_name} {employee.last_name}
+                            </h1>
+                            <span className="font-mono text-xs sm:text-sm text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg">
+                                {employee.employee_code}
+                            </span>
+                        </div>
+                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                            {employee.designation || 'Staff'} • {employee.department || 'Operations'}
+                            {employee.father_name && ` • S/o ${employee.father_name}`}
+                        </p>
+                    </div>
                 </div>
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                     <button

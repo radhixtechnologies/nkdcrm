@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText, ShieldCheck, FileCheck } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
-import api, { extractApiError } from '../services/api';
+import api, { extractApiError, getFileUrl } from '../services/api';
 import employeeService from '../services/employeeService';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -189,7 +189,7 @@ const Employees = () => {
                             disabled={importing}
                             className="flex items-center gap-2 rounded-xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-xs btn-press"
                         >
-                            {importing ? 'Importing...' : <><UploadCloud size={15} className="text-primary-600" /> Import Register (Form XIII)</>}
+                            {importing ? 'Importing...' : <><UploadCloud size={15} className="text-primary-600" /> Import Register / Joining Sheet</>}
                         </button>
                         <button
                             onClick={() => {
@@ -265,14 +265,29 @@ const Employees = () => {
                             {filteredEmployees.map((emp) => (
                                 <div key={emp.employee_id} className="p-4 space-y-2.5 hover:bg-slate-50/60">
                                     <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <p className="font-mono text-xs font-bold text-primary-700">{emp.employee_code}</p>
-                                            <h4 className="font-bold text-slate-900 text-sm truncate">
-                                                {emp.first_name} {emp.last_name}
-                                            </h4>
-                                            <p className="text-xs text-slate-500 truncate">
-                                                {emp.designation || 'Staff'} • {emp.department || 'Operations'}
-                                            </p>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            {(emp.documents?.employee_photo || emp.documents?.photo) ? (
+                                                <img
+                                                    src={getFileUrl(emp.documents?.employee_photo || emp.documents?.photo)}
+                                                    alt=""
+                                                    className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                                />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+                                                    {(emp.first_name?.[0] || 'E')}{(emp.last_name?.[0] || '')}
+                                                </div>
+                                            )}
+                                            <div className="min-w-0">
+                                                <p className="font-mono text-xs font-bold text-primary-700">{emp.employee_code}</p>
+                                                <h4 className="font-bold text-slate-900 text-sm truncate">
+                                                    {emp.first_name} {emp.last_name}
+                                                </h4>
+                                                <p className="text-xs text-slate-500 truncate">
+                                                    {emp.designation || 'Staff'} • {emp.department || 'Operations'}
+                                                    {emp.father_name && ` • S/o ${emp.father_name}`}
+                                                </p>
+                                            </div>
                                         </div>
                                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold shrink-0 ${
                                             emp.employment_status === 'ACTIVE'
@@ -360,8 +375,31 @@ const Employees = () => {
                                     {filteredEmployees.map((emp) => (
                                         <tr key={emp.employee_id} className="hover:bg-slate-50/80 transition-colors group">
                                             <td className="px-6 py-4 font-mono font-bold text-primary-700 text-xs">{emp.employee_code}</td>
-                                            <td className="px-6 py-4 font-bold text-slate-900">
-                                                {emp.first_name} {emp.last_name}
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    {(emp.documents?.employee_photo || emp.documents?.photo) ? (
+                                                        <img
+                                                            src={getFileUrl(emp.documents?.employee_photo || emp.documents?.photo)}
+                                                            alt=""
+                                                            className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs shrink-0"
+                                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                                        />
+                                                    ) : (
+                                                        <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0">
+                                                            {(emp.first_name?.[0] || 'E')}{(emp.last_name?.[0] || '')}
+                                                        </div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <span className="font-bold text-slate-900 block truncate">
+                                                            {emp.first_name} {emp.last_name}
+                                                        </span>
+                                                        {emp.father_name && (
+                                                            <span className="text-[11px] text-slate-400 block truncate font-normal">
+                                                                S/o {emp.father_name}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 text-slate-600">
                                                 <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
