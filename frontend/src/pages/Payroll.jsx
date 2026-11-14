@@ -249,8 +249,11 @@ const Payroll = () => {
     }
 
     // Render Admin View
+    const totalGross = payrollList.reduce((sum, p) => sum + numVal(p.gross_earnings), 0);
     const totalPayout = payrollList.reduce((sum, p) => sum + numVal(p.net_salary), 0);
     const totalPF = payrollList.reduce((sum, p) => sum + numVal(p.pf_employee) + numVal(p.pf_employer), 0);
+    const totalESI = payrollList.reduce((sum, p) => sum + numVal(p.esi_employee) + numVal(p.esi_employer), 0);
+    const totalAdvance = payrollList.reduce((sum, p) => sum + numVal(p.advance_deduction), 0);
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto pb-20">
@@ -295,13 +298,29 @@ const Payroll = () => {
                     )}
 
                     {canExport && (
-                        <button
-                            onClick={() => payrollService.downloadExcel(month + 1, year)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-emerald-500/20 btn-press"
-                            title="Export to Excel"
-                        >
-                            <Download size={14} /> Export
-                        </button>
+                        <>
+                            <button
+                                onClick={() => payrollService.downloadExcel(month + 1, year)}
+                                className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs btn-press"
+                                title="Export Standard Payroll Summary"
+                            >
+                                <Download size={13} /> Summary
+                            </button>
+                            <button
+                                onClick={() => payrollService.downloadClientWageSheet(month + 1, year)}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-indigo-500/20 btn-press"
+                                title="Export Client Wage Register (Form XVII / NTPC Korba Format)"
+                            >
+                                <FileText size={13} /> Client Wage Sheet (Form XVII)
+                            </button>
+                            <button
+                                onClick={() => payrollService.downloadBankNeft(month + 1, year)}
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-emerald-500/20 btn-press"
+                                title="Export Bank NEFT Disbursal Sheet"
+                            >
+                                <Download size={13} /> Bank NEFT
+                            </button>
+                        </>
                     )}
 
                     <button
@@ -322,33 +341,26 @@ const Payroll = () => {
             )}
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Net Payout</div>
-                    <div className="text-2xl font-bold text-slate-900 mt-1">₹ {totalPayout.toLocaleString('en-IN')}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">Disbursed to staff bank accounts</div>
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Gross Earnings</div>
+                    <div className="text-2xl font-bold text-slate-900 mt-1">₹ {totalGross.toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Earned Basic + Allowances + OT</div>
                 </div>
                 <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
-                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Total Statutory PF Pool</div>
-                    <div className="text-2xl font-bold text-slate-900 mt-1">₹ {totalPF.toLocaleString('en-IN')}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">Combined Employer + Employee</div>
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Statutory Pool (PF + ESI)</div>
+                    <div className="text-2xl font-bold text-indigo-700 mt-1">₹ {(totalPF + totalESI).toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">PF ₹{totalPF.toLocaleString('en-IN')} | ESI ₹{totalESI.toLocaleString('en-IN')}</div>
                 </div>
-                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-2 flex-wrap">
-                    <div>
-                        <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Batch Status</div>
-                        <div className="text-lg font-bold text-slate-800 mt-1">
-                            {payrollList.length === 0 ? "Not Generated" :
-                                payrollList.some(p => p.payment_status === 'PENDING') ? "Draft / Pending" : "Finalized"}
-                        </div>
-                    </div>
-                    {canFinalize && selectedRows.length > 0 && (
-                        <button
-                            onClick={handleFinalize}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:shadow-lg hover:shadow-emerald-500/25 btn-press transition-all animate-scale-in"
-                        >
-                            Finalize ({selectedRows.length})
-                        </button>
-                    )}
+                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Site Advances Deducted</div>
+                    <div className="text-2xl font-bold text-amber-600 mt-1">₹ {totalAdvance.toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Cash / mid-month site advances</div>
+                </div>
+                <div className="card-hover-effect bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+                    <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Final Bank Disbursal</div>
+                    <div className="text-2xl font-bold text-emerald-600 mt-1">₹ {totalPayout.toLocaleString('en-IN')}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">Net transferable to bank accounts</div>
                 </div>
             </div>
 
@@ -388,17 +400,21 @@ const Payroll = () => {
                                         </span>
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg">
                                         <div>
                                             <div className="text-[10px] text-slate-400">Gross</div>
                                             <div className="font-mono font-medium text-slate-700">₹ {fmtINR(row.gross_earnings)}</div>
                                         </div>
                                         <div>
-                                            <div className="text-[10px] text-slate-400">Deductions</div>
-                                            <div className="font-mono font-medium text-red-600">- ₹ {fmtINR(row.total_deductions)}</div>
+                                            <div className="text-[10px] text-slate-400">Statutory (PF+ESI)</div>
+                                            <div className="font-mono font-medium text-red-600">- ₹ {fmtINR(numVal(row.pf_employee) + numVal(row.esi_employee) + numVal(row.professional_tax))}</div>
                                         </div>
                                         <div>
-                                            <div className="text-[10px] text-slate-400">Net Salary</div>
+                                            <div className="text-[10px] text-slate-400">Site Advance</div>
+                                            <div className="font-mono font-medium text-amber-600">{numVal(row.advance_deduction) > 0 ? `- ₹ ${fmtINR(row.advance_deduction)}` : '₹ 0'}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-[10px] text-slate-400">Final Payout</div>
                                             <div className="font-mono font-bold text-green-700">₹ {fmtINR(row.net_salary)}</div>
                                         </div>
                                     </div>
@@ -438,8 +454,9 @@ const Payroll = () => {
                                         <th className="px-4 py-3 text-right">Basic + DA</th>
                                         <th className="px-4 py-3 text-right">Allowances</th>
                                         <th className="px-4 py-3 text-right">Gross Earned</th>
-                                        <th className="px-4 py-3 text-right text-red-500">Deductions (PF/ESI/PT)</th>
-                                        <th className="px-4 py-3 text-right font-bold text-slate-800">Net Salary</th>
+                                        <th className="px-4 py-3 text-right text-red-500">Statutory (PF+ESI)</th>
+                                        <th className="px-4 py-3 text-right text-amber-600">Site Advance</th>
+                                        <th className="px-4 py-3 text-right font-bold text-slate-800">Final Payout</th>
                                         <th className="px-4 py-3 text-center">Status</th>
                                         <th className="px-4 py-3 text-right">Actions</th>
                                     </tr>
@@ -465,13 +482,16 @@ const Payroll = () => {
                                                 ₹ {fmtINR(row.basic_earned)}
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                                ₹ {(numVal(row.hra_earned) + numVal(row.conveyance_earned) + numVal(row.special_allowance_earned)).toLocaleString('en-IN')}
+                                                ₹ {(numVal(row.hra_earned) + numVal(row.conveyance_earned) + numVal(row.special_allowance_earned) + numVal(row.other_allowance_earned)).toLocaleString('en-IN')}
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono font-medium text-slate-800">
                                                 ₹ {fmtINR(row.gross_earnings)}
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono text-red-600">
-                                                - ₹ {fmtINR(row.total_deductions)}
+                                                - ₹ {fmtINR(numVal(row.pf_employee) + numVal(row.esi_employee) + numVal(row.professional_tax))}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono text-amber-600">
+                                                {numVal(row.advance_deduction) > 0 ? `- ₹ ${fmtINR(row.advance_deduction)}` : '₹ 0'}
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono font-bold text-green-700 bg-green-50/50">
                                                 ₹ {fmtINR(row.net_salary)}

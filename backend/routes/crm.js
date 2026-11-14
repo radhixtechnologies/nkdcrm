@@ -1131,8 +1131,29 @@ router.get('/payroll/export/excel', requireAnyPermission('PAYROLL.can_create', '
     try {
         const month = parseInt(req.query.month, 10);
         const year = parseInt(req.query.year, 10);
-        const payrollList = await payrollService.getPayrollByPeriod(month, year);
+        const siteId = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
+        const payrollList = await payrollService.getPayrollByPeriod(month, year, siteId);
         await excelService.generatePayrollExcel(payrollList, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/payroll/export/client-wage-sheet', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.can_update', 'PAYROLL.can_approve'), async (req, res, next) => {
+    try {
+        const month = parseInt(req.query.month, 10);
+        const year = parseInt(req.query.year, 10);
+        const siteId = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
+        const payrollList = await payrollService.getPayrollByPeriod(month, year, siteId);
+        await excelService.generateNtpcWageRegisterExcel(payrollList, month, year, res);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/payroll/export/bank-neft', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.can_update', 'PAYROLL.can_approve'), async (req, res, next) => {
+    try {
+        const month = parseInt(req.query.month, 10);
+        const year = parseInt(req.query.year, 10);
+        const siteId = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
+        const payrollList = await payrollService.getPayrollByPeriod(month, year, siteId);
+        await excelService.generateBankNeftExcel(payrollList, month, year, res);
     } catch (error) { return sendError(next, error); }
 });
 

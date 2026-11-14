@@ -302,30 +302,49 @@ class PayrollService {
         return result.rows[0] || null;
     }
 
-    async getPayrollByPeriod(month, year) {
-        const query = `
+    async getPayrollByPeriod(month, year, siteId = null) {
+        let query = `
             SELECT
                 p.*,
                 COALESCE(NULLIF(p.present_days, 0), a.present_days, 0) AS present_days,
                 COALESCE(NULLIF(p.absent_days, 0), a.absent_days, 0) AS absent_days,
+                COALESCE(a.weekly_off_days, p.weekly_off_days, 0) AS weekly_off_days,
+                COALESCE(a.leave_days, p.leave_days, 0) AS leave_days,
+                COALESCE(a.half_days, p.half_days, 0) AS half_days,
+                COALESCE(a.overtime_hours, p.overtime_hours, 0) AS overtime_hours,
                 COALESCE(a.total_days, p.total_days, 30) AS total_days,
+                a.day_wise_attendance,
                 e.employee_code,
                 e.first_name,
                 e.last_name,
                 e.full_name,
+                e.father_name,
+                e.mobile,
                 e.designation,
                 e.department,
+                e.wage_type,
+                e.basic_salary AS employee_basic_salary,
+                e.ot_rate AS employee_ot_rate,
                 e.bank_name,
                 e.account_number,
-                e.ifsc_code
+                e.ifsc_code,
+                s.site_id,
+                s.site_name,
+                s.site_code
             FROM payroll p
             JOIN employees e ON p.employee_id = e.employee_id
+            LEFT JOIN sites s ON e.site_id = s.site_id
             LEFT JOIN attendance a ON p.attendance_id = a.attendance_id
             WHERE p.month = $1 AND p.year = $2
-            ORDER BY e.employee_code ASC
         `;
+        const values = [month, year];
+        if (siteId) {
+            query += ' AND e.site_id = $3';
+            values.push(siteId);
+        }
+        query += ' ORDER BY e.employee_code ASC';
 
-        const result = await db.query(query, [month, year]);
+        const result = await db.query(query, values);
         return result.rows;
     }
 

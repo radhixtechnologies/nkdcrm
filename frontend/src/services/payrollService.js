@@ -34,6 +34,26 @@ const payrollService = {
         }
         window.open(`${getApiBaseUrl()}/payroll/export/excel?month=${month}&year=${year}&token=${encodeURIComponent(token)}`, '_blank', 'noopener,noreferrer');
     },
+    downloadClientWageSheet: (month, year, siteId = null) => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            toast.error('Please sign in again to export wage sheet');
+            return;
+        }
+        let url = `${getApiBaseUrl()}/payroll/export/client-wage-sheet?month=${month}&year=${year}&token=${encodeURIComponent(token)}`;
+        if (siteId) url += `&site_id=${siteId}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    downloadBankNeft: (month, year, siteId = null) => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            toast.error('Please sign in again to export bank NEFT file');
+            return;
+        }
+        let url = `${getApiBaseUrl()}/payroll/export/bank-neft?month=${month}&year=${year}&token=${encodeURIComponent(token)}`;
+        if (siteId) url += `&site_id=${siteId}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
+    },
 
     // Get Single Payroll Detail
     getPayrollDetail: (id) => api.get(`/payroll/${id}`),
