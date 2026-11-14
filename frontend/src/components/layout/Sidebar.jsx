@@ -36,6 +36,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
         { title: 'Recruitment', path: '/recruitment', icon: <UserPlus size={20} />, moduleCode: 'RECRUITMENT' },
         { title: 'Client Invoices', path: '/invoices', icon: <Receipt size={20} />, moduleCode: 'INVOICES' },
         { title: 'Vendors', path: '/vendors', icon: <Truck size={20} />, moduleCode: 'VENDORS' },
+        { title: 'Vendor Payments', path: '/vendor-payments', icon: <IndianRupee size={20} />, moduleCode: 'VENDORS', badge: 'FY 26-27' },
         { title: 'Assets & PPE', path: '/assets', icon: <Package size={20} />, moduleCode: 'ASSETS' },
         { title: 'Site & Shift', path: '/site-shift', icon: <Clock size={20} />, moduleCode: 'SITES' },
         { title: 'Sites & Branches', path: '/sites', icon: <Building size={20} />, moduleCode: 'SITES' },

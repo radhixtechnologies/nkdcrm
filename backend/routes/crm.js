@@ -28,6 +28,7 @@ const excelService = require('../services/excelService');
 const invoiceService = require('../services/invoiceService');
 const recruitmentService = require('../services/recruitmentService');
 const vendorService = require('../services/vendorService');
+const vendorPaymentService = require('../services/vendorPaymentService');
 const assetService = require('../services/assetService');
 const aiService = require('../services/aiService');
 const dprService = require('../services/dprService');
@@ -1720,6 +1721,60 @@ router.put('/vendors/:id(\\d+)', requirePermission('VENDORS', 'can_update'), asy
 router.delete('/vendors/:id(\\d+)', requirePermission('VENDORS', 'can_delete'), async (req, res, next) => {
     try {
         return sendData(res, await vendorService.deleteVendor(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+// ==========================================
+// VENDOR PAYMENT TRACKER & DASHBOARD ROUTES (FY 2026-27)
+// ==========================================
+router.get('/vendor-payments/stats', requireAnyPermission('VENDORS.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.getDashboardStats());
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendor-payments/export/excel', requireAnyPermission('VENDORS.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
+    try {
+        const buffer = await vendorPaymentService.generateVendorPaymentsExcel();
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="Vendor_Payment_Tracker_FY-2026-27.xlsx"');
+        return res.send(buffer);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendor-payments/invoices', requireAnyPermission('VENDORS.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.getInvoices(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/vendor-payments/invoices/:id(\\d+)', requireAnyPermission('VENDORS.can_view', 'PROCUREMENT.can_view'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.getInvoiceById(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/vendor-payments/invoices', requirePermission('VENDORS', 'can_create'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.createInvoice(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/vendor-payments/invoices/:id(\\d+)', requirePermission('VENDORS', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.updateInvoice(req.params.id, req.body));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.delete('/vendor-payments/invoices/:id(\\d+)', requirePermission('VENDORS', 'can_delete'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.deleteInvoice(req.params.id));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/vendor-payments/invoices/:id(\\d+)/payments', requirePermission('VENDORS', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await vendorPaymentService.recordPayment(req.params.id, req.body), 201);
     } catch (error) { return sendError(next, error); }
 });
 

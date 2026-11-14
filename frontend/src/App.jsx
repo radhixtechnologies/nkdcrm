@@ -19,6 +19,7 @@ import UserManagement from './pages/UserManagement';
 import Recruitment from './pages/Recruitment';
 import Invoices from './pages/Invoices';
 import Vendors from './pages/Vendors';
+import VendorPaymentTracker from './pages/VendorPaymentTracker';
 import Assets from './pages/Assets';
 import MobileApp from './pages/MobileApp';
 import DPRReports from './pages/DPRReports';
@@ -50,6 +51,7 @@ function App() {
           <Route path="recruitment" element={<ProtectedRoute requiredPermission="RECRUITMENT.can_view"><Recruitment /></ProtectedRoute>} />
           <Route path="invoices" element={<ProtectedRoute requiredPermission="INVOICES.can_view"><Invoices /></ProtectedRoute>} />
           <Route path="vendors" element={<ProtectedRoute requiredPermission="VENDORS.can_view"><Vendors /></ProtectedRoute>} />
+          <Route path="vendor-payments" element={<ProtectedRoute requiredPermission="VENDORS.can_view"><VendorPaymentTracker /></ProtectedRoute>} />
           <Route path="assets" element={<ProtectedRoute requiredPermission="ASSETS.can_view"><Assets /></ProtectedRoute>} />
           <Route path="dpr" element={<ProtectedRoute requiredPermission="DPR.can_view"><DPRManagementHub /></ProtectedRoute>} />
           <Route path="dpr-reports" element={<ProtectedRoute requiredPermission="DPR.can_view"><DPRReports /></ProtectedRoute>} />

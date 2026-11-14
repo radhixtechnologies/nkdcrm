@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
     Briefcase, Plus, Search,
     CheckCircle, AlertTriangle, Clock,
     Star, Trash2, Edit3, ShieldAlert,
-    ShieldCheck, Calendar, Phone, Mail, MapPin, X
+    ShieldCheck, Calendar, Phone, Mail, MapPin, X, IndianRupee
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import vendorService from '../services/vendorService';
@@ -269,6 +270,13 @@ const Vendors = () => {
                 </div>
                 {canCreate && (
                     <div className="flex items-center gap-2.5 flex-wrap">
+                        <Link
+                            to="/vendor-payments"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                        >
+                            <IndianRupee size={16} />
+                            Vendor Payments (FY 26-27)
+                        </Link>
                         <button
                             onClick={() => openAddAgreementModal()}
                             className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors shadow-2xs"
