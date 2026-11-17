@@ -101,9 +101,22 @@ class EmployeeService {
         role_id = cleanInt(role_id || roleId);
 
         if (!employee_code || String(employee_code).trim() === '') {
-            const seqResult = await db.query("SELECT nextval('employee_code_seq') AS next_val");
-            const nextVal = seqResult.rows[0].next_val;
-            employee_code = `EMP-${String(nextVal).padStart(6, '0')}`;
+            const seqRes = await db.query(`
+                SELECT COALESCE(
+                    MAX(SUBSTRING(employee_code FROM 'NKD-([0-9]+)')::INTEGER), 
+                    0
+                ) + 1 AS next_num
+                FROM employees
+                WHERE employee_code ~ '^NKD-[0-9]+'
+            `);
+            const nextNum = parseInt(seqRes.rows[0]?.next_num, 10) || 1;
+            let candidateCode = `NKD-${String(nextNum).padStart(5, '0')}`;
+            let counter = nextNum;
+            while (await this.employeeExists(candidateCode)) {
+                counter++;
+                candidateCode = `NKD-${String(counter).padStart(5, '0')}`;
+            }
+            employee_code = candidateCode;
         } else {
             employee_code = String(employee_code).trim().toUpperCase();
             const exists = await this.employeeExists(employee_code);

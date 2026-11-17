@@ -443,9 +443,21 @@ const recruitmentService = {
             );
             const offer = offerRes.rows[0] || {};
 
-            const seqRes = await client.query("SELECT nextval('employee_code_seq') AS seq");
-            const nextVal = seqRes.rows[0]?.seq || Math.floor(Math.random() * 900000 + 100000);
-            const employeeCode = `EMP-${String(nextVal).padStart(6, '0')}`;
+            const seqRes = await client.query(`
+                SELECT COALESCE(
+                    MAX(SUBSTRING(employee_code FROM 'NKD-([0-9]+)')::INTEGER), 
+                    0
+                ) + 1 AS next_num
+                FROM employees
+                WHERE employee_code ~ '^NKD-[0-9]+'
+            `);
+            const nextVal = parseInt(seqRes.rows[0]?.next_num, 10) || 1;
+            let employeeCode = `NKD-${String(nextVal).padStart(5, '0')}`;
+            let counter = nextVal;
+            while ((await client.query('SELECT 1 FROM employees WHERE employee_code = $1 LIMIT 1', [employeeCode])).rows.length > 0) {
+                counter++;
+                employeeCode = `NKD-${String(counter).padStart(5, '0')}`;
+            }
 
             const nameParts = String(candidate.full_name || 'Employee').trim().split(/\s+/);
             const firstName = nameParts[0];

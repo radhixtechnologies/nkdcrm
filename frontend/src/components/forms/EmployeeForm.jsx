@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
-import { X, Save, User, Briefcase, CreditCard, FileText, CheckCircle, Upload, Eye, Trash2, Camera } from 'lucide-react';
+import { X, Save, User, Briefcase, CreditCard, FileText, CheckCircle, Upload, Eye, Trash2, Camera, Plus, Files } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api, { getFileUrl, extractApiError } from '../../services/api';
 import shiftService from '../../services/shiftService';
@@ -217,13 +217,41 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
         },
     });
 
-    // File Upload Handler
+    // Helper to get files array for any document type (supports string, array, or object)
+    const getDocFiles = (docKey) => {
+        const val = formik.values.documents?.[docKey];
+        if (!val) return [];
+        if (Array.isArray(val)) {
+            return val.map((item, idx) => {
+                if (typeof item === 'string') {
+                    const rawName = item.split('/').pop() || `File ${idx + 1}`;
+                    return { url: item, name: rawName };
+                }
+                return {
+                    url: item.url || '',
+                    name: item.name || item.originalName || item.url?.split('/').pop() || `File ${idx + 1}`,
+                    size: item.size
+                };
+            }).filter(f => f.url);
+        }
+        if (typeof val === 'string') {
+            return [{ url: val, name: val.split('/').pop() || 'Uploaded Document' }];
+        }
+        if (typeof val === 'object' && val.url) {
+            return [{ url: val.url, name: val.name || val.originalName || val.url.split('/').pop() || 'Uploaded Document', size: val.size }];
+        }
+        return [];
+    };
+
+    // File Upload Handler with multiple file support
     const handleFileUpload = async (e, docType) => {
-        const file = e.target.files[0];
-        if (!file) return;
+        const selectedFiles = Array.from(e.target.files || []);
+        if (selectedFiles.length === 0) return;
 
         const formData = new FormData();
-        formData.append('file', file);
+        selectedFiles.forEach(file => {
+            formData.append('file', file);
+        });
 
         setUploading(prev => ({ ...prev, [docType]: true }));
 
@@ -233,21 +261,64 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
             });
 
             if (res.data.success) {
-                formik.setFieldValue(`documents.${docType}`, res.data.url);
-                toast.success(`${docType.replace('_', ' ')} uploaded!`);
+                const currentFiles = getDocFiles(docType);
+                let newlyUploaded = [];
+                if (Array.isArray(res.data.files) && res.data.files.length > 0) {
+                    newlyUploaded = res.data.files.map(f => ({
+                        url: f.url,
+                        name: f.originalName || f.filename || f.url.split('/').pop(),
+                        size: f.size
+                    }));
+                } else if (Array.isArray(res.data.urls) && res.data.urls.length > 0) {
+                    newlyUploaded = res.data.urls.map((u, i) => ({
+                        url: u,
+                        name: selectedFiles[i]?.name || u.split('/').pop()
+                    }));
+                } else if (res.data.url) {
+                    newlyUploaded = [{
+                        url: res.data.url,
+                        name: selectedFiles[0]?.name || res.data.url.split('/').pop()
+                    }];
+                }
+
+                // If docType is 'employee_photo', we replace the single photo
+                let updatedFiles;
+                if (docType === 'employee_photo') {
+                    updatedFiles = newlyUploaded[0]?.url || '';
+                } else {
+                    updatedFiles = [...currentFiles, ...newlyUploaded];
+                }
+
+                formik.setFieldValue(`documents.${docType}`, updatedFiles);
+                toast.success(`${docType.replace(/_/g, ' ')} (${newlyUploaded.length} file${newlyUploaded.length > 1 ? 's' : ''}) uploaded!`);
             }
         } catch (error) {
             console.error('Upload failed', error);
-            toast.error('Upload failed');
+            toast.error(extractApiError(error, 'Upload failed'));
         } finally {
             setUploading(prev => ({ ...prev, [docType]: false }));
+            if (e.target) e.target.value = '';
         }
     };
 
-    const removeDocument = (docType) => {
+    const removeDocumentFile = (docType, fileIndex) => {
+        if (docType === 'employee_photo') {
+            const newDocs = { ...formik.values.documents };
+            delete newDocs[docType];
+            formik.setFieldValue('documents', newDocs);
+            return;
+        }
+
+        const currentFiles = getDocFiles(docType);
+        const remaining = currentFiles.filter((_, idx) => idx !== fileIndex);
         const newDocs = { ...formik.values.documents };
-        delete newDocs[docType];
+        if (remaining.length === 0) {
+            delete newDocs[docType];
+        } else {
+            newDocs[docType] = remaining;
+        }
         formik.setFieldValue('documents', newDocs);
+        toast.success('Document removed');
     };
 
     // Tabs Configuration
@@ -452,13 +523,13 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                                         <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-4">Personal Details</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                                             <div className="space-y-1 min-w-0">
-                                                <label className="input-label">Employee Code {isEdit ? '' : <span className="text-xs text-slate-400 font-normal normal-case">(Auto-generated if blank)</span>}</label>
+                                                <label className="input-label">Employee Code {isEdit ? '' : <span className="text-xs text-primary-600 font-medium normal-case">(Auto: NKD-00001 if blank)</span>}</label>
                                                 <input
                                                     type="text"
                                                     {...formik.getFieldProps('employee_code')}
                                                     disabled={viewOnly || isEdit}
                                                     className="input-field font-mono disabled:bg-slate-100 disabled:text-slate-500 placeholder:text-slate-400"
-                                                    placeholder={isEdit ? "" : "Leave blank to auto-generate"}
+                                                    placeholder={isEdit ? "" : "e.g. NKD-00001 (Leave blank to auto-generate)"}
                                                 />
                                                 {formik.touched.employee_code && formik.errors.employee_code && <p className="error-msg">{formik.errors.employee_code}</p>}
                                             </div>
@@ -766,54 +837,109 @@ const EmployeeForm = ({ onClose, onSuccess, initialData = null, isModal = true, 
                             {/* Tab Content: Documents */}
                             {activeTab === 'docs' && (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                                    <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-6">Employee Documents</h3>
-                                        <p className="text-sm text-slate-500 mb-6">Upload clear copies of the following documents. Supported formats: PDF, JPG, PNG.</p>
+                                    <section className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 mb-6 pb-3 border-b border-slate-100">
+                                            <div>
+                                                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Employee Documents</h3>
+                                                <p className="text-xs text-slate-500 mt-1">Upload documents (Multiple files supported for Aadhaar Front/Back, PAN, Bank Proof, etc.). Supported formats: PDF, JPG, PNG.</p>
+                                            </div>
+                                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                <CheckCircle size={13} /> Multi-File Upload Active
+                                            </span>
+                                        </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            {['Employee Photo', 'Aadhaar Card', 'PAN Card', 'Bank Proof', 'Offer Letter', 'Joining Report', 'Resume'].map((docName) => {
-                                                const docKey = docName.toLowerCase().replace(' ', '_');
-                                                const fileUrl = formik.values.documents[docKey];
+                                            {['Employee Photo', 'Aadhaar Card', 'PAN Card', 'Bank Proof', 'Offer Letter', 'Joining Report', 'Other Documents'].map((docName) => {
+                                                const docKey = docName.toLowerCase().replace(/\s+/g, '_');
+                                                const isPhoto = docKey === 'employee_photo';
+                                                const files = isPhoto
+                                                    ? (formik.values.documents[docKey] ? [{ url: typeof formik.values.documents[docKey] === 'string' ? formik.values.documents[docKey] : formik.values.documents[docKey]?.url, name: 'Profile Photo' }] : [])
+                                                    : getDocFiles(docKey);
                                                 const isUploading = uploading[docKey];
 
                                                 return (
-                                                    <div key={docKey} className="border border-slate-200 rounded-lg p-4 bg-slate-50 hover:bg-white transition-colors">
-                                                        <div className="flex items-center justify-between mb-3">
-                                                            <span className="font-medium text-slate-700">{docName}</span>
-                                                            {fileUrl && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Uploaded</span>}
+                                                    <div key={docKey} className="border border-slate-200 rounded-xl p-4 bg-slate-50/70 hover:bg-white transition-all shadow-2xs flex flex-col justify-between">
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-semibold text-slate-800 text-sm">{docName}</span>
+                                                                    {files.length > 0 && (
+                                                                        <span className="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                                                                            {files.length} {files.length === 1 ? 'file' : 'files'}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {!isPhoto && (
+                                                                    <span className="text-[10px] text-slate-400 font-medium">Multiple files allowed</span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Uploaded files list */}
+                                                            {files.length > 0 && (
+                                                                <div className="space-y-2 mb-3">
+                                                                    {files.map((file, idx) => (
+                                                                        <div key={idx} className="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-slate-200 text-xs shadow-2xs">
+                                                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                                <FileText size={15} className="text-primary-600 shrink-0" />
+                                                                                <span className="truncate text-slate-700 font-medium" title={file.name}>
+                                                                                    {file.name || `${docName} File ${idx + 1}`}
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                <a
+                                                                                    href={getFileUrl(file.url)}
+                                                                                    target="_blank"
+                                                                                    rel="noreferrer"
+                                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-primary-600 hover:bg-primary-50 font-semibold transition-colors"
+                                                                                    title="View file in new tab"
+                                                                                >
+                                                                                    <Eye size={13} /> View
+                                                                                </a>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => removeDocumentFile(docKey, idx)}
+                                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-red-600 hover:bg-red-50 font-semibold transition-colors cursor-pointer"
+                                                                                    title="Delete file"
+                                                                                >
+                                                                                    <Trash2 size={13} /> Remove
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
 
-                                                        {fileUrl ? (
-                                                            <div className="flex items-center gap-3 mt-2">
-                                                                <a href={getFileUrl(fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-primary-600 hover:text-primary-800">
-                                                                    <Eye size={16} /> View
-                                                                </a>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => removeDocument(docKey)}
-                                                                    className="flex items-center gap-1 text-sm text-red-600 hover:text-red-800"
-                                                                >
-                                                                    <Trash2 size={16} /> Remove
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="relative">
+                                                        {/* Upload trigger button */}
+                                                        {(!isPhoto || files.length === 0) && (
+                                                            <div className="relative mt-1">
                                                                 <input
                                                                     type="file"
                                                                     id={`file-${docKey}`}
                                                                     className="hidden"
                                                                     onChange={(e) => handleFileUpload(e, docKey)}
                                                                     accept=".pdf,.jpg,.jpeg,.png"
+                                                                    multiple={!isPhoto}
                                                                     disabled={isUploading}
                                                                 />
                                                                 <label
                                                                     htmlFor={`file-${docKey}`}
-                                                                    className={`cursor-pointer flex items-center justify-center gap-2 w-full py-2 border-2 border-dashed border-slate-300 rounded-md text-sm font-medium text-slate-600 hover:border-primary-500 hover:text-primary-600 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                                    className={`cursor-pointer flex items-center justify-center gap-2 w-full py-2.5 border-2 border-dashed ${files.length > 0 ? 'border-primary-300 bg-primary-50/40 text-primary-700 hover:bg-primary-50' : 'border-slate-300 bg-white text-slate-600 hover:border-primary-500 hover:text-primary-600'} rounded-lg text-xs font-semibold transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                                                                 >
                                                                     {isUploading ? (
                                                                         <>Uploading...</>
                                                                     ) : (
-                                                                        <><Upload size={16} /> click to upload</>
+                                                                        <>
+                                                                            {files.length > 0 ? (
+                                                                                <>
+                                                                                    <Plus size={14} /> Add More Files (Front / Back / Additional)
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <Upload size={14} /> Click to upload {!isPhoto && '(Multiple files allowed)'}
+                                                                                </>
+                                                                            )}
+                                                                        </>
                                                                     )}
                                                                 </label>
                                                             </div>

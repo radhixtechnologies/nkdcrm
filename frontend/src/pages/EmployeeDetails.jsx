@@ -52,17 +52,25 @@ const EmployeeDetails = () => {
                     <ArrowLeft size={20} className="text-slate-600" />
                 </button>
                 <div className="flex items-center gap-3.5 min-w-0">
-                    {(employee.documents?.employee_photo || employee.documents?.photo) ? (
-                        <img
-                            src={getFileUrl(employee.documents?.employee_photo || employee.documents?.photo)}
-                            alt=""
-                            className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md ring-2 ring-primary-500/20 shrink-0"
-                        />
-                    ) : (
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center shadow-md shrink-0">
-                            {(employee.first_name?.[0] || 'E')}{(employee.last_name?.[0] || '')}
-                        </div>
-                    )}
+                    {(() => {
+                        const rawPhoto = employee.documents?.employee_photo || employee.documents?.photo;
+                        const photoUrl = typeof rawPhoto === 'string'
+                            ? rawPhoto
+                            : Array.isArray(rawPhoto)
+                                ? (rawPhoto[0]?.url || rawPhoto[0])
+                                : rawPhoto?.url;
+                        return photoUrl ? (
+                            <img
+                                src={getFileUrl(photoUrl)}
+                                alt=""
+                                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md ring-2 ring-primary-500/20 shrink-0"
+                            />
+                        ) : (
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center shadow-md shrink-0">
+                                {(employee.first_name?.[0] || 'E')}{(employee.last_name?.[0] || '')}
+                            </div>
+                        );
+                    })()}
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <h1 className="text-xl sm:text-2xl font-bold text-slate-800 truncate">

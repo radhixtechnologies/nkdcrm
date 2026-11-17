@@ -436,25 +436,33 @@ router.put('/employees/profile/update', async (req, res, next) => {
 router.post(
     '/employees/upload-document',
     requireAnyPermission('EMPLOYEES.can_create', 'EMPLOYEES.can_update', 'RECRUITMENT.can_create', 'RECRUITMENT.can_update', 'BENEFITS.can_create'),
-    upload.single('file'),
+    upload.any(),
     (req, res, next) => {
         try {
-            if (!req.file) {
+            const files = req.files || (req.file ? [req.file] : []);
+            if (!files || files.length === 0) {
                 return res.status(400).json({ success: false, message: 'No file uploaded' });
             }
 
-            const fileUrl = `/uploads/${req.file.filename}`;
+            const uploaded = files.map(f => {
+                const fileUrl = `/uploads/${f.filename}`;
+                return {
+                    url: fileUrl,
+                    filename: f.filename,
+                    originalName: f.originalname,
+                    size: f.size,
+                    mimetype: f.mimetype
+                };
+            });
+
+            const firstUrl = uploaded[0]?.url || '';
             return res.json({
                 success: true,
-                url: fileUrl,
-                message: 'Document uploaded successfully',
-                data: {
-                    url: fileUrl,
-                    filename: req.file.filename,
-                    originalName: req.file.originalname,
-                    size: req.file.size,
-                    mimetype: req.file.mimetype
-                }
+                url: firstUrl,
+                urls: uploaded.map(u => u.url),
+                files: uploaded,
+                message: uploaded.length > 1 ? `${uploaded.length} documents uploaded successfully` : 'Document uploaded successfully',
+                data: uploaded.length === 1 ? uploaded[0] : uploaded
             });
         } catch (error) {
             return sendError(next, error);

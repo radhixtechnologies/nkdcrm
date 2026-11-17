@@ -147,7 +147,7 @@ const Recruitment = () => {
             title: 'Employee Activation',
             badge: 'HRMS Live',
             steps: [
-                { num: 9, title: 'Employee ID Created', desc: 'System assigns official EMP-XXXXXX code', role: 'HRMS System' },
+                { num: 9, title: 'Employee ID Created', desc: 'System assigns official NKD-XXXXX code (e.g. NKD-00001)', role: 'HRMS System' },
                 { num: 10, title: 'Joining Completed', desc: 'Active in Employee Master, GPS & Payroll', role: 'Operations' }
             ],
             actionTab: 'offers'
@@ -163,7 +163,7 @@ const Recruitment = () => {
         { num: 6, title: 'Signed PDF Generation', sub: 'Official Letterhead & Seal', role: 'System Engine', phase: 'Issuance' },
         { num: 7, title: 'Email Dispatch', sub: 'Automated Candidate Mail', role: 'HR Dispatch', phase: 'Issuance' },
         { num: 8, title: 'Candidate Acceptance', sub: 'Formal Signoff & Offer OK', role: 'Candidate', phase: 'Issuance' },
-        { num: 9, title: 'Employee ID Creation', sub: 'EMP-XXXXXX Code Assigned', role: 'HRMS System', phase: 'Activation' },
+        { num: 9, title: 'Employee ID Creation', sub: 'NKD-XXXXX Code Assigned (e.g. NKD-00001)', role: 'HRMS System', phase: 'Activation' },
         { num: 10, title: 'Joining Completed', sub: 'Active in Master & GPS', role: 'Operations', phase: 'Activation' },
     ];
 
