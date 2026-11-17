@@ -74,10 +74,10 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
 
             <aside
                 className={`
-                    fixed inset-y-0 left-0 z-50 h-screen border-r border-slate-200 bg-white flex flex-col
+                    fixed inset-y-0 left-0 z-50 h-full border-r border-slate-200 bg-white flex flex-col
                     transition-all duration-300 ease-in-out
                     ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-                    md:translate-x-0 md:sticky md:top-0 md:shrink-0
+                    md:translate-x-0 md:relative md:h-full md:shrink-0
                     ${isOpen ? 'w-64' : 'w-64 md:w-20'}
                 `}
             >

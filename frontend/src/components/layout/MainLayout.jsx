@@ -10,16 +10,16 @@ const MainLayout = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
 
     return (
-        <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
+        <div className="flex h-screen w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
             <Sidebar
                 isOpen={sidebarOpen}
                 toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 mobileOpen={mobileOpen}
                 closeMobileSidebar={() => setMobileOpen(false)}
             />
-            <div className="flex-1 flex flex-col min-h-screen min-w-0">
+            <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
                 <Header toggleMobileSidebar={() => setMobileOpen(!mobileOpen)} />
-                <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 min-w-0 overflow-x-hidden">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 pb-24 md:pb-8 min-w-0">
                     <Outlet />
                 </main>
             </div>
