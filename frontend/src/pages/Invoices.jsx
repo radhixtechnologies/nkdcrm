@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Receipt, Building2, Plus, Search, Filter,
-    CheckCircle, AlertTriangle, Clock,
-    Check, X, Phone, Mail, MapPin, Edit3, Trash2
+    CheckCircle, AlertTriangle, Clock, Download,
+    Check, X, Phone, Mail, MapPin, Edit3, Trash2, CreditCard
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import invoiceService from '../services/invoiceService';
@@ -58,15 +58,24 @@ const emptyClientForm = () => ({
 const defaultInvoiceForm = () => {
     const { month, year } = getIstMonthYear();
     return {
+        invoice_number: '',
         client_id: '',
         site_id: '',
+        po_number: '',
+        po_date: '',
+        ra_number: '',
         billing_month: month,
         billing_year: year,
         subtotal: '',
         tax_rate: 18,
         tds_rate: 2,
         status: 'PENDING',
+        issue_date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
         due_date: getIstOffsetDate(15),
+        received_in_bank: '',
+        bank_received_date: '',
+        transfer_date: '',
+        retention_amount: '0',
         notes: ''
     };
 };
@@ -84,7 +93,12 @@ const Invoices = () => {
     const [sites, setSites] = useState([]);
     const [stats, setStats] = useState({
         total_invoiced: 0,
+        total_basic: 0,
+        total_gst: 0,
+        total_tds: 0,
+        total_net_receivable: 0,
         total_received: 0,
+        total_retention: 0,
         pending_amount: 0,
         overdue_amount: 0,
         paid_count: 0,
@@ -102,7 +116,13 @@ const Invoices = () => {
     const [editingClient, setEditingClient] = useState(null);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+    // Payment Form state
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentDate, setPaymentDate] = useState('');
+    const [transferDate, setTransferDate] = useState('');
     const [paymentMode, setPaymentMode] = useState('NEFT/RTGS');
+    const [paymentNotes, setPaymentNotes] = useState('');
 
     const [clientForm, setClientForm] = useState(emptyClientForm);
     const [invoiceForm, setInvoiceForm] = useState(defaultInvoiceForm);
@@ -187,15 +207,24 @@ const Invoices = () => {
         const computedRate = sub > 0 ? Math.round((taxAmt / sub) * 100) : 18;
         setEditingInvoice(inv);
         setInvoiceForm({
+            invoice_number: inv.invoice_number || '',
             client_id: inv.client_id || '',
             site_id: inv.site_id || '',
+            po_number: inv.po_number || '',
+            po_date: inv.po_date ? String(inv.po_date).slice(0, 10) : '',
+            ra_number: inv.ra_number || '',
             billing_month: inv.billing_month || getIstMonthYear().month,
             billing_year: inv.billing_year || getIstMonthYear().year,
             subtotal: inv.subtotal ?? '',
             tax_rate: computedRate,
             tds_rate: parseFloat(inv.tds_rate ?? 0),
             status: inv.status || 'PENDING',
+            issue_date: inv.issue_date ? String(inv.issue_date).slice(0, 10) : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
             due_date: inv.due_date ? String(inv.due_date).slice(0, 10) : getIstOffsetDate(15),
+            received_in_bank: inv.received_in_bank ?? '',
+            bank_received_date: inv.bank_received_date ? String(inv.bank_received_date).slice(0, 10) : '',
+            transfer_date: inv.transfer_date ? String(inv.transfer_date).slice(0, 10) : '',
+            retention_amount: inv.retention_amount ?? '0',
             notes: inv.notes || ''
         });
         setShowInvoiceModal(true);
@@ -231,17 +260,34 @@ const Invoices = () => {
         }
     };
 
+    const openPaymentModal = (inv) => {
+        setSelectedInvoice(inv);
+        const netVal = inv.net_receivable ?? (Number(inv.total_amount) - (Number(inv.tds_amount) || 0));
+        setPaymentAmount(Number(inv.received_in_bank) > 0 ? inv.received_in_bank : netVal);
+        setPaymentDate(inv.bank_received_date ? String(inv.bank_received_date).slice(0, 10) : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+        setTransferDate(inv.transfer_date ? String(inv.transfer_date).slice(0, 10) : '');
+        setPaymentMode(inv.payment_mode || 'NEFT/RTGS');
+        setPaymentNotes(inv.notes || '');
+        setShowPaymentModal(true);
+    };
+
     const handleMarkPaid = async (e) => {
         e.preventDefault();
         if (!selectedInvoice) return;
         try {
-            await invoiceService.updateInvoiceStatus(selectedInvoice.invoice_id, 'PAID', paymentMode);
-            toast.success(`Invoice ${selectedInvoice.invoice_number} marked as PAID via ${paymentMode}`);
+            await invoiceService.recordPayment(selectedInvoice.invoice_id, {
+                received_in_bank: paymentAmount,
+                bank_received_date: paymentDate,
+                transfer_date: transferDate,
+                payment_mode: paymentMode,
+                notes: paymentNotes
+            });
+            toast.success(`Bank payment recorded for ${selectedInvoice.invoice_number}`);
             setShowPaymentModal(false);
             setSelectedInvoice(null);
             loadData();
         } catch (err) {
-            toast.error(extractApiError(err, 'Failed to update invoice payment status'));
+            toast.error(extractApiError(err, 'Failed to record invoice payment'));
         }
     };
 
@@ -249,14 +295,16 @@ const Invoices = () => {
         return new Intl.NumberFormat('en-IN', {
             style: 'currency',
             currency: 'INR',
-            maximumFractionDigits: 0
+            maximumFractionDigits: 2
         }).format(Number(val) || 0);
     };
 
     const filteredInvoices = invoices.filter(inv => {
         const matchesSearch = (inv.invoice_number && inv.invoice_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (inv.client_name && inv.client_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (inv.site_name && inv.site_name.toLowerCase().includes(searchTerm.toLowerCase()));
+            (inv.site_name && inv.site_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (inv.po_number && inv.po_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (inv.ra_number && inv.ra_number.toLowerCase().includes(searchTerm.toLowerCase()));
         const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
         return matchesSearch && matchesStatus;
     });
@@ -274,26 +322,38 @@ const Invoices = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Client Master & Invoices</h1>
-                    <p className="text-sm text-slate-500 mt-0.5">Manage corporate clients, deployment billing, GST invoices and collections</p>
+                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                        <Receipt className="text-primary-600" /> Sales Billing & Invoices
+                    </h1>
+                    <p className="text-sm text-slate-500 mt-0.5">Manage Client Billing, PO Reference, RA Bills, GST & Bank Realization</p>
                 </div>
 
-                {canCreate && (
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                        <button
-                            onClick={openAddClientModal}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
-                        >
-                            <Building2 size={15} /> Add Client
-                        </button>
-                        <button
-                            onClick={openCreateInvoiceModal}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs font-semibold text-white shadow-xs transition-colors"
-                        >
-                            <Plus size={15} /> Generate Invoice
-                        </button>
-                    </div>
-                )}
+                <div className="flex items-center gap-2.5 flex-wrap">
+                    <button
+                        onClick={() => invoiceService.downloadExcel({ status: statusFilter })}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-xs font-semibold text-white shadow-xs transition-colors"
+                        title="Download Sales Billing Register (Excel)"
+                    >
+                        <Download size={14} /> Export Excel
+                    </button>
+
+                    {canCreate && (
+                        <>
+                            <button
+                                onClick={openAddClientModal}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-xs transition-colors"
+                            >
+                                <Building2 size={14} /> Add Client
+                            </button>
+                            <button
+                                onClick={openCreateInvoiceModal}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-xs font-semibold text-white shadow-xs transition-colors"
+                            >
+                                <Plus size={14} /> Generate Invoice
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Financial Overview Cards */}
@@ -301,53 +361,63 @@ const Invoices = () => {
                 <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Billed</p>
-                            <p className="mt-1 text-2xl font-bold text-slate-900 group-hover:text-primary-700 transition-colors">{formatINR(stats.total_invoiced)}</p>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Billed (Gross)</p>
+                            <p className="mt-1 text-2xl font-bold text-slate-900 group-hover:text-primary-700 transition-colors">
+                                {formatINR(stats.total_invoiced)}
+                            </p>
                         </div>
                         <div className="rounded-xl p-2.5 bg-blue-50 text-blue-600 group-hover:scale-110 transition-transform">
                             <Receipt size={22} />
                         </div>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">{invoices.length} invoices generated</p>
+                    <p className="mt-3 text-xs text-slate-500">
+                        Basic: {formatINR(stats.total_basic)} | GST: {formatINR(stats.total_gst)}
+                    </p>
                 </div>
 
                 <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Received</p>
-                            <p className="mt-1 text-2xl font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">{formatINR(stats.total_received)}</p>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Received in Bank</p>
+                            <p className="mt-1 text-2xl font-bold text-emerald-600 group-hover:text-emerald-700 transition-colors">
+                                {formatINR(stats.total_received)}
+                            </p>
                         </div>
                         <div className="rounded-xl p-2.5 bg-emerald-50 text-emerald-600 group-hover:scale-110 transition-transform">
                             <CheckCircle size={22} />
                         </div>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">{stats.paid_count || 0} invoices paid</p>
+                    <p className="mt-3 text-xs text-slate-500">{stats.paid_count || 0} Invoices 100% Realized</p>
+                </div>
+
+                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Client TDS (194C)</p>
+                            <p className="mt-1 text-2xl font-bold text-indigo-600 group-hover:text-indigo-700 transition-colors">
+                                {formatINR(stats.total_tds)}
+                            </p>
+                        </div>
+                        <div className="rounded-xl p-2.5 bg-indigo-50 text-indigo-600 group-hover:scale-110 transition-transform">
+                            <CreditCard size={22} />
+                        </div>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">Form 26AS Input Tax Credit Asset</p>
                 </div>
 
                 <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
                     <div className="flex items-center justify-between">
                         <div>
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending Collections</p>
-                            <p className="mt-1 text-2xl font-bold text-amber-600 group-hover:text-amber-700 transition-colors">{formatINR(stats.pending_amount)}</p>
+                            <p className="mt-1 text-2xl font-bold text-amber-600 group-hover:text-amber-700 transition-colors">
+                                {formatINR(stats.pending_amount)}
+                            </p>
                         </div>
                         <div className="rounded-xl p-2.5 bg-amber-50 text-amber-600 group-hover:scale-110 transition-transform">
                             <Clock size={22} />
                         </div>
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">{stats.pending_count || 0} invoices awaiting payment</p>
-                </div>
-
-                <div className="card-hover-effect rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs group">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Overdue Amount</p>
-                            <p className="mt-1 text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{formatINR(stats.overdue_amount)}</p>
-                        </div>
-                        <div className="rounded-xl p-2.5 bg-rose-50 text-rose-600 group-hover:scale-110 transition-transform">
-                            <AlertTriangle size={22} />
-                        </div>
-                    </div>
-                    <p className="mt-3 text-xs text-slate-500">{stats.overdue_count || 0} overdue invoices</p>
+                    <p className="mt-3 text-xs text-slate-500">Retention Held: {formatINR(stats.total_retention)}</p>
                 </div>
             </div>
 
@@ -357,7 +427,7 @@ const Invoices = () => {
                     onClick={() => setActiveTab('invoices')}
                     className={`pb-3 transition-colors flex items-center gap-2 whitespace-nowrap shrink-0 ${activeTab === 'invoices' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-slate-500 hover:text-slate-800'}`}
                 >
-                    <Receipt size={16} /> Invoices & Billing ({invoices.length})
+                    <Receipt size={16} /> Sales Billing Register ({invoices.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('clients')}
@@ -376,7 +446,7 @@ const Invoices = () => {
                             <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                             <input
                                 type="text"
-                                placeholder="Search invoice #, client, site..."
+                                placeholder="Search by Invoice, PO, RA, Client, Site..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:outline-none focus:ring-1 focus:ring-primary-500"
@@ -392,6 +462,7 @@ const Invoices = () => {
                             >
                                 <option value="ALL">All Statuses</option>
                                 <option value="PENDING">Pending</option>
+                                <option value="PARTIAL">Partially Paid</option>
                                 <option value="PAID">Paid</option>
                                 <option value="OVERDUE">Overdue</option>
                             </select>
@@ -404,80 +475,99 @@ const Invoices = () => {
                             <table className="w-full text-left text-xs text-slate-600">
                                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
                                     <tr>
-                                        <th className="px-4 py-3">Invoice Number</th>
-                                        <th className="px-4 py-3">Client & Site</th>
-                                        <th className="px-4 py-3">Period</th>
-                                        <th className="px-4 py-3">Subtotal</th>
-                                        <th className="px-4 py-3">GST</th>
-                                        <th className="px-4 py-3">Total Gross</th>
-                                        <th className="px-4 py-3">TDS (194C)</th>
-                                        <th className="px-4 py-3">Net Receivable</th>
-                                        <th className="px-4 py-3">Due Date</th>
-                                        <th className="px-4 py-3">Status</th>
-                                        <th className="px-4 py-3 text-right">Actions</th>
+                                        <th className="px-3 py-3 w-10">SN</th>
+                                        <th className="px-3 py-3">Client & Site</th>
+                                        <th className="px-3 py-3">PO & RA Details</th>
+                                        <th className="px-3 py-3">Invoice Details</th>
+                                        <th className="px-3 py-3 text-right">Invoice Amount</th>
+                                        <th className="px-3 py-3 text-right">GST (18%)</th>
+                                        <th className="px-3 py-3 text-right">Total Gross</th>
+                                        <th className="px-3 py-3 text-right text-rose-600">TDS (2%)</th>
+                                        <th className="px-3 py-3 text-right font-bold text-slate-800">Final (After TDS)</th>
+                                        <th className="px-3 py-3 text-right text-emerald-600">Bank Received</th>
+                                        <th className="px-3 py-3 text-center">Status</th>
+                                        <th className="px-3 py-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loading ? (
-                                        <tr><td colSpan="11" className="py-8 text-center text-slate-400">Loading invoices...</td></tr>
+                                        <tr><td colSpan="12" className="py-8 text-center text-slate-400">Loading invoices...</td></tr>
                                     ) : filteredInvoices.length === 0 ? (
                                         <tr>
-                                            <td colSpan="11" className="py-8 text-center text-slate-400">
+                                            <td colSpan="12" className="py-8 text-center text-slate-400">
                                                 No invoices found. {canCreate ? 'Click "Generate Invoice" to create one.' : ''}
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredInvoices.map((inv) => {
+                                        filteredInvoices.map((inv, idx) => {
                                             const netVal = inv.net_receivable ?? (Number(inv.total_amount) - (Number(inv.tds_amount) || 0));
                                             return (
                                                 <tr key={inv.invoice_id} className="hover:bg-slate-50/60 transition-colors">
-                                                    <td className="px-4 py-3 font-mono font-bold text-slate-800">{inv.invoice_number}</td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-3 py-3 font-semibold text-slate-400">{idx + 1}</td>
+                                                    <td className="px-3 py-3">
                                                         <p className="font-bold text-slate-900">{inv.client_name || 'Client Unassigned'}</p>
-                                                        <p className="text-[11px] text-slate-400">{inv.site_name || 'All Sites'}</p>
+                                                        <p className="text-[11px] text-slate-500 font-medium">{inv.site_name || 'All Sites'}</p>
                                                     </td>
-                                                    <td className="px-4 py-3">{inv.billing_month}/{inv.billing_year}</td>
-                                                    <td className="px-4 py-3">{formatINR(inv.subtotal)}</td>
-                                                    <td className="px-4 py-3 text-slate-500">{formatINR(inv.tax_amount)}</td>
-                                                    <td className="px-4 py-3 font-semibold text-slate-700">{formatINR(inv.total_amount)}</td>
-                                                    <td className="px-4 py-3 text-rose-600 font-medium">
-                                                        {Number(inv.tds_amount) > 0 ? `-${formatINR(inv.tds_amount)} (${inv.tds_rate}%)` : '₹0'}
+                                                    <td className="px-3 py-3">
+                                                        <p className="font-mono font-medium text-slate-800">PO: {inv.po_number || '—'}</p>
+                                                        <p className="text-[11px] text-slate-500">
+                                                            {inv.ra_number && <span className="font-semibold text-primary-700 bg-primary-50 px-1 py-0.5 rounded mr-1">{inv.ra_number}</span>}
+                                                            {inv.po_date ? `Dt: ${formatIstDate(inv.po_date)}` : ''}
+                                                        </p>
                                                     </td>
-                                                    <td className="px-4 py-3 font-bold text-slate-900">{formatINR(netVal)}</td>
-                                                    <td className="px-4 py-3">{formatIstDate(inv.due_date)}</td>
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-3 py-3">
+                                                        <p className="font-mono font-bold text-slate-900">{inv.invoice_number}</p>
+                                                        <p className="text-[11px] text-slate-500">
+                                                            {formatIstDate(inv.issue_date)} • Month: {inv.billing_month}/{inv.billing_year}
+                                                        </p>
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono text-slate-700 font-medium">
+                                                        {formatINR(inv.subtotal)}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono text-slate-500">
+                                                        {formatINR(inv.tax_amount)}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono font-semibold text-slate-800">
+                                                        {formatINR(inv.total_amount)}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono text-rose-600 font-medium">
+                                                        {Number(inv.tds_amount) > 0 ? `-${formatINR(inv.tds_amount)}` : '₹0'}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono font-bold text-slate-900 bg-slate-50/50">
+                                                        {formatINR(netVal)}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-right font-mono">
+                                                        <p className="font-bold text-emerald-700">{formatINR(inv.received_in_bank)}</p>
+                                                        {inv.bank_received_date && (
+                                                            <p className="text-[10px] text-slate-400">Dt: {formatIstDate(inv.bank_received_date)}</p>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-3 text-center">
                                                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                             inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                                                            inv.status === 'PARTIAL' ? 'bg-blue-100 text-blue-700' :
                                                             inv.status === 'OVERDUE' ? 'bg-rose-100 text-rose-700' :
                                                             'bg-amber-100 text-amber-700'
                                                         }`}>
                                                             {inv.status}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <div className="inline-flex items-center gap-1.5">
-                                                            {inv.status !== 'PAID' ? (
-                                                                canUpdate && (
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setSelectedInvoice(inv);
-                                                                            setShowPaymentModal(true);
-                                                                        }}
-                                                                        className="px-2 py-1 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 text-[11px] inline-flex items-center gap-1"
-                                                                    >
-                                                                        <Check size={12} /> Paid
-                                                                    </button>
-                                                                )
-                                                            ) : (
-                                                                <span className="text-[11px] text-emerald-600 font-semibold px-1.5">
-                                                                    {inv.payment_mode || 'Paid'}
-                                                                </span>
+                                                    <td className="px-3 py-3 text-right">
+                                                        <div className="inline-flex items-center gap-1">
+                                                            {canUpdate && (
+                                                                <button
+                                                                    onClick={() => openPaymentModal(inv)}
+                                                                    className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] inline-flex items-center gap-1 shadow-2xs"
+                                                                    title="Record Bank Receipt"
+                                                                >
+                                                                    <Check size={12} /> Pay
+                                                                </button>
                                                             )}
                                                             {canUpdate && (
                                                                 <button
                                                                     onClick={() => openEditInvoiceModal(inv)}
                                                                     title="Edit Invoice"
-                                                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md"
+                                                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-md transition-colors"
                                                                 >
                                                                     <Edit3 size={14} />
                                                                 </button>
@@ -486,7 +576,7 @@ const Invoices = () => {
                                                                 <button
                                                                     onClick={() => handleDeleteInvoice(inv)}
                                                                     title="Delete Invoice"
-                                                                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded-md"
+                                                                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-slate-100 rounded-md transition-colors"
                                                                 >
                                                                     <Trash2 size={14} />
                                                                 </button>
@@ -519,10 +609,11 @@ const Invoices = () => {
                                             <div>
                                                 <div className="font-mono font-bold text-slate-900">{inv.invoice_number}</div>
                                                 <div className="font-semibold text-slate-800 mt-0.5">{inv.client_name || 'Client Unassigned'}</div>
-                                                <div className="text-[11px] text-slate-400">{inv.site_name || 'All Sites'} • {inv.billing_month}/{inv.billing_year}</div>
+                                                <div className="text-[11px] text-slate-500">{inv.site_name || 'All Sites'} • {inv.ra_number || ''}</div>
                                             </div>
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
                                                 inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                                                inv.status === 'PARTIAL' ? 'bg-blue-100 text-blue-700' :
                                                 inv.status === 'OVERDUE' ? 'bg-rose-100 text-rose-700' :
                                                 'bg-amber-100 text-amber-700'
                                             }`}>
@@ -532,36 +623,33 @@ const Invoices = () => {
 
                                         <div className="grid grid-cols-2 gap-2 p-2.5 bg-slate-50 rounded-xl">
                                             <div>
-                                                <div className="text-[10px] text-slate-400">Gross (incl. GST)</div>
-                                                <div className="font-semibold text-slate-700">{formatINR(inv.total_amount)}</div>
+                                                <div className="text-[10px] text-slate-400">Basic Value</div>
+                                                <div className="font-semibold text-slate-700">{formatINR(inv.subtotal)}</div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="text-[10px] text-slate-400">Net Receivable</div>
-                                                <div className="font-bold text-primary-700">{formatINR(netVal)}</div>
+                                                <div className="text-[10px] text-slate-400">Total Gross (incl. GST)</div>
+                                                <div className="font-semibold text-slate-900">{formatINR(inv.total_amount)}</div>
                                             </div>
                                             <div>
-                                                <div className="text-[10px] text-slate-400">TDS Deduction</div>
+                                                <div className="text-[10px] text-slate-400">TDS (2%)</div>
                                                 <div className="text-rose-600 font-medium">
-                                                    {Number(inv.tds_amount) > 0 ? `-${formatINR(inv.tds_amount)} (${inv.tds_rate}%)` : '₹0'}
+                                                    {Number(inv.tds_amount) > 0 ? `-${formatINR(inv.tds_amount)}` : '₹0'}
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="text-[10px] text-slate-400">Due Date</div>
-                                                <div className="font-medium text-slate-700">{formatIstDate(inv.due_date)}</div>
+                                                <div className="text-[10px] text-slate-400">Bank Received</div>
+                                                <div className="font-bold text-emerald-700">{formatINR(inv.received_in_bank)}</div>
                                             </div>
                                         </div>
 
                                         {(canUpdate || canDelete) && (
                                             <div className="flex items-center justify-end gap-2 pt-1.5 border-t border-slate-100">
-                                                {inv.status !== 'PAID' && canUpdate && (
+                                                {canUpdate && (
                                                     <button
-                                                        onClick={() => {
-                                                            setSelectedInvoice(inv);
-                                                            setShowPaymentModal(true);
-                                                        }}
+                                                        onClick={() => openPaymentModal(inv)}
                                                         className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold inline-flex items-center gap-1"
                                                     >
-                                                        <Check size={12} /> Mark Paid
+                                                        <Check size={12} /> Record Receipt
                                                     </button>
                                                 )}
                                                 {canUpdate && (
@@ -684,7 +772,7 @@ const Invoices = () => {
                                     <input
                                         type="text"
                                         required
-                                        placeholder="e.g. Tata Consultancy Services, HDFC Bank"
+                                        placeholder="e.g. Siemens Ltd, Siemens Energy India Ltd"
                                         value={clientForm.client_name}
                                         onChange={(e) => setClientForm({ ...clientForm, client_name: e.target.value })}
                                         className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
@@ -820,14 +908,37 @@ const Invoices = () => {
             {showInvoiceModal && (
                 <ModalPortal>
                     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-                        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                             <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
                                 <h3 className="font-bold text-slate-900">
-                                    {editingInvoice ? `Edit Invoice (${editingInvoice.invoice_number})` : 'Generate Deployment Invoice'}
+                                    {editingInvoice ? `Edit Sales Invoice (${editingInvoice.invoice_number})` : 'Generate Sales Billing Invoice'}
                                 </h3>
                                 <button onClick={() => setShowInvoiceModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
                             </div>
                             <form onSubmit={handleSaveInvoice} className="p-5 space-y-4 overflow-y-auto">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Invoice Number *</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. NKD/26-27/003"
+                                            value={invoiceForm.invoice_number}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, invoice_number: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Invoice Date *</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={invoiceForm.issue_date}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, issue_date: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-xs font-semibold text-slate-700 mb-1">Client *</label>
@@ -858,40 +969,49 @@ const Invoices = () => {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Month</label>
-                                        <select
-                                            value={invoiceForm.billing_month}
-                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, billing_month: parseInt(e.target.value, 10) })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                        >
-                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                                <option key={m} value={m}>Month {m}</option>
-                                            ))}
-                                        </select>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">PO Number</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. 4513883559"
+                                            value={invoiceForm.po_number}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, po_number: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                                        />
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Billing Year</label>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">PO Date</label>
                                         <input
-                                            type="number"
-                                            value={invoiceForm.billing_year}
-                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, billing_year: parseInt(e.target.value, 10) || getIstMonthYear().year })}
+                                            type="date"
+                                            value={invoiceForm.po_date}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, po_date: e.target.value })}
                                             className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">RA Number</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. RA-01, RA-06"
+                                            value={invoiceForm.ra_number}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, ra_number: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 uppercase font-mono"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Subtotal (₹) *</label>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Invoice Amount (Basic ₹) *</label>
                                         <input
                                             type="number"
+                                            step="0.01"
                                             required
-                                            placeholder="e.g. 150000"
+                                            placeholder="e.g. 574844"
                                             value={invoiceForm.subtotal}
                                             onChange={(e) => setInvoiceForm({ ...invoiceForm, subtotal: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
                                         />
                                     </div>
                                     <div>
@@ -904,26 +1024,49 @@ const Invoices = () => {
                                             <option value="0">0% (Exempt)</option>
                                             <option value="5">5% GST</option>
                                             <option value="12">12% GST</option>
-                                            <option value="18">18% GST</option>
+                                            <option value="18">18% GST (Standard)</option>
                                             <option value="28">28% GST</option>
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Client TDS Rate</label>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Client TDS Rate (%)</label>
                                         <select
                                             value={invoiceForm.tds_rate}
                                             onChange={(e) => setInvoiceForm({ ...invoiceForm, tds_rate: parseFloat(e.target.value) || 0 })}
                                             className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
                                         >
                                             <option value="0">0% (No TDS)</option>
-                                            <option value="1">1% - Sec 194C (Indiv)</option>
-                                            <option value="2">2% - Sec 194C (Corp)</option>
-                                            <option value="10">10% - Sec 194J (Prof)</option>
+                                            <option value="1">1% - Sec 194C (Indiv/HUF)</option>
+                                            <option value="2">2% - Sec 194C (Corporate)</option>
+                                            <option value="10">10% - Sec 194J (Professional)</option>
                                         </select>
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Received in Bank (₹)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            placeholder="e.g. 666819.04"
+                                            value={invoiceForm.received_in_bank}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, received_in_bank: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Received Date</label>
+                                        <input
+                                            type="date"
+                                            value={invoiceForm.bank_received_date}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, bank_received_date: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                     <div>
                                         <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Due Date</label>
                                         <input
@@ -933,69 +1076,66 @@ const Invoices = () => {
                                             className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
                                         />
                                     </div>
-                                    {editingInvoice ? (
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">Invoice Status</label>
-                                            <select
-                                                value={invoiceForm.status}
-                                                onChange={(e) => setInvoiceForm({ ...invoiceForm, status: e.target.value })}
-                                                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                            >
-                                                <option value="PENDING">PENDING</option>
-                                                <option value="OVERDUE">OVERDUE</option>
-                                                <option value="PAID">PAID</option>
-                                            </select>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-700 mb-1">Notes / PO Ref</label>
-                                            <input
-                                                type="text"
-                                                placeholder="e.g. PO-8492"
-                                                value={invoiceForm.notes}
-                                                onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                                                className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {editingInvoice && (
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Notes / PO Ref</label>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Retention Amount (₹)</label>
                                         <input
-                                            type="text"
-                                            placeholder="e.g. PO-8492"
-                                            value={invoiceForm.notes}
-                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                            type="number"
+                                            step="0.01"
+                                            placeholder="0.00"
+                                            value={invoiceForm.retention_amount}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, retention_amount: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono"
                                         />
                                     </div>
-                                )}
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Status</label>
+                                        <select
+                                            value={invoiceForm.status}
+                                            onChange={(e) => setInvoiceForm({ ...invoiceForm, status: e.target.value })}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        >
+                                            <option value="PENDING">PENDING</option>
+                                            <option value="PARTIAL">PARTIAL</option>
+                                            <option value="PAID">PAID</option>
+                                            <option value="OVERDUE">OVERDUE</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Notes / Remarks</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. Lumina HT Panel RA-01 Siemens Billing"
+                                        value={invoiceForm.notes}
+                                        onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    />
+                                </div>
 
                                 {invoiceForm.subtotal !== '' && (
-                                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
                                         <div className="flex justify-between text-slate-600">
-                                            <span>Subtotal (Base Value):</span>
-                                            <span>{formatINR(previewSubtotal)}</span>
+                                            <span>Invoice Basic Value:</span>
+                                            <span className="font-mono font-medium">{formatINR(previewSubtotal)}</span>
                                         </div>
                                         <div className="flex justify-between text-slate-600">
-                                            <span>GST ({previewTaxRate}%):</span>
-                                            <span>+{formatINR(previewGst)}</span>
+                                            <span>GST (+{previewTaxRate}%):</span>
+                                            <span className="font-mono font-medium">{formatINR(previewGst)}</span>
                                         </div>
-                                        <div className="flex justify-between text-slate-600">
-                                            <span>Total Invoice Gross:</span>
-                                            <span>{formatINR(previewGross)}</span>
+                                        <div className="flex justify-between text-slate-800 font-semibold border-t border-slate-200/80 pt-1">
+                                            <span>Total Invoice Amount (Gross):</span>
+                                            <span className="font-mono">{formatINR(previewGross)}</span>
                                         </div>
                                         {previewTdsRate > 0 && (
                                             <div className="flex justify-between text-rose-600 font-medium">
                                                 <span>Less: Client TDS ({previewTdsRate}%):</span>
-                                                <span>-{formatINR(previewTds)}</span>
+                                                <span className="font-mono">-{formatINR(previewTds)}</span>
                                             </div>
                                         )}
                                         <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-sm">
-                                            <span>Net Receivable:</span>
-                                            <span className="text-primary-700">{formatINR(previewNet)}</span>
+                                            <span>Final Net Receivable (After TDS):</span>
+                                            <span className="text-primary-700 font-mono">{formatINR(previewNet)}</span>
                                         </div>
                                     </div>
                                 )}
@@ -1012,19 +1152,60 @@ const Invoices = () => {
                 </ModalPortal>
             )}
 
-            {/* MODAL 3: Mark Paid */}
+            {/* MODAL 3: Record Payment Received in Bank */}
             {showPaymentModal && (
                 <ModalPortal>
                     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
                         <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
                             <div className="p-5 border-b border-slate-200 flex justify-between items-center shrink-0">
-                                <h3 className="font-bold text-slate-900">Record Payment Received</h3>
+                                <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                                    <CreditCard size={18} className="text-emerald-600" /> Record Bank Realization
+                                </h3>
                                 <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
                             </div>
                             <form onSubmit={handleMarkPaid} className="p-5 space-y-4 overflow-y-auto">
-                                <p className="text-xs text-slate-600">
-                                    Record collection of <span className="font-bold text-slate-900">{formatINR(selectedInvoice?.total_amount)}</span> for invoice <span className="font-mono font-bold text-primary-600">{selectedInvoice?.invoice_number}</span>.
-                                </p>
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                                    <p className="font-bold text-slate-900">
+                                        {selectedInvoice?.invoice_number} • {selectedInvoice?.client_name}
+                                    </p>
+                                    <p className="text-slate-500">
+                                        Gross: {formatINR(selectedInvoice?.total_amount)} | Net (After TDS): <span className="font-bold text-primary-700">{formatINR(selectedInvoice?.net_receivable)}</span>
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Amount Received in Bank (₹) *</label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        required
+                                        value={paymentAmount}
+                                        onChange={(e) => setPaymentAmount(e.target.value)}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 font-mono font-bold text-emerald-700"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Bank Received Date *</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={paymentDate}
+                                            onChange={(e) => setPaymentDate(e.target.value)}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">Date of Transfer</label>
+                                        <input
+                                            type="date"
+                                            value={transferDate}
+                                            onChange={(e) => setTransferDate(e.target.value)}
+                                            className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                        />
+                                    </div>
+                                </div>
 
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 mb-1">Payment Method</label>
@@ -1034,15 +1215,28 @@ const Invoices = () => {
                                         className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
                                     >
                                         <option value="NEFT/RTGS">NEFT / RTGS Bank Transfer</option>
-                                        <option value="UPI">UPI / QR Payment</option>
+                                        <option value="IMPS">IMPS Instant Transfer</option>
                                         <option value="CHEQUE">Cheque / Demand Draft</option>
-                                        <option value="CASH">Cash</option>
+                                        <option value="UPI">UPI / QR Payment</option>
                                     </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Bank UTR / Transaction Reference</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. UTR / NEFT reference number"
+                                        value={paymentNotes}
+                                        onChange={(e) => setPaymentNotes(e.target.value)}
+                                        className="w-full text-xs border border-slate-300 rounded-lg px-3 py-2"
+                                    />
                                 </div>
 
                                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                                     <button type="button" onClick={() => setShowPaymentModal(false)} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700">Confirm Payment</button>
+                                    <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700">
+                                        Confirm & Update Realization
+                                    </button>
                                 </div>
                             </form>
                         </div>

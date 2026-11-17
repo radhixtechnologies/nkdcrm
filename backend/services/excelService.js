@@ -421,6 +421,139 @@ class ExcelService {
         await workbook.xlsx.write(res);
         res.end();
     }
+
+    async generateSalesInvoicesExcel(invoiceList, res) {
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Sales Billing Invoices');
+
+        sheet.columns = [
+            { header: 'SN', key: 'sn', width: 6 },
+            { header: 'CLIENT NAME', key: 'client_name', width: 26 },
+            { header: 'SITE NAME', key: 'site_name', width: 22 },
+            { header: 'PO NUMBER', key: 'po_number', width: 16 },
+            { header: 'PO DATE', key: 'po_date', width: 14 },
+            { header: 'RA NUMBER', key: 'ra_number', width: 12 },
+            { header: 'INVOICE NUMBER', key: 'invoice_number', width: 18 },
+            { header: 'INVOICE DATE', key: 'invoice_date', width: 14 },
+            { header: 'INVOICE MONTH', key: 'invoice_month', width: 14 },
+            { header: 'INVOICE AMOUNT', key: 'subtotal', width: 16 },
+            { header: 'GST AMOUNT', key: 'tax_amount', width: 16 },
+            { header: 'TOTAL INVOICE AMOUNT', key: 'total_amount', width: 22 },
+            { header: 'TDS', key: 'tds_amount', width: 14 },
+            { header: 'Final Amount after TDS', key: 'net_receivable', width: 22 },
+            { header: 'Received in Bank', key: 'received_in_bank', width: 18 },
+            { header: 'Bank Received Date', key: 'bank_received_date', width: 18 },
+            { header: 'DATE OF TRANSFER', key: 'transfer_date', width: 18 },
+            { header: 'RETENTION', key: 'retention_amount', width: 14 },
+            { header: 'STATUS', key: 'status', width: 12 }
+        ];
+
+        let sumBasic = 0;
+        let sumTax = 0;
+        let sumTotal = 0;
+        let sumTds = 0;
+        let sumNet = 0;
+        let sumReceived = 0;
+        let sumRetention = 0;
+
+        invoiceList.forEach((inv, idx) => {
+            const num = (v) => parseFloat(v || 0) || 0;
+            const subtotal = num(inv.subtotal);
+            const taxAmount = num(inv.tax_amount);
+            const totalAmount = num(inv.total_amount);
+            const tdsAmount = num(inv.tds_amount);
+            const netReceivable = num(inv.net_receivable);
+            const received = num(inv.received_in_bank);
+            const retention = num(inv.retention_amount);
+
+            sumBasic += subtotal;
+            sumTax += taxAmount;
+            sumTotal += totalAmount;
+            sumTds += tdsAmount;
+            sumNet += netReceivable;
+            sumReceived += received;
+            sumRetention += retention;
+
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const invMonthStr = inv.billing_month ? `${monthNames[inv.billing_month - 1]}-${String(inv.billing_year || '').slice(-2)}` : '';
+
+            sheet.addRow({
+                sn: idx + 1,
+                client_name: inv.client_name || '-',
+                site_name: inv.site_name || '-',
+                po_number: inv.po_number || '-',
+                po_date: inv.po_date || '-',
+                ra_number: inv.ra_number || '-',
+                invoice_number: inv.invoice_number,
+                invoice_date: inv.issue_date || '-',
+                invoice_month: invMonthStr,
+                subtotal: subtotal,
+                tax_amount: taxAmount,
+                total_amount: totalAmount,
+                tds_amount: tdsAmount,
+                net_receivable: netReceivable,
+                received_in_bank: received,
+                bank_received_date: inv.bank_received_date || '-',
+                transfer_date: inv.transfer_date || '-',
+                retention_amount: retention,
+                status: inv.status || 'PENDING'
+            });
+        });
+
+        // Add Totals row
+        const totRow = sheet.addRow({
+            sn: '',
+            client_name: 'TOTAL',
+            site_name: '',
+            po_number: '',
+            po_date: '',
+            ra_number: '',
+            invoice_number: '',
+            invoice_date: '',
+            invoice_month: '',
+            subtotal: sumBasic,
+            tax_amount: sumTax,
+            total_amount: sumTotal,
+            tds_amount: sumTds,
+            net_receivable: sumNet,
+            received_in_bank: sumReceived,
+            bank_received_date: '',
+            transfer_date: '',
+            retention_amount: sumRetention,
+            status: ''
+        });
+
+        sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        sheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF1E3A8A' } // Deep Navy Blue header
+        };
+
+        totRow.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+        totRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF1F5F9' }
+        };
+
+        sheet.eachRow((row) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                };
+            });
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=NKD_Sales_Billing_Invoices_FY26-27.xlsx');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    }
 }
 
 module.exports = new ExcelService();

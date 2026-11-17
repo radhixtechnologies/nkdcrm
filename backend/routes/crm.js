@@ -1503,6 +1503,13 @@ router.put('/clients/:id', requirePermission('INVOICES', 'can_update'), async (r
     } catch (error) { return sendError(next, error); }
 });
 
+router.get('/invoices/export/excel', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
+    try {
+        const invoices = await invoiceService.getInvoices(req.query);
+        await excelService.generateSalesInvoicesExcel(invoices, res);
+    } catch (error) { return sendError(next, error); }
+});
+
 router.get('/invoices/stats', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.getInvoiceStats());
@@ -1518,6 +1525,12 @@ router.get('/invoices', requirePermission('INVOICES', 'can_view'), async (req, r
 router.post('/invoices', requirePermission('INVOICES', 'can_create'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.createInvoice(req.body), 201);
+    } catch (error) { return sendError(next, error); }
+});
+
+router.post('/invoices/:id/payment', requirePermission('INVOICES', 'can_update'), async (req, res, next) => {
+    try {
+        return sendData(res, await invoiceService.recordInvoicePayment(req.params.id, req.body));
     } catch (error) { return sendError(next, error); }
 });
 
