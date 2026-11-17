@@ -296,9 +296,9 @@ const MobileApp = () => {
                     <div className="min-w-0">
                         <div className="text-xs font-bold leading-tight flex items-center gap-1.5 flex-wrap">
                             <span>NKD Android App</span>
-                            <span className="bg-emerald-400 text-emerald-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">APK Ready</span>
+                            <span className="bg-emerald-400 text-emerald-950 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">APK (4.1 MB)</span>
                         </div>
-                        <div className="text-[11px] text-white/90 truncate">Install directly on Android</div>
+                        <div className="text-[11px] text-white/90 truncate">Install directly on Android (v2.0)</div>
                     </div>
                 </div>
                 <a

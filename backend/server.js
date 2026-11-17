@@ -128,22 +128,37 @@ app.get('/api/health', async (req, res) => {
     });
 });
 
-app.get('/api/download/apk', (req, res) => {
+const serveApkHandler = (req, res) => {
     const candidateApks = [
-        path.resolve(__dirname, '..', 'NKD-CRM.apk'),
+        path.resolve(__dirname, 'public', 'NKD-CRM.apk'),
         path.resolve(__dirname, 'NKD-CRM.apk'),
-        path.resolve(__dirname, '..', 'frontend', 'public', 'NKD-CRM.apk')
+        path.resolve(__dirname, '..', 'NKD-CRM.apk'),
+        path.resolve(__dirname, '..', 'frontend', 'public', 'NKD-CRM.apk'),
+        path.resolve(__dirname, '..', 'frontend', 'dist', 'NKD-CRM.apk'),
+        path.resolve(process.cwd(), 'NKD-CRM.apk'),
+        path.resolve(process.cwd(), 'public', 'NKD-CRM.apk'),
+        path.resolve(process.cwd(), 'backend', 'NKD-CRM.apk'),
+        path.resolve(process.cwd(), 'backend', 'public', 'NKD-CRM.apk')
     ];
     const apkPath = candidateApks.find(p => fs.existsSync(p));
     if (apkPath) {
-        res.download(apkPath, 'NKD-CRM.apk');
+        const stat = fs.statSync(apkPath);
+        res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Content-Disposition', 'attachment; filename="NKD-CRM.apk"');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.sendFile(apkPath);
     } else {
         res.status(404).json({
             success: false,
             message: 'Android APK build is not hosted on this server yet. Please use the mobile web PWA or ask your admin to attach NKD-CRM.apk.'
         });
     }
-});
+};
+
+app.get('/api/download/apk', serveApkHandler);
+app.get('/download/apk', serveApkHandler);
+app.get('/NKD-CRM.apk', serveApkHandler);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

@@ -26,3 +26,18 @@ if (fs.existsSync(path.join(frontendDistDir, 'index.html'))) {
     console.warn('⚠️ No frontend build found (frontend/dist or backend/public). API-only mode.');
 }
 
+// Ensure NKD-CRM.apk is always present in backend/public
+const sourceApk = [
+    path.join(rootDir, 'NKD-CRM.apk'),
+    path.join(backendDir, 'NKD-CRM.apk'),
+    path.join(frontendDir, 'public', 'NKD-CRM.apk')
+].find(p => fs.existsSync(p));
+
+if (sourceApk) {
+    const targetApk = path.join(backendPublicDir, 'NKD-CRM.apk');
+    if (!fs.existsSync(targetApk)) {
+        fs.copyFileSync(sourceApk, targetApk);
+        console.log(`📱 Synced APK -> ${targetApk}`);
+    }
+}
+
