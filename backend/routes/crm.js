@@ -562,6 +562,75 @@ router.get('/employees/:id/salary-structure-pdf', async (req, res, next) => {
     }
 });
 
+// Full & Final (F&F) Settlement Statement PDF by Employee ID or Code
+router.get('/employees/:id/fnf-settlement-pdf', async (req, res, next) => {
+    try {
+        const id = req.params.id;
+        let employee = await employeeService.getEmployeeById(id);
+        if (!employee) {
+            employee = await employeeService.getEmployeeByCode(id);
+        }
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Worker / Employee not found' });
+        }
+
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(employee.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
+        const setRes = await db.query('SELECT * FROM fnf_settlements WHERE employee_id = $1 ORDER BY settlement_id DESC LIMIT 1', [employee.employee_id]);
+        if (setRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'No F&F settlement record found for this employee' });
+        }
+
+        await pdfService.generateFnfSettlementPdf(setRes.rows[0], res);
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
+// F&F Settlements List
+router.get('/fnf-settlements', async (req, res, next) => {
+    try {
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        if (!hasDirView) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
+        const result = await db.query(`
+            SELECT s.*, e.employee_code, e.bank_name, e.account_number, e.ifsc_code
+            FROM fnf_settlements s
+            LEFT JOIN employees e ON s.employee_id = e.employee_id
+            ORDER BY s.created_at DESC
+        `);
+        return res.json({ success: true, data: result.rows });
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
+// F&F Settlement PDF by Settlement ID
+router.get('/fnf-settlements/:id/pdf', async (req, res, next) => {
+    try {
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        if (!hasDirView) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
+        const result = await db.query('SELECT * FROM fnf_settlements WHERE settlement_id = $1 OR settlement_code = $1', [req.params.id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Settlement not found' });
+        }
+
+        await pdfService.generateFnfSettlementPdf(result.rows[0], res);
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
 // IT Asset Handover Form (Internal Use Only) for Employees
 router.get('/employees/:id/asset-handover-form', async (req, res, next) => {
     try {

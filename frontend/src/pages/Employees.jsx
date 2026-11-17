@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText, ShieldCheck, FileCheck, IndianRupee } from 'lucide-react';
+import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText, ShieldCheck, FileCheck, IndianRupee, Receipt } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError, getFileUrl } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -341,6 +341,16 @@ const Employees = () => {
                                             >
                                                 <IndianRupee size={15} />
                                             </button>
+                                            {(emp.employment_status === 'TERMINATED' || emp.employment_status === 'RESIGNED' || emp.date_of_exit) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => employeeService.downloadFnfSettlement(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                    className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200"
+                                                    title="Download Official Full & Final (F&F) Settlement Statement"
+                                                >
+                                                    <Receipt size={15} />
+                                                </button>
+                                            )}
                                             {canUpdate && (
                                                 <button
                                                     onClick={() => handleEdit(emp)}
@@ -468,6 +478,16 @@ const Employees = () => {
                                                     >
                                                         <IndianRupee size={16} />
                                                     </button>
+                                                    {(emp.employment_status === 'TERMINATED' || emp.employment_status === 'RESIGNED' || emp.date_of_exit) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => employeeService.downloadFnfSettlement(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                            className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors btn-press"
+                                                            title="Download Official Full & Final (F&F) Settlement Statement"
+                                                        >
+                                                            <Receipt size={16} />
+                                                        </button>
+                                                    )}
                                                     {canUpdate && (
                                                         <button
                                                             onClick={() => handleEdit(emp)}

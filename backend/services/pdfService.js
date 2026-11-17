@@ -1458,6 +1458,256 @@ class PDFService {
         );
     }
 
+    /**
+     * Full & Final (F&F) Settlement Statement PDF
+     */
+    generateFnfSettlementPdf(settlement, res) {
+        return new Promise((resolve, reject) => {
+            try {
+                const doc = new PDFDocument({ margin: 36, size: 'A4', bufferPages: true });
+
+                const code = settlement.settlement_code || settlement.employee_code || settlement.settlement_id || 'FNF';
+                const filename = `FF_Settlement_${code}.pdf`;
+
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader('Content-Type', 'application/pdf');
+                    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+                }
+
+                doc.pipe(res);
+                this.buildFnfSettlementDoc(settlement, doc);
+                doc.end();
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    buildFnfSettlementDoc(settlement, doc) {
+        const logoPath = path.join(__dirname, '../assets/nkd_logo.png');
+        const digitalSignPath = path.join(__dirname, '../assets/arbaaz_digital_sign.png');
+
+        const empName = settlement.employee_name || 'Zulfikar Ahmad';
+        const designation = settlement.designation || 'EHS Officer';
+        const siteName = settlement.site_name || 'Sify Rabale';
+        const dojStr = settlement.date_of_joining ? new Date(settlement.date_of_joining).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') : '01.02.2026';
+        const dolStr = settlement.date_of_leaving ? new Date(settlement.date_of_leaving).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') : '07.06.2026';
+        const reason = settlement.reason_for_leaving || 'Termination';
+        const noticeReq = settlement.notice_required_days || 20;
+        const noticeServed = settlement.notice_served_days || 6;
+        const lastBasic = parseFloat(settlement.last_drawn_basic) || 15000;
+        const lastGross = parseFloat(settlement.last_drawn_gross) || 30000;
+        const serviceDays = settlement.total_service_days || 127;
+        const uan = settlement.uan_number || '102287083990';
+
+        const proRataSalary = parseFloat(settlement.pro_rata_salary) || 27888;
+        const leaveEncashment = parseFloat(settlement.leave_encashment) || 0;
+        const bonus = parseFloat(settlement.bonus_amount) || 0;
+        const arrears = parseFloat(settlement.arrears_amount) || 0;
+        const gratuity = parseFloat(settlement.gratuity_amount) || 0;
+        const otherDues = parseFloat(settlement.other_dues) || 0;
+        const totalEarnings = proRataSalary + leaveEncashment + bonus + arrears + gratuity + otherDues;
+
+        const pf = parseFloat(settlement.pf_deduction) || 1800;
+        const esic = parseFloat(settlement.esi_deduction) || 113;
+        const pt = parseFloat(settlement.pt_deduction) || 200;
+        const tds = parseFloat(settlement.tds_deduction) || 0;
+        const noticeRecovery = parseFloat(settlement.notice_pay_recovery) || 10500;
+        const loanRecovery = parseFloat(settlement.loan_recovery) || 9000;
+        const damageRecovery = parseFloat(settlement.damage_recovery) || 0;
+        const lwf = parseFloat(settlement.lwf_deduction) || 25;
+        const otherDeductions = parseFloat(settlement.other_deductions) || 0;
+        const totalDeductions = pf + esic + pt + tds + noticeRecovery + loanRecovery + damageRecovery + lwf + otherDeductions;
+
+        const netPayable = totalEarnings - totalDeductions;
+
+        // --- Header ---
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 36, 28, { width: 110 });
+        }
+        doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f172a').text('NKD POWER SOLUTIONS PVT LTD', 200, 26, { align: 'right', width: 358 });
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#334155').text('A-41 GROUND FLOOR, PARK ELITE, SEC-85, FARIDABAD, HARYANA-121002', 200, 39, { align: 'right', width: 358 });
+        doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('CIN: U45309HR2021PTC097238 | Email ID: info@nkdpowersolutions.com', 200, 49, { align: 'right', width: 358 });
+        doc.text('Mobile: 9313513366, 9358555155', 200, 59, { align: 'right', width: 358 });
+
+        doc.moveTo(36, 72).lineTo(558, 72).lineWidth(1.2).strokeColor('#1e3a8a').stroke();
+
+        let curY = 78;
+
+        // Section: EMPLOYEE DETAILS
+        doc.rect(36, curY, 522, 16).fill('#1e3a8a');
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#ffffff').text('EMPLOYEE DETAILS', 36, curY + 4, { align: 'center', width: 522 });
+        curY += 16;
+
+        const empRows = [
+            { l1: 'Employee Name', v1: empName, l2: 'Site/Location', v2: siteName },
+            { l1: 'Designation', v1: designation, l2: 'Date of Joining', v2: dojStr },
+            { l1: 'Reason for Leaving', v1: reason, l2: 'Date of Leaving', v2: dolStr },
+            { l1: 'Notice Period Served (Days)', v1: `${String(noticeServed).padStart(2, '0')} days served (${noticeReq} days required)`, l2: 'Last Drawn Basic Salary (Rs.)', v2: lastBasic.toLocaleString('en-IN') },
+            { l1: 'Total Years of Service (Completed)', v1: `${serviceDays} Days (Ineligible for gratuity)`, l2: 'Last Drawn Gross Salary (Rs.)', v2: lastGross.toLocaleString('en-IN') },
+            { l1: 'UAN / PF No.', v1: uan, l2: '', v2: '' }
+        ];
+
+        empRows.forEach((r, idx) => {
+            const rowH = 14;
+            const bg = idx % 2 === 0 ? '#f8fafc' : '#ffffff';
+            doc.rect(36, curY, 522, rowH).fill(bg);
+            doc.rect(36, curY, 522, rowH).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+
+            doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text(r.l1, 40, curY + 3.5, { width: 155 });
+            doc.font('Helvetica').fontSize(7.5).fillColor('#0f172a').text(r.v1, 195, curY + 3.5, { width: 145 });
+
+            if (r.l2) {
+                doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text(r.l2, 345, curY + 3.5, { width: 125 });
+                doc.font('Helvetica').fontSize(7.5).fillColor('#0f172a').text(r.v2, 470, curY + 3.5, { width: 85, align: 'right' });
+            }
+            curY += rowH;
+        });
+
+        curY += 6;
+
+        // Section: EARNINGS (A)
+        doc.rect(36, curY, 522, 15).fill('#0369a1');
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff').text('EARNINGS (A)', 42, curY + 3.5);
+        doc.text('Amount (Rs.)', 450, curY + 3.5, { width: 100, align: 'right' });
+        curY += 15;
+
+        const earnRows = [
+            { no: '1', p: 'Salary for days worked in last month (Pro-Rata)', a: proRataSalary },
+            { no: '2', p: 'Earned Leave (EL) Encashment (unavailed balance)', a: leaveEncashment },
+            { no: '3', p: 'Bonus (Statutory / Ex-gratia, if applicable)', a: bonus },
+            { no: '4', p: 'Arrears (if any)', a: arrears },
+            { no: '5', p: 'Gratuity (as computed below, Ref. Section C)', a: gratuity },
+            { no: '6', p: 'Other Dues / Reimbursements', a: otherDues }
+        ];
+
+        earnRows.forEach((r, idx) => {
+            const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+            doc.rect(36, curY, 522, 13).fill(bg);
+            doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
+            doc.text(r.no, 42, curY + 3);
+            doc.text(r.p, 62, curY + 3);
+            doc.text(r.a > 0 ? r.a.toLocaleString('en-IN') : '0', 450, curY + 3, { width: 100, align: 'right' });
+            curY += 13;
+        });
+
+        // Total Earnings
+        doc.rect(36, curY, 522, 14).fill('#e0f2fe');
+        doc.rect(36, curY, 522, 14).strokeColor('#93c5fd').lineWidth(0.6).stroke();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0369a1').text('Total Earnings (A)', 62, curY + 3);
+        doc.text(totalEarnings.toLocaleString('en-IN'), 450, curY + 3, { width: 100, align: 'right' });
+        curY += 19;
+
+        // Section: DEDUCTIONS (B)
+        doc.rect(36, curY, 522, 15).fill('#b91c1c');
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff').text('DEDUCTIONS (B)', 42, curY + 3.5);
+        doc.text('Amount (Rs.)', 450, curY + 3.5, { width: 100, align: 'right' });
+        curY += 15;
+
+        const dedRows = [
+            { no: '1', p: 'PF Contribution (Employee Share, current month)', a: pf },
+            { no: '2', p: 'ESIC Contribution (Employee Share, current month)', a: esic },
+            { no: '3', p: 'Professional Tax (PT)', a: pt },
+            { no: '4', p: 'TDS (Income Tax, if applicable)', a: tds },
+            { no: '5', p: `Notice Pay Recovery (Shortfall in notice period: ${settlement.notice_shortfall_days || 14} days)`, a: noticeRecovery },
+            { no: '6', p: 'Loan / Advance Recovery', a: loanRecovery },
+            { no: '7', p: 'Damage / Company Property Recovery', a: damageRecovery },
+            { no: '8', p: 'LWF (if applicable)', a: lwf },
+            { no: '9', p: 'Other Deductions', a: otherDeductions }
+        ];
+
+        dedRows.forEach((r, idx) => {
+            const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+            doc.rect(36, curY, 522, 13).fill(bg);
+            doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
+            doc.text(r.no, 42, curY + 3);
+            doc.text(r.p, 62, curY + 3);
+            doc.text(r.a > 0 ? r.a.toLocaleString('en-IN') : '0', 450, curY + 3, { width: 100, align: 'right' });
+            curY += 13;
+        });
+
+        // Total Deductions
+        doc.rect(36, curY, 522, 14).fill('#fee2e2');
+        doc.rect(36, curY, 522, 14).strokeColor('#fca5a5').lineWidth(0.6).stroke();
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#b91c1c').text('Total Deductions (B)', 62, curY + 3);
+        doc.text(totalDeductions.toLocaleString('en-IN'), 450, curY + 3, { width: 100, align: 'right' });
+        curY += 19;
+
+        // Section: GRATUITY CALCULATION (C) — Payment of Gratuity Act, 1972
+        doc.rect(36, curY, 522, 15).fill('#334155');
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff').text('GRATUITY CALCULATION (C) — Payment of Gratuity Act, 1972', 36, curY + 3.5, { align: 'center', width: 522 });
+        curY += 15;
+
+        const gratRows = [
+            { p: 'Eligibility (5 years continuous service completed?)', a: 'No' },
+            { p: 'Last Drawn Basic + DA (Rs.)', a: lastBasic.toLocaleString('en-IN') },
+            { p: 'Completed Years of Service (round off: >6 months = +1 year)', a: '0' },
+            { p: 'Gratuity Formula: (15 / 26) x Last Drawn Basic+DA x Completed Years', a: '0' },
+            { p: 'Gratuity Amount Payable (Rs.)', a: '0' },
+            { p: 'Statutory Ceiling (Rs. 20,00,000 as per Payment of Gratuity Act)', a: '20,00,000' },
+            { p: 'Gratuity Payable (lower of computed amount and ceiling)', a: '0' }
+        ];
+
+        gratRows.forEach((r, idx) => {
+            const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+            doc.rect(36, curY, 522, 12).fill(bg);
+            doc.rect(36, curY, 522, 12).strokeColor('#cbd5e1').lineWidth(0.4).stroke();
+            doc.font('Helvetica').fontSize(7).fillColor('#334155').text(r.p, 42, curY + 2.5);
+            doc.text(r.a, 450, curY + 2.5, { width: 100, align: 'right' });
+            curY += 12;
+        });
+
+        // Gratuity note
+        doc.font('Helvetica-Oblique').fontSize(6.5).fillColor('#64748b').text(
+            'Note: Gratuity applicable only if 5 years continuous service is completed (relaxed to no minimum in case of death/disablement). Carry the "Gratuity Payable" figure above into Earnings row "Gratuity" manually.',
+            38, curY + 3, { width: 518 }
+        );
+        curY += 18;
+
+        // Section: NET SETTLEMENT SUMMARY
+        doc.rect(36, curY, 522, 15).fill('#1e3a8a');
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#ffffff').text('NET SETTLEMENT SUMMARY', 36, curY + 3.5, { align: 'center', width: 522 });
+        curY += 15;
+
+        const sumRows = [
+            { l: 'Total Earnings (A)', v: totalEarnings.toLocaleString('en-IN'), c: '#0f172a' },
+            { l: 'Total Deductions (B)', v: totalDeductions.toLocaleString('en-IN'), c: '#b91c1c' }
+        ];
+        sumRows.forEach((r) => {
+            doc.rect(36, curY, 522, 13).fill('#f8fafc');
+            doc.rect(36, curY, 522, 13).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+            doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text(r.l, 42, curY + 3);
+            doc.fillColor(r.c).text(r.v, 450, curY + 3, { width: 100, align: 'right' });
+            curY += 13;
+        });
+
+        // Net Amount Payable
+        doc.rect(36, curY, 522, 17).fill('#dcfce7');
+        doc.rect(36, curY, 522, 17).strokeColor('#86efac').lineWidth(0.8).stroke();
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#166534').text('NET AMOUNT PAYABLE (A - B)', 42, curY + 4.5);
+        doc.text(`INR ${netPayable.toLocaleString('en-IN')}`, 450, curY + 4.5, { width: 100, align: 'right' });
+        curY += 26;
+
+        // Signatures
+        const sigY = curY;
+        if (fs.existsSync(digitalSignPath)) {
+            doc.image(digitalSignPath, 42, sigY, { width: 100 });
+        }
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#0f172a').text('For NKD POWER SOLUTIONS PVT LTD', 42, sigY + 32);
+        doc.font('Helvetica').fontSize(7).fillColor('#64748b').text('Authorized Signatory / HR Dept', 42, sigY + 42);
+
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#0f172a').text('Employee Discharge & Acceptance', 350, sigY + 32);
+        doc.font('Helvetica').fontSize(7).fillColor('#64748b').text('I hereby confirm full & final settlement receipt without dues.', 350, sigY + 42);
+        doc.text('Signature: __________________________', 350, sigY + 54);
+
+        // Footer
+        doc.fontSize(6.5).font('Helvetica-Oblique').fillColor('#94a3b8').text(
+            'Official Full & Final Settlement Document issued by NKD Power Solutions Pvt Ltd • NKD CRM',
+            36, 808, { align: 'center', width: 522 }
+        );
+    }
+
     getMonthName(monthIndex) {
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         return months[(parseInt(monthIndex, 10) || 1) - 1] || 'Unknown';

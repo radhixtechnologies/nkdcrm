@@ -88,6 +88,18 @@ const employeeService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    downloadFnfSettlement: async (id, empCode = 'EMP') => {
+        const res = await api.get(`/employees/${id}/fnf-settlement-pdf`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `FF_Settlement_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 
