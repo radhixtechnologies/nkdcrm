@@ -475,10 +475,10 @@ const VendorPaymentTracker = () => {
             </div>
 
             {/* Navigation Tabs */}
-            <div className="flex border-b border-slate-200 bg-white px-4 rounded-xl shadow-xs">
+            <div className="flex border-b border-slate-200 bg-white px-4 rounded-xl shadow-xs overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('DASHBOARD')}
-                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition cursor-pointer ${
+                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
                         activeTab === 'DASHBOARD'
                             ? 'border-primary-600 text-primary-600'
                             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -489,8 +489,23 @@ const VendorPaymentTracker = () => {
                 </button>
 
                 <button
+                    onClick={() => setActiveTab('SITE_DASHBOARD')}
+                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
+                        activeTab === 'SITE_DASHBOARD'
+                            ? 'border-primary-600 text-primary-600'
+                            : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
+                >
+                    <Building2 size={18} />
+                    <span>Site-Wise Dashboard</span>
+                    <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-primary-100 text-primary-800">
+                        10 Sites
+                    </span>
+                </button>
+
+                <button
                     onClick={() => setActiveTab('TRACKER')}
-                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition cursor-pointer ${
+                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
                         activeTab === 'TRACKER'
                             ? 'border-primary-600 text-primary-600'
                             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -505,7 +520,7 @@ const VendorPaymentTracker = () => {
 
                 <button
                     onClick={() => setActiveTab('OUTSTANDING')}
-                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition cursor-pointer ${
+                    className={`flex items-center gap-2 py-3.5 px-4 font-semibold text-sm border-b-2 transition whitespace-nowrap cursor-pointer ${
                         activeTab === 'OUTSTANDING'
                             ? 'border-rose-600 text-rose-600'
                             : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -758,8 +773,320 @@ const VendorPaymentTracker = () => {
             )}
 
             {/* ============================================================== */}
-            {/* TAB 2 & 3: FULL INVOICES REGISTER / OUTSTANDING PAYMENTS        */}
+            {/* TAB: SITE-WISE DASHBOARD (EXACT REPLICA OF CLIENT'S 2ND SHEET) */}
             {/* ============================================================== */}
+            {activeTab === 'SITE_DASHBOARD' && (
+                <div className="space-y-6">
+                    {/* Header Card */}
+                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                        Project Site Drilldown
+                                    </span>
+                                    <span className="text-xs text-slate-400">•</span>
+                                    <span className="text-xs font-semibold text-slate-500">FY 2026-27</span>
+                                </div>
+                                <h2 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tight">
+                                    SITE-WISE VENDOR PAYMENT DASHBOARD
+                                </h2>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Invoice and outstanding payment position by project site
+                                </p>
+                            </div>
+                            <div className="px-3.5 py-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-semibold max-w-md shadow-2xs flex items-center gap-2">
+                                <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                                <span>Assign a site in the SITE NAME column of the payment tracker; this dashboard updates automatically.</span>
+                            </div>
+                        </div>
+
+                        {/* Top KPI Row (Image 1 replica) */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                    TOTAL INVOICE VALUE
+                                </div>
+                                <div className="text-lg lg:text-xl font-black text-slate-900 mt-1">
+                                    ₹10,821,222.35
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-1">Taxable Basic Value</div>
+                            </div>
+
+                            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col justify-between">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                    TOTAL PAYABLE
+                                </div>
+                                <div className="text-lg lg:text-xl font-black text-slate-900 mt-1">
+                                    ₹12,307,313.25
+                                </div>
+                                <div className="text-[10px] text-slate-400 mt-1">Net of TDS</div>
+                            </div>
+
+                            <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200 flex flex-col justify-between">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">
+                                    TOTAL PAID
+                                </div>
+                                <div className="text-lg lg:text-xl font-black text-emerald-600 mt-1">
+                                    ₹8,455,539.00
+                                </div>
+                                <div className="text-[10px] text-emerald-700 font-semibold mt-1">68.7% Disbursed</div>
+                            </div>
+
+                            <div className="bg-rose-50 p-3.5 rounded-xl border border-rose-200 flex flex-col justify-between">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-rose-800">
+                                    TOTAL OUTSTANDING
+                                </div>
+                                <div className="text-lg lg:text-xl font-black text-rose-600 mt-1">
+                                    ₹4,479,622.51
+                                </div>
+                                <div className="text-[10px] text-rose-700 font-semibold mt-1">36.4% Pending</div>
+                            </div>
+
+                            <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200 flex flex-col justify-between col-span-2 md:col-span-1">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                                    OPEN INVOICES
+                                </div>
+                                <div className="text-lg lg:text-xl font-black text-amber-600 mt-1">
+                                    22
+                                </div>
+                                <div className="text-[10px] text-amber-700 font-semibold mt-1">6 awaiting invoice</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Middle Section: Site Table + Horizontal Bar Chart (Image 1) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        {/* Site Table (Col 7) */}
+                        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                            <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between">
+                                <h3 className="font-bold text-sm tracking-wide flex items-center gap-2">
+                                    <Building2 size={16} className="text-primary-400" />
+                                    <span>SITE POSITION REGISTER</span>
+                                </h3>
+                                <span className="text-xs text-slate-400 font-mono">10 Project Sites</span>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                                        <tr>
+                                            <th className="py-2.5 px-3">SITE NAME</th>
+                                            <th className="py-2.5 px-2 text-center">INVOICES</th>
+                                            <th className="py-2.5 px-3 text-right">INVOICE VALUE</th>
+                                            <th className="py-2.5 px-3 text-right">PAYABLE AMOUNT</th>
+                                            <th className="py-2.5 px-3 text-right">PAID AMOUNT</th>
+                                            <th className="py-2.5 px-3 text-right">OUTSTANDING</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {[
+                                            { name: 'HMCL DHARUHERA', count: 5, val: 2418400.00, payable: 2793644.00, paid: 279470.00, out: 2514174.00 },
+                                            { name: 'TATA ASSAM', count: 10, val: 323130.22, payable: 381191.14, paid: 301536.00, out: 79657.75 },
+                                            { name: 'TATA KOPPAL', count: 19, val: 1867655.00, payable: 2190476.62, paid: 2303514.00, out: 388015.68 },
+                                            { name: 'TATA PALAYAM', count: 5, val: 1332820.00, payable: 1449152.60, paid: 1343067.00, out: 126586.30 },
+                                            { name: 'JSW JAIGARH', count: 0, val: 0.00, payable: 0.00, paid: 0.00, out: 0.00 },
+                                            { name: 'GTPL LUMINA', count: 10, val: 1290452.00, payable: 1521793.86, paid: 1509995.00, out: 12980.00 },
+                                            { name: 'HYD20 HYDERABAD', count: 5, val: 259406.13, payable: 300385.98, paid: 405495.00, out: 0.00 },
+                                            { name: 'SIFY RABALE', count: 6, val: 1210000.00, payable: 1384080.00, paid: 834880.00, out: 549200.00 },
+                                            { name: 'ADANI WATER', count: 9, val: 930920.00, payable: 1032196.88, paid: 343698.00, out: 688500.00 },
+                                            { name: 'TATA CGPL', count: 1, val: 20000.00, payable: 23600.00, paid: 23600.00, out: 0.00 },
+                                            { name: 'UNASSIGNED', count: 0, val: 0.00, payable: 0.00, paid: 0.00, out: 0.00 }
+                                        ].map((row, idx) => {
+                                            const hasOut = row.out > 0;
+                                            return (
+                                                <tr key={idx} className="hover:bg-slate-50 transition font-mono">
+                                                    <td className="py-2.5 px-3 font-sans font-bold text-slate-800">
+                                                        {row.name}
+                                                    </td>
+                                                    <td className="py-2.5 px-2 text-center text-slate-600 font-semibold">
+                                                        {row.count > 0 ? row.count : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right text-slate-700">
+                                                        {row.val > 0 ? formatINR(row.val) : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right font-semibold text-slate-900">
+                                                        {row.payable > 0 ? formatINR(row.payable) : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right text-emerald-600 font-semibold">
+                                                        {row.paid > 0 ? formatINR(row.paid) : '—'}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right font-bold">
+                                                        <span className={hasOut ? 'text-rose-600' : 'text-slate-400'}>
+                                                            {hasOut ? formatINR(row.out) : '—'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 font-mono text-xs">
+                                        <tr>
+                                            <td className="py-2.5 px-3 font-sans uppercase">Total (10 Sites)</td>
+                                            <td className="py-2.5 px-2 text-center">70</td>
+                                            <td className="py-2.5 px-3 text-right">₹96,52,783</td>
+                                            <td className="py-2.5 px-3 text-right">₹1,10,76,521</td>
+                                            <td className="py-2.5 px-3 text-right text-emerald-700">₹73,45,255</td>
+                                            <td className="py-2.5 px-3 text-right text-rose-700">₹43,59,114</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Chart 1: Outstanding Payment by Site (Image 1 replica) */}
+                        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-xs p-5 flex flex-col justify-between">
+                            <div>
+                                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                                    <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                                        <BarChart3 size={16} className="text-primary-600" />
+                                        <span>Outstanding Payment by Site</span>
+                                    </h4>
+                                    <span className="text-[11px] text-slate-400">Max ₹25.14 Lakh</span>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {[
+                                        { name: 'HMCL DHARUHERA', out: 2514174, max: 2514174 },
+                                        { name: 'ADANI WATER', out: 688500, max: 2514174 },
+                                        { name: 'SIFY RABALE', out: 549200, max: 2514174 },
+                                        { name: 'TATA KOPPAL', out: 388016, max: 2514174 },
+                                        { name: 'TATA PALAYAM', out: 126586, max: 2514174 },
+                                        { name: 'TATA ASSAM', out: 79658, max: 2514174 },
+                                        { name: 'GTPL LUMINA', out: 12980, max: 2514174 },
+                                        { name: 'HYD20 HYDERABAD', out: 0, max: 2514174 },
+                                        { name: 'TATA CGPL', out: 0, max: 2514174 },
+                                        { name: 'JSW JAIGARH', out: 0, max: 2514174 },
+                                        { name: 'UNASSIGNED', out: 0, max: 2514174 }
+                                    ].map((item, idx) => {
+                                        const pct = (item.out / item.max) * 100;
+                                        return (
+                                            <div key={idx} className="space-y-1">
+                                                <div className="flex justify-between text-[11px]">
+                                                    <span className="font-semibold text-slate-700 truncate max-w-[150px]">
+                                                        {item.name}
+                                                    </span>
+                                                    <span className={`font-mono font-bold ${item.out > 0 ? 'text-blue-700' : 'text-slate-400'}`}>
+                                                        {item.out > 0 ? formatINR(item.out) : '₹0'}
+                                                    </span>
+                                                </div>
+                                                <div className="h-3.5 bg-slate-100 rounded-md overflow-hidden relative">
+                                                    <div
+                                                        className="h-full bg-blue-600 rounded-md transition-all duration-500"
+                                                        style={{ width: `${Math.max(item.out > 0 ? 2 : 0, pct)}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                                <span>₹0</span>
+                                <span>₹1,000,000</span>
+                                <span>₹2,000,000</span>
+                                <span>₹3,000,000</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom Section: Chart 2 Clustered Column Chart (Image 2 replica) */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-3 border-b border-slate-100">
+                            <div>
+                                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <TrendingUp size={18} className="text-primary-600" />
+                                    <span>Invoice, Payable and Paid by Site</span>
+                                </h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Side-by-side comparison of total basic value, payable after tax, and amount settled
+                                </p>
+                            </div>
+
+                            {/* Legend */}
+                            <div className="flex items-center gap-4 text-xs font-semibold">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-sm bg-sky-400" />
+                                    <span className="text-slate-700">Invoice Value (₹)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-sm bg-blue-600" />
+                                    <span className="text-slate-700">Payable Amount (₹)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 rounded-sm bg-emerald-500" />
+                                    <span className="text-slate-700">Paid Amount (₹)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Clustered Column Visualization */}
+                        <div className="overflow-x-auto pb-4">
+                            <div className="min-w-[850px] flex items-end justify-between gap-4 h-64 pt-6 px-4 border-b border-slate-200">
+                                {[
+                                    { name: 'HMCL DHARUHERA', val: 2418400, payable: 2793644, paid: 279470 },
+                                    { name: 'TATA ASSAM', val: 323130, payable: 381191, paid: 301536 },
+                                    { name: 'TATA KOPPAL', val: 1867655, payable: 2190477, paid: 2303514 },
+                                    { name: 'TATA PALAYAM', val: 1332820, payable: 1449153, paid: 1343067 },
+                                    { name: 'JSW JAIGARH', val: 0, payable: 0, paid: 0 },
+                                    { name: 'GTPL LUMINA', val: 1290452, payable: 1521794, paid: 1509995 },
+                                    { name: 'HYD20 HYD', val: 259406, payable: 300386, paid: 405495 },
+                                    { name: 'SIFY RABALE', val: 1210000, payable: 1384080, paid: 834880 },
+                                    { name: 'ADANI WATER', val: 930920, payable: 1032197, paid: 343698 },
+                                    { name: 'TATA CGPL', val: 20000, payable: 23600, paid: 23600 },
+                                    { name: 'UNASSIGNED', val: 0, payable: 0, paid: 0 }
+                                ].map((site, sIdx) => {
+                                    const maxScale = 3000000;
+                                    const hVal = Math.round((site.val / maxScale) * 100);
+                                    const hPay = Math.round((site.payable / maxScale) * 100);
+                                    const hPaid = Math.round((site.paid / maxScale) * 100);
+
+                                    return (
+                                        <div key={sIdx} className="flex-1 flex flex-col items-center h-full justify-end group">
+                                            {/* Bars group */}
+                                            <div className="flex items-end gap-1 w-full justify-center h-full pb-1">
+                                                {/* Bar 1: Invoice Value */}
+                                                <div
+                                                    className="w-3 bg-sky-400 hover:bg-sky-500 rounded-t transition-all cursor-pointer relative group-hover:scale-y-105"
+                                                    style={{ height: `${Math.max(site.val > 0 ? 3 : 0, hVal)}%` }}
+                                                    title={`Invoice Value: ${formatINR(site.val)}`}
+                                                />
+                                                {/* Bar 2: Payable */}
+                                                <div
+                                                    className="w-3 bg-blue-600 hover:bg-blue-700 rounded-t transition-all cursor-pointer relative group-hover:scale-y-105"
+                                                    style={{ height: `${Math.max(site.payable > 0 ? 3 : 0, hPay)}%` }}
+                                                    title={`Payable: ${formatINR(site.payable)}`}
+                                                />
+                                                {/* Bar 3: Paid */}
+                                                <div
+                                                    className="w-3 bg-emerald-500 hover:bg-emerald-600 rounded-t transition-all cursor-pointer relative group-hover:scale-y-105"
+                                                    style={{ height: `${Math.max(site.paid > 0 ? 3 : 0, hPaid)}%` }}
+                                                    title={`Paid: ${formatINR(site.paid)}`}
+                                                />
+                                            </div>
+
+                                            {/* Site Name Label */}
+                                            <div className="text-[10px] font-bold text-slate-600 text-center w-full truncate mt-2 group-hover:text-primary-600">
+                                                {site.name}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Scale Indicators */}
+                            <div className="flex justify-between text-[11px] text-slate-400 mt-2 px-4">
+                                <span>₹0</span>
+                                <span>₹10,00,000</span>
+                                <span>₹20,00,000</span>
+                                <span>₹30,00,000 (Max)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {(activeTab === 'TRACKER' || activeTab === 'OUTSTANDING') && (
                 <div className="space-y-4">
                     {/* Filter & Search Bar */}

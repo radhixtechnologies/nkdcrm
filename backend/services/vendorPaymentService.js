@@ -61,10 +61,12 @@ const vendorPaymentService = {
             SELECT
                 site_name,
                 COUNT(CASE WHEN status != 'AWAITING_INVOICE' THEN 1 END)::int AS invoices,
+                COALESCE(SUM(basic_amount), 0)::numeric(14,2) AS invoice_value,
                 COALESCE(SUM(total_payable), 0)::numeric(14,2) AS payable,
                 COALESCE(SUM(paid_amount), 0)::numeric(14,2) AS paid,
                 COALESCE(SUM(outstanding_amount), 0)::numeric(14,2) AS outstanding
             FROM vendor_invoices
+            WHERE status != 'AWAITING_INVOICE'
             GROUP BY site_name
             ORDER BY site_name ASC
         `);
@@ -75,6 +77,7 @@ const vendorPaymentService = {
             const pctPaid = payable > 0 ? Math.round((paid / payable) * 100) : (paid > 0 ? 100 : 0);
             return {
                 ...row,
+                invoice_value: parseFloat(row.invoice_value) || 0,
                 percent_paid: `${pctPaid}%`
             };
         });
@@ -85,6 +88,7 @@ const vendorPaymentService = {
             sitePositions.push({
                 site_name: 'JSW JAIGARH',
                 invoices: 0,
+                invoice_value: 0,
                 payable: '0.00',
                 paid: '0.00',
                 outstanding: '0.00',
