@@ -111,6 +111,11 @@ const ensureCoreSchema = async () => {
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS full_name VARCHAR(220);
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS incentive_allowance NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS gratuity_amount NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS insurance_amount NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS total_ctc NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS net_take_home NUMERIC(15, 2) DEFAULT 0;
         UPDATE employees SET full_name = TRIM(first_name || ' ' || COALESCE(last_name, '')) WHERE full_name IS NULL;
 
         CREATE INDEX IF NOT EXISTS idx_employees_site ON employees(site_id);
@@ -308,6 +313,7 @@ const ensureCoreSchema = async () => {
             UNIQUE(employee_id, month, year)
         );
         CREATE INDEX IF NOT EXISTS idx_payroll_emp_period ON payroll(employee_id, month, year);
+        ALTER TABLE payroll ADD COLUMN IF NOT EXISTS incentive_earned NUMERIC(15, 2) DEFAULT 0;
         CREATE INDEX IF NOT EXISTS idx_payroll_period ON payroll(month, year);
 
         CREATE TABLE IF NOT EXISTS benefit_types (
@@ -585,6 +591,59 @@ const runExtendedModulesSchema = async () => {
         ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tds_rate NUMERIC(5, 2) DEFAULT 0;
         ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tds_amount NUMERIC(14, 2) DEFAULT 0;
         ALTER TABLE invoices ADD COLUMN IF NOT EXISTS net_receivable NUMERIC(14, 2) DEFAULT 0;
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS po_number VARCHAR(100);
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS po_date DATE;
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS ra_number VARCHAR(50);
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS received_in_bank NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS bank_received_date DATE;
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS transfer_date DATE;
+        ALTER TABLE invoices ADD COLUMN IF NOT EXISTS retention_amount NUMERIC(15, 2) DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS fnf_settlements (
+            settlement_id SERIAL PRIMARY KEY,
+            settlement_code VARCHAR(50) UNIQUE NOT NULL,
+            employee_id INT REFERENCES employees(employee_id) ON DELETE SET NULL,
+            employee_name VARCHAR(150) NOT NULL,
+            designation VARCHAR(100),
+            site_id INT REFERENCES sites(site_id) ON DELETE SET NULL,
+            site_name VARCHAR(150),
+            date_of_joining DATE,
+            date_of_leaving DATE,
+            reason_for_leaving VARCHAR(100) DEFAULT 'Termination',
+            notice_required_days INT DEFAULT 20,
+            notice_served_days INT DEFAULT 0,
+            notice_shortfall_days INT DEFAULT 0,
+            last_drawn_basic NUMERIC(15,2) DEFAULT 0,
+            last_drawn_gross NUMERIC(15,2) DEFAULT 0,
+            total_service_days INT DEFAULT 0,
+            uan_number VARCHAR(50),
+            pro_rata_salary NUMERIC(15,2) DEFAULT 0,
+            leave_encashment NUMERIC(15,2) DEFAULT 0,
+            bonus_amount NUMERIC(15,2) DEFAULT 0,
+            arrears_amount NUMERIC(15,2) DEFAULT 0,
+            gratuity_amount NUMERIC(15,2) DEFAULT 0,
+            other_dues NUMERIC(15,2) DEFAULT 0,
+            total_earnings NUMERIC(15,2) DEFAULT 0,
+            pf_deduction NUMERIC(15,2) DEFAULT 0,
+            esi_deduction NUMERIC(15,2) DEFAULT 0,
+            pt_deduction NUMERIC(15,2) DEFAULT 0,
+            tds_deduction NUMERIC(15,2) DEFAULT 0,
+            notice_pay_recovery NUMERIC(15,2) DEFAULT 0,
+            loan_recovery NUMERIC(15,2) DEFAULT 0,
+            damage_recovery NUMERIC(15,2) DEFAULT 0,
+            lwf_deduction NUMERIC(15,2) DEFAULT 0,
+            other_deductions NUMERIC(15,2) DEFAULT 0,
+            total_deductions NUMERIC(15,2) DEFAULT 0,
+            net_payable NUMERIC(15,2) DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'APPROVED',
+            payment_status VARCHAR(50) DEFAULT 'PENDING',
+            payment_mode VARCHAR(50) DEFAULT 'BANK_TRANSFER',
+            payment_reference VARCHAR(100),
+            payment_date DATE,
+            remarks TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
 
         CREATE TABLE IF NOT EXISTS job_requisitions (
             requisition_id SERIAL PRIMARY KEY,
@@ -777,6 +836,50 @@ const runExtendedModulesSchema = async () => {
         );
         CREATE INDEX IF NOT EXISTS idx_dpr_site ON daily_progress_reports(site_id);
         CREATE INDEX IF NOT EXISTS idx_dpr_date ON daily_progress_reports(report_date);
+
+        CREATE TABLE IF NOT EXISTS vendor_invoices (
+            invoice_id SERIAL PRIMARY KEY,
+            vendor_id INT REFERENCES vendors(vendor_id) ON DELETE SET NULL,
+            site_id INT REFERENCES sites(site_id) ON DELETE SET NULL,
+            vendor_name VARCHAR(255) NOT NULL,
+            site_name VARCHAR(255) NOT NULL,
+            invoice_number VARCHAR(100) NOT NULL,
+            invoice_date DATE NOT NULL,
+            due_date DATE,
+            po_number VARCHAR(100),
+            category VARCHAR(100) DEFAULT 'MATERIAL',
+            basic_amount NUMERIC(14,2) DEFAULT 0,
+            gst_rate NUMERIC(5,2) DEFAULT 18.00,
+            gst_amount NUMERIC(14,2) DEFAULT 0,
+            tds_rate NUMERIC(5,2) DEFAULT 2.00,
+            tds_amount NUMERIC(14,2) DEFAULT 0,
+            invoice_value NUMERIC(14,2) NOT NULL DEFAULT 0,
+            total_payable NUMERIC(14,2) NOT NULL DEFAULT 0,
+            paid_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            outstanding_amount NUMERIC(14,2) NOT NULL DEFAULT 0,
+            status VARCHAR(50) NOT NULL DEFAULT 'OUTSTANDING',
+            remarks TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_invoices_vendor ON vendor_invoices(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_invoices_site ON vendor_invoices(site_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_invoices_status ON vendor_invoices(status);
+
+        CREATE TABLE IF NOT EXISTS vendor_payments (
+            payment_id SERIAL PRIMARY KEY,
+            invoice_id INT REFERENCES vendor_invoices(invoice_id) ON DELETE CASCADE,
+            vendor_id INT REFERENCES vendors(vendor_id) ON DELETE SET NULL,
+            payment_date DATE NOT NULL,
+            amount_paid NUMERIC(14,2) NOT NULL,
+            payment_mode VARCHAR(50) DEFAULT 'NEFT/RTGS',
+            transaction_reference VARCHAR(100),
+            bank_name VARCHAR(100) DEFAULT 'HDFC Bank',
+            paid_by VARCHAR(100) DEFAULT 'Finance Team',
+            remarks TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_payments_inv ON vendor_payments(invoice_id);
     `);
 
     // Ensure GTPL LUMINA site exists and seed sample DPR if none exist

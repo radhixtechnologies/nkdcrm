@@ -81,7 +81,7 @@ const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) =
         setLoading(true);
         try {
             const res = await dprService.getSiteSheet(siteId);
-            const siteData = res?.data || res;
+            const siteData = res?.data?.data || res?.data || res;
             if (siteData) {
                 if (siteData.google_sheet_url) {
                     setSavedGoogleSheetUrl(siteData.google_sheet_url);
@@ -211,7 +211,7 @@ const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) =
         const toastId = toast.loading('Parsing Excel workbook...');
         try {
             const res = await dprService.importExcelGrid(formData);
-            const grid = res?.data || res;
+            const grid = res?.data?.data || res?.data || res;
             if (grid && Array.isArray(grid.columns) && grid.columns.length > 0) {
                 setColumns(grid.columns);
                 setRows(Array.isArray(grid.rows) ? grid.rows : []);

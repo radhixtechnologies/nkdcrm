@@ -309,15 +309,18 @@ class EmployeeService {
             FROM employees e
             LEFT JOIN sites s ON e.site_id = s.site_id
             LEFT JOIN shifts sh ON e.shift_id = sh.shift_id
-            WHERE e.employment_status != 'TERMINATED'
         `;
         const values = [];
         let paramCount = 1;
 
-        if (filters.employment_status) {
-            query += ` AND e.employment_status = $${paramCount}`;
+        if (filters.employment_status && filters.employment_status !== 'ALL') {
+            query += ` WHERE e.employment_status = $${paramCount}`;
             values.push(filters.employment_status);
             paramCount++;
+        } else if (filters.includeTerminated || filters.employment_status === 'ALL') {
+            query += ` WHERE 1=1`;
+        } else {
+            query += ` WHERE e.employment_status != 'TERMINATED'`;
         }
 
         if (filters.site_id) {
@@ -366,6 +369,7 @@ class EmployeeService {
             'first_name', 'last_name', 'mobile', 'email', 'site_id',
             'designation', 'department', 'date_of_joining', 'employment_status',
             'basic_salary', 'hra', 'conveyance', 'special_allowance', 'other_allowance',
+            'incentive_allowance', 'gratuity_amount', 'insurance_amount', 'total_ctc', 'net_take_home',
             'pf_applicable', 'esi_applicable', 'pt_applicable',
             'uan_number', 'esi_number', 'pan_number', 'aadhaar_number',
             'bank_name', 'account_number', 'ifsc_code', 'shift_id',
@@ -379,7 +383,7 @@ class EmployeeService {
 
         const dateFields = new Set(['dob', 'date_of_joining', 'date_of_exit']);
         const intFields = new Set(['site_id', 'shift_id', 'manager_id', 'role_id']);
-        const numFields = new Set(['basic_salary', 'hra', 'conveyance', 'special_allowance', 'other_allowance', 'ot_rate']);
+        const numFields = new Set(['basic_salary', 'hra', 'conveyance', 'special_allowance', 'other_allowance', 'incentive_allowance', 'gratuity_amount', 'insurance_amount', 'total_ctc', 'net_take_home', 'ot_rate']);
 
         const updates = [];
         const values = [];

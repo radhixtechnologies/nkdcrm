@@ -143,6 +143,19 @@ const invoiceService = {
         return res.rows;
     },
 
+    async getInvoiceById(invoiceId) {
+        const query = `
+            SELECT i.*, c.client_name, c.email AS client_email, c.phone AS client_phone,
+                   c.gstin AS client_gstin, c.state AS client_state, s.site_name, s.site_code
+            FROM invoices i
+            JOIN clients c ON i.client_id = c.client_id
+            LEFT JOIN sites s ON i.site_id = s.site_id
+            WHERE i.invoice_id = $1
+        `;
+        const res = await db.query(query, [invoiceId]);
+        return res.rows[0] || null;
+    },
+
     async createInvoice(data) {
         const invoiceNumber = (data.invoice_number && String(data.invoice_number).trim())
             ? String(data.invoice_number).trim()

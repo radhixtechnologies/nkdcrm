@@ -39,6 +39,7 @@ class PayrollService {
         let basicEarned = 0;
         let hraEarned = 0;
         let conveyanceEarned = 0;
+        let incentiveEarned = 0;
         let specialAllowanceEarned = 0;
         let otherAllowanceEarned = 0;
         let overtimeAmount = 0;
@@ -48,6 +49,7 @@ class PayrollService {
             basicEarned = parseFloat(employee.basic_salary || 0) * effectiveDays;
             hraEarned = parseFloat(employee.hra || 0) * effectiveDays;
             conveyanceEarned = parseFloat(employee.conveyance || 0) * effectiveDays;
+            incentiveEarned = parseFloat(employee.incentive_allowance || 0) * effectiveDays;
             specialAllowanceEarned = parseFloat(employee.special_allowance || 0) * effectiveDays;
             otherAllowanceEarned = parseFloat(employee.other_allowance || 0) * effectiveDays;
 
@@ -63,6 +65,7 @@ class PayrollService {
             basicEarned = parseFloat(employee.basic_salary || 0) * prorataFactor;
             hraEarned = parseFloat(employee.hra || 0) * prorataFactor;
             conveyanceEarned = parseFloat(employee.conveyance || 0) * prorataFactor;
+            incentiveEarned = parseFloat(employee.incentive_allowance || 0) * prorataFactor;
             specialAllowanceEarned = parseFloat(employee.special_allowance || 0) * prorataFactor;
             otherAllowanceEarned = parseFloat(employee.other_allowance || 0) * prorataFactor;
 
@@ -74,12 +77,13 @@ class PayrollService {
         }
 
         const grossEarnings = basicEarned + hraEarned + conveyanceEarned +
-            specialAllowanceEarned + otherAllowanceEarned + overtimeAmount;
+            incentiveEarned + specialAllowanceEarned + otherAllowanceEarned + overtimeAmount;
 
         return {
             basic_earned: Math.round(basicEarned * 100) / 100,
             hra_earned: Math.round(hraEarned * 100) / 100,
             conveyance_earned: Math.round(conveyanceEarned * 100) / 100,
+            incentive_earned: Math.round(incentiveEarned * 100) / 100,
             special_allowance_earned: Math.round(specialAllowanceEarned * 100) / 100,
             other_allowance_earned: Math.round(otherAllowanceEarned * 100) / 100,
             overtime_amount: Math.round(overtimeAmount * 100) / 100,
@@ -204,7 +208,7 @@ class PayrollService {
             INSERT INTO payroll (
                 employee_id, attendance_id, month, year,
                 total_days, present_days, absent_days, weekly_off_days, leave_days, half_days, overtime_hours,
-                basic_earned, hra_earned, conveyance_earned, special_allowance_earned,
+                basic_earned, hra_earned, conveyance_earned, incentive_earned, special_allowance_earned,
                 other_allowance_earned, overtime_amount, gross_earnings,
                 pf_employee, pf_employer, esi_employee, esi_employer,
                 professional_tax, tds, advance_deduction, other_deductions,
@@ -213,12 +217,12 @@ class PayrollService {
             ) VALUES (
                 $1, $2, $3, $4,
                 $5, $6, $7, $8, $9, $10, $11,
-                $12, $13, $14, $15,
-                $16, $17, $18,
-                $19, $20, $21, $22,
-                $23, $24, $25, $26,
-                $27, $28, $29,
-                $30, $31
+                $12, $13, $14, $15, $16,
+                $17, $18, $19,
+                $20, $21, $22, $23,
+                $24, $25, $26, $27,
+                $28, $29, $30,
+                $31, $32
             )
             RETURNING *
         `;
@@ -238,6 +242,7 @@ class PayrollService {
             payrollData.basic_earned,
             payrollData.hra_earned,
             payrollData.conveyance_earned,
+            payrollData.incentive_earned || 0,
             payrollData.special_allowance_earned,
             payrollData.other_allowance_earned,
             payrollData.overtime_amount,

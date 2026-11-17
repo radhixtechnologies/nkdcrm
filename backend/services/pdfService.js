@@ -352,13 +352,13 @@ class PDFService {
 
         const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Worker';
         const fatherName = employee.father_name || 'As per record';
-        const address = employee.address || employee.permanent_address || employee.current_address || `${fatherName}, Bhojpur, Bihar`;
+        const address = employee.address || employee.permanent_address || employee.current_address || (fatherName !== 'As per record' ? `C/O ${fatherName}` : 'As per official company records');
         const dobStr = employee.dob
             ? new Date(employee.dob).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
-            : '02-04-2001';
-        const aadhaarRaw = String(employee.aadhaar_number || '').trim();
-        const aadhaarStr = aadhaarRaw || '441819500059';
-        const designation = employee.designation || 'Electrician';
+            : 'As per record';
+        const aadhaarRaw = String(employee.aadhaar_number || employee.aadhar_number || '').trim();
+        const aadhaarStr = aadhaarRaw || 'As per Aadhaar Record';
+        const designation = employee.designation || 'Worker';
 
         const dojDate = new Date(employee.date_of_joining || Date.now());
         const formattedDoj = dojDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
@@ -366,10 +366,10 @@ class PDFService {
 
         const dailyWages = employee.daily_wages
             ? Number(employee.daily_wages)
-            : (employee.basic_salary ? Math.round(Number(employee.basic_salary) / 30) : 867);
+            : (employee.basic_salary ? Math.round(Number(employee.basic_salary) / 30) : (employee.wage_rate ? Number(employee.wage_rate) : 0));
         const dailyWagesWords = numberToWords(dailyWages);
 
-        const placeName = employee.site_location || employee.site_name || 'Assam';
+        const placeName = employee.site_location || employee.site_name || 'Designated Project Site';
 
         // ==========================================
         // PAGE 1: OFFICIAL WORKER APPOINTMENT LETTER
@@ -624,6 +624,12 @@ class PDFService {
 
         const doj = new Date(employee.date_of_joining || Date.now());
         const dayNum = doj.getDate();
+        const getOrdinal = (n) => {
+            const s = ['th', 'st', 'nd', 'rd'];
+            const v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        };
+        const dayOrdinal = getOrdinal(dayNum);
         const monthName = doj.toLocaleDateString('en-GB', { month: 'long' });
         const yearNum = doj.getFullYear();
         const locationStr = employee.site_city || employee.site_state || employee.site_location || 'Faridabad';
@@ -639,7 +645,7 @@ class PDFService {
         doc.moveDown(0.7);
 
         doc.fontSize(9).font('Helvetica').fillColor(primaryColor).text(
-            `This Agreement is made on this ${dayNum}th day of ${monthName}, ${yearNum}, at ${locationStr}, and is entered into between:`,
+            `This Agreement is made on this ${dayOrdinal} day of ${monthName}, ${yearNum}, at ${locationStr}, and is entered into between:`,
             { lineGap: 1.5 }
         );
         doc.moveDown(0.7);
@@ -778,7 +784,7 @@ class PDFService {
         );
         doc.moveDown(0.4);
 
-        doc.font('Helvetica-Bold').fontSize(8.5).text(`Signed on this ${dayNum}th day of ${monthName}, ${yearNum}, at ${locationStr}.`);
+        doc.font('Helvetica-Bold').fontSize(8.5).text(`Signed on this ${dayOrdinal} day of ${monthName}, ${yearNum}, at ${locationStr}.`);
         doc.moveDown(1.2);
 
         // Check if we have enough space for signature block, else add page
@@ -1285,32 +1291,38 @@ class PDFService {
         const logoPath = path.join(__dirname, '../assets/nkd_logo.png');
         const digitalSignPath = path.join(__dirname, '../assets/arbaaz_digital_sign.png');
 
+        const parseVal = (val, fallback = 0) => {
+            if (val === undefined || val === null || val === '') return fallback;
+            const n = parseFloat(val);
+            return Number.isNaN(n) ? fallback : n;
+        };
+
         const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Employee';
         const empCode = employee.employee_code || 'EMP';
-        const designation = employee.designation || 'Safety Officer';
-        const locationSite = employee.site_name || 'Chikbonigola Koppal (TATA KOPPAL)';
-        const dojDate = employee.date_of_joining ? new Date(employee.date_of_joining) : new Date('2026-09-21');
+        const designation = employee.designation || 'Staff / Officer';
+        const locationSite = employee.site_name || 'Designated Project Site';
+        const dojDate = employee.date_of_joining ? new Date(employee.date_of_joining) : new Date();
         const dojFormatted = dojDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
 
         // Salary numbers
-        const basicMonthly = parseFloat(employee.basic_salary) || 21000;
-        const hraMonthly = parseFloat(employee.hra) || Math.round(basicMonthly * 0.40);
-        const incentiveMonthly = parseFloat(employee.incentive_allowance) || 5000;
-        const specialMonthly = parseFloat(employee.special_allowance) || 4800;
-        const otherMonthly = parseFloat(employee.other_allowance) || 3000;
-        const grossMonthly = basicMonthly + hraMonthly + incentiveMonthly + specialMonthly + otherMonthly;
+        const basicMonthly = parseVal(employee.basic_salary, 15000);
+        const hraMonthly = parseVal(employee.hra, Math.round(basicMonthly * 0.40));
+        const incentiveMonthly = parseVal(employee.incentive_allowance, 0);
+        const specialMonthly = parseVal(employee.special_allowance, 0);
+        const otherMonthly = parseVal(employee.other_allowance, 0);
+        const grossMonthly = parseVal(employee.gross_salary, basicMonthly + hraMonthly + incentiveMonthly + specialMonthly + otherMonthly);
 
         // Employer benefits
         const empPfMonthly = (employee.pf_applicable !== false) ? 1800 : 0;
-        const empEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? 683 : 0;
-        const gratuityMonthly = parseFloat(employee.gratuity_amount) || Math.round(basicMonthly * 0.05);
-        const insuranceMonthly = parseFloat(employee.insurance_amount) || Math.round(basicMonthly * 0.03);
+        const empEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? Math.round(grossMonthly * 0.0325) : 0;
+        const gratuityMonthly = parseVal(employee.gratuity_amount, Math.round(basicMonthly * 0.05));
+        const insuranceMonthly = parseVal(employee.insurance_amount, Math.round(basicMonthly * 0.03));
         const totalBenefitsMonthly = empPfMonthly + empEsicMonthly + gratuityMonthly + insuranceMonthly;
         const totalCtcMonthly = grossMonthly + totalBenefitsMonthly;
 
         // Employee deductions
         const eePfMonthly = (employee.pf_applicable !== false) ? 1800 : 0;
-        const eeEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? 158 : 0;
+        const eeEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? Math.round(grossMonthly * 0.0075) : 0;
         const ptMonthly = (employee.pt_applicable !== false) ? 200 : 0;
         const otherDeduction = 0;
         const totalDeductionsMonthly = eePfMonthly + eeEsicMonthly + ptMonthly + otherDeduction;
@@ -1433,7 +1445,7 @@ class PDFService {
         doc.rect(36, tableY, 522, 34).strokeColor('#cbd5e1').lineWidth(0.6).stroke();
         doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text('Salary Disbursement Account:', 44, tableY + 5);
         doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
-        const bankStr = `Bank: ${employee.bank_name || 'Axis Bank'}  |  Account No: ${employee.account_number || '925010008015931'}  |  IFSC: ${employee.ifsc_code || 'UTIB0000446'}  |  PAN: ${employee.pan_number || 'FRQPR8238R'}  |  UAN: ${employee.uan_number || '102196844691'}`;
+        const bankStr = `Bank: ${employee.bank_name || 'As per bank records'}  |  Account No: ${employee.account_number || 'As per record'}  |  IFSC: ${employee.ifsc_code || 'As per record'}  |  PAN: ${employee.pan_number || 'As per record'}  |  UAN: ${employee.uan_number || 'As per record'}`;
         doc.text(bankStr, 44, tableY + 16, { width: 506 });
         tableY += 42;
 
@@ -1501,23 +1513,29 @@ class PDFService {
         const serviceDays = settlement.total_service_days || 127;
         const uan = settlement.uan_number || '102287083990';
 
-        const proRataSalary = parseFloat(settlement.pro_rata_salary) || 27888;
-        const leaveEncashment = parseFloat(settlement.leave_encashment) || 0;
-        const bonus = parseFloat(settlement.bonus_amount) || 0;
-        const arrears = parseFloat(settlement.arrears_amount) || 0;
-        const gratuity = parseFloat(settlement.gratuity_amount) || 0;
-        const otherDues = parseFloat(settlement.other_dues) || 0;
+        const parseVal = (val, fallback = 0) => {
+            if (val === undefined || val === null || val === '') return fallback;
+            const n = parseFloat(val);
+            return Number.isNaN(n) ? fallback : n;
+        };
+
+        const proRataSalary = parseVal(settlement.pro_rata_salary, 0);
+        const leaveEncashment = parseVal(settlement.leave_encashment, 0);
+        const bonus = parseVal(settlement.bonus_amount, 0);
+        const arrears = parseVal(settlement.arrears_amount, 0);
+        const gratuity = parseVal(settlement.gratuity_amount, 0);
+        const otherDues = parseVal(settlement.other_dues, 0);
         const totalEarnings = proRataSalary + leaveEncashment + bonus + arrears + gratuity + otherDues;
 
-        const pf = parseFloat(settlement.pf_deduction) || 1800;
-        const esic = parseFloat(settlement.esi_deduction) || 113;
-        const pt = parseFloat(settlement.pt_deduction) || 200;
-        const tds = parseFloat(settlement.tds_deduction) || 0;
-        const noticeRecovery = parseFloat(settlement.notice_pay_recovery) || 10500;
-        const loanRecovery = parseFloat(settlement.loan_recovery) || 9000;
-        const damageRecovery = parseFloat(settlement.damage_recovery) || 0;
-        const lwf = parseFloat(settlement.lwf_deduction) || 25;
-        const otherDeductions = parseFloat(settlement.other_deductions) || 0;
+        const pf = parseVal(settlement.pf_deduction, 0);
+        const esic = parseVal(settlement.esi_deduction, 0);
+        const pt = parseVal(settlement.pt_deduction, 0);
+        const tds = parseVal(settlement.tds_deduction, 0);
+        const noticeRecovery = parseVal(settlement.notice_pay_recovery, 0);
+        const loanRecovery = parseVal(settlement.loan_recovery, 0);
+        const damageRecovery = parseVal(settlement.damage_recovery, 0);
+        const lwf = parseVal(settlement.lwf_deduction, 0);
+        const otherDeductions = parseVal(settlement.other_deductions, 0);
         const totalDeductions = pf + esic + pt + tds + noticeRecovery + loanRecovery + damageRecovery + lwf + otherDeductions;
 
         const netPayable = totalEarnings - totalDeductions;
@@ -1639,14 +1657,18 @@ class PDFService {
         doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff').text('GRATUITY CALCULATION (C) — Payment of Gratuity Act, 1972', 36, curY + 3.5, { align: 'center', width: 522 });
         curY += 15;
 
+        const isGratuityEligible = serviceDays >= 1825 || gratuity > 0;
+        const completedYears = Math.floor(serviceDays / 365);
+        const computedGratuity = isGratuityEligible ? Math.min(2000000, Math.round((15 / 26) * lastBasic * completedYears)) : 0;
+
         const gratRows = [
-            { p: 'Eligibility (5 years continuous service completed?)', a: 'No' },
+            { p: 'Eligibility (5 years continuous service completed?)', a: isGratuityEligible ? 'Yes' : 'No' },
             { p: 'Last Drawn Basic + DA (Rs.)', a: lastBasic.toLocaleString('en-IN') },
-            { p: 'Completed Years of Service (round off: >6 months = +1 year)', a: '0' },
-            { p: 'Gratuity Formula: (15 / 26) x Last Drawn Basic+DA x Completed Years', a: '0' },
-            { p: 'Gratuity Amount Payable (Rs.)', a: '0' },
+            { p: 'Completed Years of Service (round off: >6 months = +1 year)', a: String(completedYears) },
+            { p: 'Gratuity Formula: (15 / 26) x Last Drawn Basic+DA x Completed Years', a: computedGratuity.toLocaleString('en-IN') },
+            { p: 'Gratuity Amount Payable (Rs.)', a: (gratuity || computedGratuity).toLocaleString('en-IN') },
             { p: 'Statutory Ceiling (Rs. 20,00,000 as per Payment of Gratuity Act)', a: '20,00,000' },
-            { p: 'Gratuity Payable (lower of computed amount and ceiling)', a: '0' }
+            { p: 'Gratuity Payable (lower of computed amount and ceiling)', a: (gratuity || computedGratuity).toLocaleString('en-IN') }
         ];
 
         gratRows.forEach((r, idx) => {

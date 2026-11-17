@@ -1,4 +1,5 @@
 import api, { getApiBaseUrl } from './api';
+import toast from 'react-hot-toast';
 
 const employeeService = {
     getEmployees: (params) => api.get('/employees', { params }),
@@ -78,28 +79,38 @@ const employeeService = {
         return `${getApiBaseUrl()}/employees/${id}/salary-structure-pdf?token=${encodeURIComponent(token || '')}`;
     },
     downloadSalaryStructure: async (id, empCode = 'EMP') => {
-        const res = await api.get(`/employees/${id}/salary-structure-pdf`, { responseType: 'blob' });
-        const blob = new Blob([res.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `Salary_Structure_${empCode}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+        try {
+            const res = await api.get(`/employees/${id}/salary-structure-pdf`, { responseType: 'blob' });
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Salary_Structure_${empCode}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success(`Salary Structure for ${empCode} downloaded`);
+        } catch (err) {
+            toast.error('Failed to download salary structure PDF');
+        }
     },
     downloadFnfSettlement: async (id, empCode = 'EMP') => {
-        const res = await api.get(`/employees/${id}/fnf-settlement-pdf`, { responseType: 'blob' });
-        const blob = new Blob([res.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `FF_Settlement_${empCode}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+        try {
+            const res = await api.get(`/employees/${id}/fnf-settlement-pdf`, { responseType: 'blob' });
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `FF_Settlement_${empCode}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success(`F&F Settlement for ${empCode} downloaded`);
+        } catch (err) {
+            toast.error('No F&F settlement statement generated for this employee yet.');
+        }
     }
 };
 

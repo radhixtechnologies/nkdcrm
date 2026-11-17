@@ -1,4 +1,5 @@
 import api from './api';
+import toast from 'react-hot-toast';
 
 const assetService = {
     getAssets: (params) => api.get('/assets', { params }),
@@ -16,16 +17,21 @@ const assetService = {
         return `/api/assets/allocations/${allocationId}/handover-form?token=${encodeURIComponent(token || '')}`;
     },
     downloadHandoverForm: async (allocationId, assetName = 'Asset') => {
-        const res = await api.get(`/assets/allocations/${allocationId}/handover-form`, { responseType: 'blob' });
-        const blob = new Blob([res.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `IT_Asset_Handover_Form_${String(assetName).replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.URL.revokeObjectURL(url);
+        try {
+            const res = await api.get(`/assets/allocations/${allocationId}/handover-form`, { responseType: 'blob' });
+            const blob = new Blob([res.data], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `IT_Asset_Handover_Form_${String(assetName).replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+            toast.success(`IT Asset Handover Form downloaded`);
+        } catch (err) {
+            toast.error('Failed to download asset handover form');
+        }
     }
 };
 

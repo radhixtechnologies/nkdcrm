@@ -186,7 +186,7 @@ class ExcelService {
 
             // Add 1..daysInMonth attendance
             for (let d = 1; d <= daysInMonth; d++) {
-                rowData.push(dayWise[d] || (num(p.present_days) > 0 ? 'P' : 'A'));
+                rowData.push(dayWise[d] || (num(p.present_days) > 0 ? (d <= num(p.present_days) ? 'P' : 'A') : 'A'));
             }
 
             const daysPresent = Math.max(0, num(p.present_days) - num(p.leave_days));
@@ -550,6 +550,97 @@ class ExcelService {
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename=NKD_Sales_Billing_Invoices_FY26-27.xlsx');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    }
+
+    async generateAttendanceSummaryExcel(reportData, res) {
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Attendance Summary');
+
+        const { period = {}, employees = [], totals = {} } = reportData;
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthName = monthNames[period.month] || `Month ${period.month || ''}`;
+
+        sheet.columns = [
+            { header: 'S.No', key: 'sno', width: 8 },
+            { header: 'Emp Code', key: 'employee_code', width: 14 },
+            { header: 'Employee Name', key: 'employee_name', width: 25 },
+            { header: 'Department', key: 'department', width: 18 },
+            { header: 'Designation', key: 'designation', width: 20 },
+            { header: 'Total Days', key: 'total_days', width: 12 },
+            { header: 'Present Days', key: 'present_days', width: 14 },
+            { header: 'Absent Days', key: 'absent_days', width: 14 },
+            { header: 'Weekly Off', key: 'weekly_off_days', width: 12 },
+            { header: 'Leave Days', key: 'leave_days', width: 12 },
+            { header: 'Half Days', key: 'half_days', width: 12 },
+            { header: 'Overtime (Hrs)', key: 'overtime_hours', width: 16 },
+            { header: 'Attendance %', key: 'attendance_percentage', width: 15 }
+        ];
+
+        employees.forEach((emp, idx) => {
+            sheet.addRow({
+                sno: idx + 1,
+                employee_code: emp.employee_code || '',
+                employee_name: emp.employee_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim(),
+                department: emp.department || 'Operations',
+                designation: emp.designation || 'Staff',
+                total_days: Number(emp.total_days || 0),
+                present_days: Number(emp.present_days || 0),
+                absent_days: Number(emp.absent_days || 0),
+                weekly_off_days: Number(emp.weekly_off_days || 0),
+                leave_days: Number(emp.leave_days || 0),
+                half_days: Number(emp.half_days || 0),
+                overtime_hours: Number(emp.overtime_hours || 0),
+                attendance_percentage: `${Number(emp.attendance_percentage || 0).toFixed(1)}%`
+            });
+        });
+
+        // Add summary totals row
+        const totRow = sheet.addRow({
+            sno: '',
+            employee_code: 'TOTAL',
+            employee_name: `${totals.total_employees || employees.length} Employees`,
+            department: '',
+            designation: '',
+            total_days: '',
+            present_days: totals.total_present || 0,
+            absent_days: totals.total_absent || 0,
+            weekly_off_days: totals.total_weekly_off || 0,
+            leave_days: totals.total_leave || 0,
+            half_days: totals.total_half_day || 0,
+            overtime_hours: totals.total_overtime || 0,
+            attendance_percentage: `${totals.avg_attendance || 0}% Avg`
+        });
+
+        sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        sheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF1E3A8A' }
+        };
+
+        totRow.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+        totRow.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFF1F5F9' }
+        };
+
+        sheet.eachRow((row) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                    right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                };
+            });
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=Attendance_Summary_${monthName}_${period.year || new Date().getFullYear()}.xlsx`);
 
         await workbook.xlsx.write(res);
         res.end();

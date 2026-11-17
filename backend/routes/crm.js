@@ -631,6 +631,137 @@ router.get('/fnf-settlements/:id/pdf', async (req, res, next) => {
     }
 });
 
+// Calculate and create new F&F Settlement
+router.post('/fnf-settlements', requireAnyPermission('EMPLOYEES.can_create', 'EMPLOYEES.can_update', 'PAYROLL.can_create'), async (req, res, next) => {
+    try {
+        const {
+            employee_id,
+            date_of_leaving,
+            reason_for_leaving = 'Resignation',
+            notice_required_days = 20,
+            notice_served_days = 0,
+            days_worked_last_month = 0,
+            leave_encashment_days = 0,
+            bonus_amount = 0,
+            arrears_amount = 0,
+            loan_recovery = 0,
+            damage_recovery = 0,
+            other_dues = 0,
+            other_deductions = 0,
+            remarks = ''
+        } = req.body;
+
+        if (!employee_id) {
+            return res.status(400).json({ success: false, message: 'employee_id is required' });
+        }
+
+        const empRes = await db.query('SELECT e.*, s.site_name FROM employees e LEFT JOIN sites s ON e.site_id = s.site_id WHERE e.employee_id = $1', [employee_id]);
+        if (empRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Employee not found' });
+        }
+        const emp = empRes.rows[0];
+
+        const basicSalary = Number(emp.basic_salary || 0);
+        const grossSalary = Number(emp.gross_salary || (basicSalary * 1.5));
+        const doj = emp.date_of_joining ? new Date(emp.date_of_joining) : new Date();
+        const dol = date_of_leaving ? new Date(date_of_leaving) : new Date();
+        const serviceDays = Math.max(0, Math.floor((dol - doj) / (1000 * 60 * 60 * 24)));
+
+        // Notice calculations
+        const nReq = Number(notice_required_days) || 0;
+        const nServ = Number(notice_served_days) || 0;
+        const nShortfall = Math.max(0, nReq - nServ);
+        const dailyBasic = basicSalary > 0 ? basicSalary / 30 : 0;
+        const dailyGross = grossSalary > 0 ? grossSalary / 30 : 0;
+
+        // Earnings
+        const proRataSalary = Math.round(Number(days_worked_last_month || 0) * dailyGross);
+        const leaveEncashment = Math.round(Number(leave_encashment_days || 0) * dailyBasic);
+        const bonus = Number(bonus_amount) || 0;
+        const arrears = Number(arrears_amount) || 0;
+        const otherEarnings = Number(other_dues) || 0;
+
+        // Gratuity calculation (Payment of Gratuity Act 1972: >= 5 years continuous service = 1825 days)
+        let gratuity = 0;
+        if (serviceDays >= 1825) {
+            const completedYears = Math.round(serviceDays / 365);
+            gratuity = Math.round((15 / 26) * basicSalary * completedYears);
+            if (gratuity > 2000000) gratuity = 2000000;
+        }
+
+        const totalEarnings = proRataSalary + leaveEncashment + bonus + arrears + gratuity + otherEarnings;
+
+        // Deductions
+        const pfDed = (emp.pf_applicable !== false && basicSalary > 0) ? 1800 : 0;
+        const esiDed = (emp.esi_applicable !== false && grossSalary <= 21000) ? Math.round(proRataSalary * 0.0075) : 0;
+        const ptDed = (emp.pt_applicable !== false) ? 200 : 0;
+        const tdsDed = 0;
+        const noticeRecovery = Math.round(nShortfall * dailyBasic);
+        const loanRec = Number(loan_recovery) || 0;
+        const dmgRec = Number(damage_recovery) || 0;
+        const lwfDed = 25;
+        const otherDed = Number(other_deductions) || 0;
+
+        const totalDeductions = pfDed + esiDed + ptDed + tdsDed + noticeRecovery + loanRec + dmgRec + lwfDed + otherDed;
+        const netPayable = Math.max(0, totalEarnings - totalDeductions);
+
+        const settlementCode = `FNF-${Date.now().toString().slice(-6)}`;
+
+        const insRes = await db.query(`
+            INSERT INTO fnf_settlements (
+                settlement_code, employee_id, employee_name, designation, site_id, site_name,
+                date_of_joining, date_of_leaving, reason_for_leaving,
+                notice_required_days, notice_served_days, notice_shortfall_days,
+                last_drawn_basic, last_drawn_gross, total_service_days, uan_number,
+                pro_rata_salary, leave_encashment, bonus_amount, arrears_amount, gratuity_amount, other_dues, total_earnings,
+                pf_deduction, esi_deduction, pt_deduction, tds_deduction,
+                notice_pay_recovery, loan_recovery, damage_recovery, lwf_deduction, other_deductions, total_deductions,
+                net_payable, status, payment_status, remarks
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9,
+                $10, $11, $12,
+                $13, $14, $15, $16,
+                $17, $18, $19, $20, $21, $22, $23,
+                $24, $25, $26, $27,
+                $28, $29, $30, $31, $32, $33,
+                $34, 'APPROVED', 'PENDING', $35
+            ) RETURNING *
+        `, [
+            settlementCode, emp.employee_id, emp.full_name, emp.designation, emp.site_id, emp.site_name,
+            emp.date_of_joining, dol, reason_for_leaving,
+            nReq, nServ, nShortfall,
+            basicSalary, grossSalary, serviceDays, emp.uan_number || 'N/A',
+            proRataSalary, leaveEncashment, bonus, arrears, gratuity, otherEarnings, totalEarnings,
+            pfDed, esiDed, ptDed, tdsDed,
+            noticeRecovery, loanRec, dmgRec, lwfDed, otherDed, totalDeductions,
+            netPayable, remarks
+        ]);
+
+        return res.status(201).json({ success: true, message: 'F&F Settlement computed successfully', data: insRes.rows[0] });
+    } catch (error) { return sendError(next, error); }
+});
+
+router.put('/fnf-settlements/:id', requireAnyPermission('EMPLOYEES.can_update', 'PAYROLL.can_update'), async (req, res, next) => {
+    try {
+        const { status, payment_status, payment_reference, payment_date, remarks } = req.body;
+        const updRes = await db.query(`
+            UPDATE fnf_settlements
+            SET status = COALESCE($1, status),
+                payment_status = COALESCE($2, payment_status),
+                payment_reference = COALESCE($3, payment_reference),
+                payment_date = COALESCE($4, payment_date),
+                remarks = COALESCE($5, remarks),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE settlement_id::text = $6 OR settlement_code = $6
+            RETURNING *
+        `, [status, payment_status, payment_reference, payment_date, remarks, req.params.id]);
+
+        if (updRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Settlement not found' });
+        return res.json({ success: true, message: 'Settlement updated', data: updRes.rows[0] });
+    } catch (error) { return sendError(next, error); }
+});
+
 // IT Asset Handover Form (Internal Use Only) for Employees
 router.get('/employees/:id/asset-handover-form', async (req, res, next) => {
     try {
@@ -780,7 +911,7 @@ router.post(
 // ==========================================
 router.post(
     '/daily-attendance/import',
-    requirePermission('ATTENDANCE', 'can_create'),
+    requireAnyPermission('ATTENDANCE.can_create', 'ATTENDANCE.can_update'),
     upload.uploadExcel.single('file'),
     async (req, res, next) => {
         try {
@@ -946,7 +1077,7 @@ router.post('/attendance/gps-punch', requirePermission('ATTENDANCE', 'can_create
 // ==========================================
 router.post(
     '/biometric/import',
-    requirePermission('ATTENDANCE', 'can_create'),
+    requireAnyPermission('ATTENDANCE.can_create', 'ATTENDANCE.can_update'),
     upload.uploadExcel.single('file'),
     async (req, res, next) => {
         try {
@@ -1277,7 +1408,16 @@ router.get('/payroll/payslip/:id(\\d+)/pdf', requirePermission('PAYROLL', 'can_v
                 return res.status(403).json({ success: false, message: 'Access denied: cannot download other employees payslips' });
             }
         }
-        const employee = await employeeService.getEmployeeById(payroll.employee_id);
+        let employee = await employeeService.getEmployeeById(payroll.employee_id);
+        if (!employee) {
+            employee = {
+                employee_id: payroll.employee_id,
+                employee_code: payroll.employee_code || 'EMP',
+                full_name: payroll.employee_name || 'Employee',
+                department: payroll.department || 'Operations',
+                designation: payroll.designation || 'Staff'
+            };
+        }
         await pdfService.generatePayslip(payroll, employee, res);
     } catch (error) { return sendError(next, error); }
 });
@@ -1563,7 +1703,10 @@ router.get('/reports/download/:type', requirePermission('REPORTS', 'can_view'), 
         const y = parseInt(req.query.year, 10) || new Date().getFullYear();
 
         let data;
-        if (type === 'pf') data = await reportsService.getPFReport(m, y);
+        if (type === 'attendance-excel' || (type === 'attendance' && req.query.format === 'excel')) {
+            const reportData = await reportsService.getAttendanceSummaryReport(m, y);
+            return await excelService.generateAttendanceSummaryExcel(reportData, res);
+        } else if (type === 'pf') data = await reportsService.getPFReport(m, y);
         else if (type === 'esi') data = await reportsService.getESIReport(m, y);
         else if (type === 'pt') data = await reportsService.getPTReport(m, y);
         else if (type === 'bank') data = await reportsService.getBankTransferStatement(m, y);
@@ -1613,6 +1756,14 @@ router.get('/invoices/stats', requirePermission('INVOICES', 'can_view'), async (
 router.get('/invoices', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
     try {
         return sendData(res, await invoiceService.getInvoices(req.query));
+    } catch (error) { return sendError(next, error); }
+});
+
+router.get('/invoices/:id(\\d+)', requirePermission('INVOICES', 'can_view'), async (req, res, next) => {
+    try {
+        const invoice = await invoiceService.getInvoiceById(req.params.id);
+        if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+        return sendData(res, invoice);
     } catch (error) { return sendError(next, error); }
 });
 

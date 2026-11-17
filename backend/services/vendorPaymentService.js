@@ -208,11 +208,11 @@ const vendorPaymentService = {
     async createInvoice(data) {
         const basic = cleanNum(data.basic_amount, 0);
         const gstRate = cleanNum(data.gst_rate, 18.00);
-        const gstAmount = data.gst_amount !== undefined ? cleanNum(data.gst_amount) : Math.round((basic * (gstRate / 100)) * 100) / 100;
+        const gstAmount = (data.gst_amount !== undefined && data.gst_amount !== null && data.gst_amount !== '') ? cleanNum(data.gst_amount) : Math.round((basic * (gstRate / 100)) * 100) / 100;
         const tdsRate = cleanNum(data.tds_rate, 2.00);
-        const tdsAmount = data.tds_amount !== undefined ? cleanNum(data.tds_amount) : Math.round((basic * (tdsRate / 100)) * 100) / 100;
-        const invoiceValue = data.invoice_value !== undefined ? cleanNum(data.invoice_value) : (basic + gstAmount);
-        const totalPayable = data.total_payable !== undefined ? cleanNum(data.total_payable) : (invoiceValue - tdsAmount);
+        const tdsAmount = (data.tds_amount !== undefined && data.tds_amount !== null && data.tds_amount !== '') ? cleanNum(data.tds_amount) : Math.round((basic * (tdsRate / 100)) * 100) / 100;
+        const invoiceValue = (data.invoice_value !== undefined && data.invoice_value !== null && data.invoice_value !== '') ? cleanNum(data.invoice_value) : (basic + gstAmount);
+        const totalPayable = (data.total_payable !== undefined && data.total_payable !== null && data.total_payable !== '') ? cleanNum(data.total_payable) : (invoiceValue - tdsAmount);
 
         const paid = cleanNum(data.paid_amount, 0);
         const outstanding = Math.max(0, totalPayable - paid);

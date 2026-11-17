@@ -237,15 +237,17 @@ class StatutoryService {
                     existingEmployee = res.rows[0];
                 }
 
+                const empDisplayName = rawName || `${firstName || ''} ${lastName || ''}`.trim() || 'Worker';
+
                 if (existingEmployee) {
                     await employeeService.updateEmployee(existingEmployee.employee_code, employeeData);
                     results.imported++;
-                    results.success.push({ name: name, status: 'Updated' });
+                    results.success.push({ name: empDisplayName, status: 'Updated' });
                 } else {
                     try {
                         await employeeService.createEmployee(employeeData);
                         results.imported++;
-                        results.success.push({ name: name, status: 'Created' });
+                        results.success.push({ name: empDisplayName, status: 'Created' });
                     } catch (createError) {
                         // Handle Unique Constraint Violations Gracefully
                         if (createError.code === '23505') {
@@ -262,7 +264,7 @@ class StatutoryService {
                                 if (conflictRes.rows.length > 0) {
                                     await employeeService.updateEmployee(conflictRes.rows[0].employee_code, employeeData);
                                     results.imported++;
-                                    results.success.push({ name: name, status: 'Updated (Conflict Resolved)' });
+                                    results.success.push({ name: empDisplayName, status: 'Updated (Conflict Resolved)' });
                                     continue;
                                 }
                             }
