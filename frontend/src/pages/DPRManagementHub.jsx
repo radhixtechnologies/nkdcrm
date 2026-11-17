@@ -866,27 +866,32 @@ const DPRManagementHub = () => {
                 <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-radial from-primary-500/15 via-emerald-500/10 to-transparent pointer-events-none" />
                 <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
-                    <div>
-                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-bold mb-2.5 border border-emerald-500/30 backdrop-blur-md">
-                            <Activity size={14} className="animate-pulse" />
-                            <span>Power, Solar & Site Execution Operations</span>
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5 relative z-10">
+                    <div className="min-w-0">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-bold mb-2 border border-emerald-500/30 backdrop-blur-md">
+                            <Activity size={14} className="animate-pulse text-emerald-400" />
+                            <span>Power, Solar & Site Operations Intelligence</span>
                         </div>
-                        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white flex items-center gap-2.5">
-                            DPR Management Hub
+                        <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex flex-wrap items-center gap-2.5">
+                            <span>DPR Management Hub</span>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold font-mono">
+                                <FileSpreadsheet size={13} /> Excel Engine Active
+                            </span>
                         </h1>
                         <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                            Multi-site Daily Progress Reports, Interactive Excel Spreadsheets, Showstoppers, M-Book Measurements, and TPI Calibration Registers.
+                            Multi-site Daily Progress Reports, In-App Interactive Excel Spreadsheets, Showstoppers, M-Book Measurements, and Joint Calibration Registers.
                         </p>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                        <div className="bg-white/10 backdrop-blur-md rounded-xl p-2 border border-white/20 flex items-center gap-2 text-white shadow-inner">
-                            <Building2 size={18} className="text-primary-300 shrink-0 ml-1" />
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                        {/* Site Filter Dropdown */}
+                        <div className="bg-slate-800/90 hover:bg-slate-800 border border-slate-700/90 rounded-xl px-3 py-2 flex items-center gap-2 text-white shadow-sm transition-colors">
+                            <Building2 size={16} className="text-emerald-400 shrink-0" />
                             <select
                                 value={selectedSiteId}
                                 onChange={(e) => setSelectedSiteId(e.target.value)}
-                                className="bg-transparent text-white text-sm font-bold focus:outline-none cursor-pointer pr-4 w-full sm:w-auto"
+                                className="bg-transparent text-white text-xs sm:text-sm font-bold focus:outline-none cursor-pointer pr-2 max-w-[190px] sm:max-w-[240px] truncate"
+                                title="Filter by Project Site"
                             >
                                 <option value="ALL" className="text-slate-900">All Sites & Projects</option>
                                 {sites.map((s) => (
@@ -897,34 +902,41 @@ const DPRManagementHub = () => {
                             </select>
                         </div>
 
-                        {/* Quick Shortcut to Live Sheet */}
+                        {/* Interactive Excel Sheet Button */}
                         <button
                             type="button"
                             onClick={() => setActiveTab('live_sheet')}
-                            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-950/40 transition-all active:scale-95 cursor-pointer"
+                            className={`inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer ${
+                                activeTab === 'live_sheet'
+                                    ? 'bg-emerald-500 text-white ring-2 ring-emerald-300 ring-offset-2 ring-offset-slate-900'
+                                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-950/40'
+                            }`}
+                            title="Open Fullscreen Interactive Excel Spreadsheet Editor"
                         >
-                            <FileSpreadsheet size={17} />
-                            <span>Live Site Sheet</span>
+                            <FileSpreadsheet size={16} className="text-emerald-100" />
+                            <span>Excel Live Sheet</span>
                         </button>
 
+                        {/* New DPR Button */}
                         {activeTab === 'dpr' && dprSubTab === 'reports' && canCreate && (
                             <button
                                 type="button"
                                 onClick={openCreateDpr}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
+                                title="Create new daily progress report with backdate option"
                             >
-                                <Plus size={18} />
-                                New DPR (With Backdate)
+                                <Plus size={16} />
+                                <span>New DPR Report</span>
                             </button>
                         )}
                         {activeTab === 'concerns' && canCreate && (
                             <button
                                 type="button"
                                 onClick={openCreateConcern}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
+                                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer"
                             >
-                                <Plus size={18} />
-                                Report Site Concern
+                                <Plus size={16} />
+                                <span>Report Site Concern</span>
                             </button>
                         )}
                         {activeTab === 'measurements' && (
@@ -1123,6 +1135,16 @@ const DPRManagementHub = () => {
                         </button>
                         <button
                             type="button"
+                            onClick={() => setActiveTab('live_sheet')}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 transition-all cursor-pointer shadow-2xs"
+                            title="Switch to In-App Excel Spreadsheet Editor"
+                        >
+                            <FileSpreadsheet size={16} className="text-emerald-600" />
+                            <span>Interactive Excel Editor</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-black uppercase">Live</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => {
                                 setDprSubTab('archive');
                                 loadArchive();
@@ -1143,6 +1165,37 @@ const DPRManagementHub = () => {
                         >
                             <Droplets size={16} />
                             11kV Trench Dewatering Register ({trenchCount} Records)
+                        </button>
+                    </div>
+
+                    {/* Interactive Excel Editor Callout Banner */}
+                    <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 text-white p-3.5 sm:p-4 rounded-2xl border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                                <FileSpreadsheet size={20} />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h4 className="text-xs sm:text-sm font-bold text-white">
+                                        Client Feature: Interactive Excel Spreadsheet Editor
+                                    </h4>
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 uppercase tracking-wider">
+                                        Live
+                                    </span>
+                                </div>
+                                <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+                                    Manage daily activities like Microsoft Excel with inline cell editing, BOQ sums, progress meters, and .xlsx import/export.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('live_sheet')}
+                            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all active:scale-95 shadow-sm shrink-0 cursor-pointer"
+                        >
+                            <FileSpreadsheet size={15} />
+                            <span>Open Excel Editor</span>
+                            <ChevronRight size={14} />
                         </button>
                     </div>
 

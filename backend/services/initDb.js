@@ -116,6 +116,8 @@ const ensureCoreSchema = async () => {
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS insurance_amount NUMERIC(15, 2) DEFAULT 0;
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS total_ctc NUMERIC(15, 2) DEFAULT 0;
         ALTER TABLE employees ADD COLUMN IF NOT EXISTS net_take_home NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE employees ADD COLUMN IF NOT EXISTS phone VARCHAR(30);
+        UPDATE employees SET phone = mobile WHERE phone IS NULL AND mobile IS NOT NULL;
         UPDATE employees SET full_name = TRIM(first_name || ' ' || COALESCE(last_name, '')) WHERE full_name IS NULL;
 
         CREATE INDEX IF NOT EXISTS idx_employees_site ON employees(site_id);

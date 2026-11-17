@@ -132,7 +132,7 @@ const assetService = {
                    TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
                    TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
                    a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
-                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.mobile AS phone, e.email, e.department,
                    s.site_name
             FROM asset_allocations al
             JOIN assets a ON al.asset_id = a.asset_id
@@ -161,7 +161,7 @@ const assetService = {
                    TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
                    TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
                    a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
-                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.mobile AS phone, e.email, e.department,
                    s.site_name
             FROM asset_allocations al
             JOIN assets a ON al.asset_id = a.asset_id
@@ -180,7 +180,7 @@ const assetService = {
                    TO_CHAR(al.return_due_date, 'YYYY-MM-DD') AS return_due_date,
                    TO_CHAR(al.returned_date, 'YYYY-MM-DD') AS returned_date,
                    a.asset_name, a.asset_code, a.category, a.brand_model, a.serial_number, a.notes AS asset_notes,
-                   e.full_name AS employee_name, e.employee_code, e.designation, e.phone, e.email, e.department,
+                   e.full_name AS employee_name, e.employee_code, e.designation, e.mobile AS phone, e.email, e.department,
                    s.site_name
             FROM asset_allocations al
             JOIN assets a ON al.asset_id = a.asset_id
