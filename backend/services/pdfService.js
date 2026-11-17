@@ -1255,6 +1255,209 @@ class PDFService {
         }
     }
 
+    /**
+     * Official Salary Breakup & CTC Structure Annexure
+     */
+    generateSalaryStructurePdf(employee, res) {
+        return new Promise((resolve, reject) => {
+            try {
+                const doc = new PDFDocument({ margin: 36, size: 'A4', bufferPages: true });
+
+                const empCode = employee.employee_code || employee.employee_id || 'EMP';
+                const filename = `Salary_Structure_${empCode}.pdf`;
+
+                if (typeof res.setHeader === 'function') {
+                    res.setHeader('Content-Type', 'application/pdf');
+                    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+                }
+
+                doc.pipe(res);
+                this.buildSalaryStructureDoc(employee, doc);
+                doc.end();
+                resolve();
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+
+    buildSalaryStructureDoc(employee, doc) {
+        const logoPath = path.join(__dirname, '../assets/nkd_logo.png');
+        const digitalSignPath = path.join(__dirname, '../assets/arbaaz_digital_sign.png');
+
+        const fullName = employee.full_name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || 'Employee';
+        const empCode = employee.employee_code || 'EMP';
+        const designation = employee.designation || 'Safety Officer';
+        const locationSite = employee.site_name || 'Chikbonigola Koppal (TATA KOPPAL)';
+        const dojDate = employee.date_of_joining ? new Date(employee.date_of_joining) : new Date('2026-09-21');
+        const dojFormatted = dojDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.');
+
+        // Salary numbers
+        const basicMonthly = parseFloat(employee.basic_salary) || 21000;
+        const hraMonthly = parseFloat(employee.hra) || Math.round(basicMonthly * 0.40);
+        const incentiveMonthly = parseFloat(employee.incentive_allowance) || 5000;
+        const specialMonthly = parseFloat(employee.special_allowance) || 4800;
+        const otherMonthly = parseFloat(employee.other_allowance) || 3000;
+        const grossMonthly = basicMonthly + hraMonthly + incentiveMonthly + specialMonthly + otherMonthly;
+
+        // Employer benefits
+        const empPfMonthly = (employee.pf_applicable !== false) ? 1800 : 0;
+        const empEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? 683 : 0;
+        const gratuityMonthly = parseFloat(employee.gratuity_amount) || Math.round(basicMonthly * 0.05);
+        const insuranceMonthly = parseFloat(employee.insurance_amount) || Math.round(basicMonthly * 0.03);
+        const totalBenefitsMonthly = empPfMonthly + empEsicMonthly + gratuityMonthly + insuranceMonthly;
+        const totalCtcMonthly = grossMonthly + totalBenefitsMonthly;
+
+        // Employee deductions
+        const eePfMonthly = (employee.pf_applicable !== false) ? 1800 : 0;
+        const eeEsicMonthly = (employee.esi_applicable !== false && basicMonthly <= 21000) ? 158 : 0;
+        const ptMonthly = (employee.pt_applicable !== false) ? 200 : 0;
+        const otherDeduction = 0;
+        const totalDeductionsMonthly = eePfMonthly + eeEsicMonthly + ptMonthly + otherDeduction;
+        const netTakeHomeMonthly = grossMonthly - totalDeductionsMonthly;
+
+        // --- Header ---
+        if (fs.existsSync(logoPath)) {
+            doc.image(logoPath, 36, 28, { width: 110 });
+        }
+        doc.font('Helvetica-Bold').fontSize(11.5).fillColor('#0f172a').text('NKD POWER SOLUTIONS PVT LTD', 200, 28, { align: 'right', width: 358 });
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#334155').text('A-41 GROUND FLOOR, PARK ELITE, SEC-85, FARIDABAD, HARYANA-121002', 200, 42, { align: 'right', width: 358 });
+        doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('CIN: U45309HR2021PTC097238 | GSTIN: 06AAECN4896B1Z5 | info@nkdpowersolutions.com', 200, 52, { align: 'right', width: 358 });
+
+        doc.moveTo(36, 68).lineTo(558, 68).lineWidth(1.2).strokeColor('#1e3a8a').stroke();
+
+        // Banner
+        doc.rect(36, 74, 522, 22).fill('#1e3a8a');
+        doc.font('Helvetica-Bold').fontSize(10).fillColor('#ffffff').text('ANNEXURE - A : SALARY BREAKUP & COMPENSATION STRUCTURE', 36, 80, { align: 'center', width: 522 });
+
+        // Employee Meta Box
+        const metaY = 102;
+        doc.rect(36, metaY, 522, 48).fill('#f8fafc');
+        doc.rect(36, metaY, 522, 48).strokeColor('#cbd5e1').lineWidth(0.8).stroke();
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Employee Name:', 44, metaY + 6);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(fullName, 120, metaY + 6);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Employee Code:', 320, metaY + 6);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(empCode, 410, metaY + 6);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Designation:', 44, metaY + 20);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(designation, 120, metaY + 20);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Date of Joining:', 320, metaY + 20);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(dojFormatted, 410, metaY + 20);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Location / Site:', 44, metaY + 34);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(locationSite, 120, metaY + 34);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#1e293b').text('Wage Type:', 320, metaY + 34);
+        doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text('Monthly', 410, metaY + 34);
+
+        let tableY = 158;
+
+        const drawTable = (title, headerColor, items, totalLabel, totalMonthly, totalAnnual, isHighlight = false, highlightColor = '#e2e8f0') => {
+            // Table Header Bar
+            doc.rect(36, tableY, 522, 16).fill(headerColor);
+            doc.font('Helvetica-Bold').fontSize(8).fillColor('#ffffff').text(title.toUpperCase(), 44, tableY + 4);
+            doc.text('Monthly (INR)', 360, tableY + 4, { width: 90, align: 'right' });
+            doc.text('Annual (INR)', 460, tableY + 4, { width: 90, align: 'right' });
+            tableY += 16;
+
+            items.forEach((item, idx) => {
+                const bg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+                doc.rect(36, tableY, 522, 15).fill(bg);
+                doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
+                doc.text(String(idx + 1), 44, tableY + 4);
+                doc.text(item.name, 65, tableY + 4);
+                doc.text(`INR ${item.m.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 360, tableY + 4, { width: 90, align: 'right' });
+                doc.text(`INR ${item.a.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 460, tableY + 4, { width: 90, align: 'right' });
+                tableY += 15;
+            });
+
+            // Total Row
+            doc.rect(36, tableY, 522, 16).fill(highlightColor);
+            doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a');
+            doc.text(totalLabel, 65, tableY + 4);
+            doc.text(`INR ${totalMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 360, tableY + 4, { width: 90, align: 'right' });
+            doc.text(`INR ${totalAnnual.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 460, tableY + 4, { width: 90, align: 'right' });
+            tableY += 16;
+
+            doc.rect(36, tableY - (items.length * 15 + 32), 522, items.length * 15 + 32).strokeColor('#cbd5e1').lineWidth(0.6).stroke();
+            tableY += 8;
+        };
+
+        // 1. Earnings Table
+        const earnings = [
+            { name: 'Basic Salary + Dearness Allowance (DA)', m: basicMonthly, a: basicMonthly * 12 },
+            { name: 'House Rent Allowance (HRA) [40% of Basic]', m: hraMonthly, a: hraMonthly * 12 },
+            { name: 'Incentive Allowance (Fixed)', m: incentiveMonthly, a: incentiveMonthly * 12 },
+            { name: 'Special Allowance (Balance Amount)', m: specialMonthly, a: specialMonthly * 12 },
+            { name: 'Other Allowance', m: otherMonthly, a: otherMonthly * 12 }
+        ];
+        drawTable('1. Salary Components & Gross Earnings', '#0369a1', earnings, 'Gross Salary', grossMonthly, grossMonthly * 12, true, '#e0f2fe');
+
+        // 2. Employer Benefits Table
+        const benefits = [
+            { name: 'Employer PF Contribution (Statutory 12% on INR 15,000 cap)', m: empPfMonthly, a: empPfMonthly * 12 },
+            { name: 'Employer ESIC Contribution (3.25% of statutory wage ceiling)', m: empEsicMonthly, a: empEsicMonthly * 12 },
+            { name: 'Gratuity (5% of Basic Pay as per Act)', m: gratuityMonthly, a: gratuityMonthly * 12 },
+            { name: 'Health Insurance / Other Benefits @3%', m: insuranceMonthly, a: insuranceMonthly * 12 }
+        ];
+        drawTable('2. Employer Contribution / Benefits', '#0f766e', benefits, 'Total Employer Contribution / Benefits', totalBenefitsMonthly, totalBenefitsMonthly * 12, false, '#ccfbf1');
+
+        // CTC Highlight Banner
+        doc.rect(36, tableY, 522, 18).fill('#1e293b');
+        doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#ffffff').text('TOTAL COST TO COMPANY (CTC = Gross + Employer Benefits)', 44, tableY + 5);
+        doc.text(`INR ${totalCtcMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 360, tableY + 5, { width: 90, align: 'right' });
+        doc.text(`INR ${(totalCtcMonthly * 12).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 460, tableY + 5, { width: 90, align: 'right' });
+        tableY += 26;
+
+        // 3. Employee Deductions Table
+        const deductions = [
+            { name: 'Employee PF Contribution (Statutory 12% on INR 15,000 cap)', m: eePfMonthly, a: eePfMonthly * 12 },
+            { name: 'Employee ESIC Contribution (0.75% of statutory wage ceiling)', m: eeEsicMonthly, a: eeEsicMonthly * 12 },
+            { name: 'Professional Tax (PT)', m: ptMonthly, a: ptMonthly * 12 },
+            { name: 'Other Deduction', m: otherDeduction, a: otherDeduction * 12 }
+        ];
+        drawTable('3. Employee Statutory Deductions', '#b91c1c', deductions, 'Total Statutory Deductions', totalDeductionsMonthly, totalDeductionsMonthly * 12, false, '#fee2e2');
+
+        // Net Take Home Banner
+        doc.rect(36, tableY, 522, 20).fill('#047857');
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff').text('NET TAKE HOME SALARY (Monthly In-Hand Credit)', 44, tableY + 5.5);
+        doc.text(`INR ${netTakeHomeMonthly.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 360, tableY + 5.5, { width: 90, align: 'right' });
+        doc.text(`INR ${(netTakeHomeMonthly * 12).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 460, tableY + 5.5, { width: 90, align: 'right' });
+        tableY += 28;
+
+        // Bank Account Details Box
+        doc.rect(36, tableY, 522, 34).fill('#f1f5f9');
+        doc.rect(36, tableY, 522, 34).strokeColor('#cbd5e1').lineWidth(0.6).stroke();
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#1e293b').text('Salary Disbursement Account:', 44, tableY + 5);
+        doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
+        const bankStr = `Bank: ${employee.bank_name || 'Axis Bank'}  |  Account No: ${employee.account_number || '925010008015931'}  |  IFSC: ${employee.ifsc_code || 'UTIB0000446'}  |  PAN: ${employee.pan_number || 'FRQPR8238R'}  |  UAN: ${employee.uan_number || '102196844691'}`;
+        doc.text(bankStr, 44, tableY + 16, { width: 506 });
+        tableY += 42;
+
+        // Signatures Block
+        const sigY = tableY;
+        if (fs.existsSync(digitalSignPath)) {
+            doc.image(digitalSignPath, 44, sigY, { width: 110 });
+        }
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a').text('For NKD POWER SOLUTIONS PVT LTD', 44, sigY + 36);
+        doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('Authorized Signatory / HR Department', 44, sigY + 48);
+
+        doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a').text('Employee Acceptance', 360, sigY + 36);
+        doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('I accept the above salary structure & terms.', 360, sigY + 48);
+        doc.text('Signature: ___________________________', 360, sigY + 62);
+
+        // Footer
+        doc.fontSize(7).font('Helvetica-Oblique').fillColor('#94a3b8').text(
+            'Official Compensation Annexure issued by NKD Power Solutions Pvt Ltd • NKD CRM',
+            36,
+            806,
+            { align: 'center', width: 522 }
+        );
+    }
+
     getMonthName(monthIndex) {
         const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         return months[(parseInt(monthIndex, 10) || 1) - 1] || 'Unknown';

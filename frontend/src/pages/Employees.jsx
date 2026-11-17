@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText, ShieldCheck, FileCheck } from 'lucide-react';
+import { Plus, User, Edit, Trash, Eye, UploadCloud, FileText, ShieldCheck, FileCheck, IndianRupee } from 'lucide-react';
 import EmployeeForm from '../components/forms/EmployeeForm';
 import api, { extractApiError, getFileUrl } from '../services/api';
 import employeeService from '../services/employeeService';
@@ -333,6 +333,14 @@ const Employees = () => {
                                             >
                                                 <FileCheck size={15} />
                                             </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => employeeService.downloadSalaryStructure(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                className="p-1.5 text-slate-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg border border-slate-200"
+                                                title="Download Official Salary Structure & CTC Annexure"
+                                            >
+                                                <IndianRupee size={15} />
+                                            </button>
                                             {canUpdate && (
                                                 <button
                                                     onClick={() => handleEdit(emp)}
@@ -451,6 +459,14 @@ const Employees = () => {
                                                         title="Download Official Staff Joining Letter (10 Terms + HR Signature)"
                                                     >
                                                         <FileCheck size={16} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => employeeService.downloadSalaryStructure(emp.employee_id || emp.employee_code, emp.employee_code)}
+                                                        className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors btn-press"
+                                                        title="Download Official Salary Structure & CTC Annexure"
+                                                    >
+                                                        <IndianRupee size={16} />
                                                     </button>
                                                     {canUpdate && (
                                                         <button

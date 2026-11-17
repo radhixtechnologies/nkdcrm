@@ -537,6 +537,31 @@ router.get('/employees/:id/staff-joining-letter', async (req, res, next) => {
     }
 });
 
+// Official Salary Breakup Structure & CTC Annexure PDF
+router.get('/employees/:id/salary-structure-pdf', async (req, res, next) => {
+    try {
+        const id = req.params.id;
+        let employee = await employeeService.getEmployeeById(id);
+        if (!employee) {
+            employee = await employeeService.getEmployeeByCode(id);
+        }
+        if (!employee) {
+            return res.status(404).json({ success: false, message: 'Worker / Employee not found' });
+        }
+
+        const hasDirView = await checkUserPermission(req.user, 'EMPLOYEES', 'can_view');
+        const reqEmp = await getRequesterEmployee(req.user);
+        const isSelf = reqEmp && Number(reqEmp.employee_id) === Number(employee.employee_id);
+        if (!hasDirView && !isSelf) {
+            return res.status(403).json({ success: false, message: 'Access denied: missing EMPLOYEES.can_view permission' });
+        }
+
+        await pdfService.generateSalaryStructurePdf(employee, res);
+    } catch (error) {
+        return sendError(next, error);
+    }
+});
+
 // IT Asset Handover Form (Internal Use Only) for Employees
 router.get('/employees/:id/asset-handover-form', async (req, res, next) => {
     try {

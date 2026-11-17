@@ -72,6 +72,22 @@ const employeeService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+    },
+    getSalaryStructureUrl: (id) => {
+        const token = localStorage.getItem('token');
+        return `${getApiBaseUrl()}/employees/${id}/salary-structure-pdf?token=${encodeURIComponent(token || '')}`;
+    },
+    downloadSalaryStructure: async (id, empCode = 'EMP') => {
+        const res = await api.get(`/employees/${id}/salary-structure-pdf`, { responseType: 'blob' });
+        const blob = new Blob([res.data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Salary_Structure_${empCode}.pdf`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 
