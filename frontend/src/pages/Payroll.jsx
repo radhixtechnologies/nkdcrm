@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import payrollService from '../services/payrollService';
+import siteService from '../services/siteService';
 import { extractApiError } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import WorkflowFlowchart from '../components/charts/WorkflowFlowchart';
@@ -32,6 +33,8 @@ const Payroll = () => {
     const [month, setMonth] = useState(new Date().getMonth()); // 0-indexed for UI logic
     const [payrollList, setPayrollList] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
+    const [sites, setSites] = useState([]);
+    const [selectedSite, setSelectedSite] = useState('');
 
     // Employee State
     const [myHistory, setMyHistory] = useState([]);
@@ -47,6 +50,15 @@ const Payroll = () => {
         "July", "August", "September", "October", "November", "December"
     ];
 
+    // Load available sites for admin filter
+    useEffect(() => {
+        if (!isEmployee) {
+            siteService.getAllSites()
+                .then(res => setSites(res.data?.data || []))
+                .catch(err => console.error('Failed to load sites:', err));
+        }
+    }, [isEmployee]);
+
     // Fetch Data Logic
     const loadData = useCallback(async () => {
         setLoading(true);
@@ -55,7 +67,7 @@ const Payroll = () => {
                 const res = await payrollService.getMyPayrollHistory(year);
                 setMyHistory(res.data?.data || []);
             } else {
-                const res = await payrollService.getPayrollList(month + 1, year);
+                const res = await payrollService.getPayrollList(month + 1, year, selectedSite || null);
                 setPayrollList(res.data?.data || []);
                 setSelectedRows([]);
             }
@@ -65,7 +77,7 @@ const Payroll = () => {
         } finally {
             setLoading(false);
         }
-    }, [isEmployee, month, year]);
+    }, [isEmployee, month, year, selectedSite]);
 
     useEffect(() => {
         loadData();
@@ -288,6 +300,17 @@ const Payroll = () => {
                         ))}
                     </select>
 
+                    <select
+                        value={selectedSite}
+                        onChange={(e) => setSelectedSite(e.target.value)}
+                        className="bg-slate-50 font-semibold text-slate-700 outline-none cursor-pointer text-xs rounded-xl px-3 py-2 border border-slate-200 hover:border-slate-300 transition-colors"
+                    >
+                        <option value="">All Sites</option>
+                        {sites.map(s => (
+                            <option key={s.site_id} value={s.site_id}>{s.site_name}</option>
+                        ))}
+                    </select>
+
                     {canGenerate && (
                         <button
                             onClick={handleGenerate}
@@ -300,21 +323,21 @@ const Payroll = () => {
                     {canExport && (
                         <>
                             <button
-                                onClick={() => payrollService.downloadExcel(month + 1, year)}
+                                onClick={() => payrollService.downloadExcel(month + 1, year, selectedSite || null)}
                                 className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs btn-press"
                                 title="Export Standard Payroll Summary"
                             >
                                 <Download size={13} /> Summary
                             </button>
                             <button
-                                onClick={() => payrollService.downloadClientWageSheet(month + 1, year)}
+                                onClick={() => payrollService.downloadClientWageSheet(month + 1, year, selectedSite || null)}
                                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-indigo-500/20 btn-press"
-                                title="Export Client Wage Register (Form XVII / NTPC Korba Format)"
+                                title="Export Client Wage Register (Form XVII / Client Format)"
                             >
                                 <FileText size={13} /> Client Wage Sheet (Form XVII)
                             </button>
                             <button
-                                onClick={() => payrollService.downloadBankNeft(month + 1, year)}
+                                onClick={() => payrollService.downloadBankNeft(month + 1, year, selectedSite || null)}
                                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:shadow-emerald-500/20 btn-press"
                                 title="Export Bank NEFT Disbursal Sheet"
                             >
@@ -391,7 +414,7 @@ const Payroll = () => {
                                             )}
                                             <div className="min-w-0">
                                                 <div className="font-bold text-slate-900 text-sm truncate">{row.full_name}</div>
-                                                <div className="text-xs text-slate-500 truncate">{row.employee_code} • {row.designation || 'Staff'}</div>
+                                                <div className="text-xs text-slate-500 truncate flex items-center gap-1.5">{row.employee_code} • {row.designation || 'Staff'} {row.site_name && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">{row.site_name}</span>}</div>
                                             </div>
                                         </div>
                                         <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0
@@ -476,7 +499,7 @@ const Payroll = () => {
                                             )}
                                             <td className="px-4 py-3">
                                                 <div className="font-medium text-slate-900">{row.full_name}</div>
-                                                <div className="text-xs text-slate-500">{row.employee_code} • {row.designation}</div>
+                                                <div className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">{row.employee_code} • {row.designation} {row.site_name && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">{row.site_name}</span>}</div>
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono text-slate-600">
                                                 ₹ {fmtINR(row.basic_earned)}

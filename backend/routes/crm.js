@@ -1094,7 +1094,8 @@ router.get('/payroll/list', requireAnyPermission('PAYROLL.can_create', 'PAYROLL.
     try {
         const month = parseInt(req.query.month, 10);
         const year = parseInt(req.query.year, 10);
-        const list = await payrollService.getPayrollByPeriod(month, year);
+        const siteId = req.query.site_id ? parseInt(req.query.site_id, 10) : null;
+        const list = await payrollService.getPayrollByPeriod(month, year, siteId);
         return sendData(res, list);
     } catch (error) { return sendError(next, error); }
 });

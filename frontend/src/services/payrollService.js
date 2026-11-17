@@ -6,7 +6,11 @@ const payrollService = {
     generatePayroll: (month, year) => api.post('/payroll/generate', { month, year }),
 
     // Get Payroll List
-    getPayrollList: (month, year) => api.get(`/payroll/list?month=${month}&year=${year}`),
+    getPayrollList: (month, year, siteId = null) => {
+        let url = `/payroll/list?month=${month}&year=${year}`;
+        if (siteId) url += `&site_id=${siteId}`;
+        return api.get(url);
+    },
 
     // Finalize Payroll
     finalizePayroll: (payrollIds) => api.post('/payroll/finalize', { payroll_ids: payrollIds }),
@@ -26,13 +30,15 @@ const payrollService = {
         }
         window.open(`${getApiBaseUrl()}/payroll/payslip/${id}/pdf?token=${encodeURIComponent(token)}`, '_blank', 'noopener,noreferrer');
     },
-    downloadExcel: (month, year) => {
+    downloadExcel: (month, year, siteId = null) => {
         const token = localStorage.getItem('token');
         if (!token) {
             toast.error('Please sign in again to export payroll');
             return;
         }
-        window.open(`${getApiBaseUrl()}/payroll/export/excel?month=${month}&year=${year}&token=${encodeURIComponent(token)}`, '_blank', 'noopener,noreferrer');
+        let url = `${getApiBaseUrl()}/payroll/export/excel?month=${month}&year=${year}&token=${encodeURIComponent(token)}`;
+        if (siteId) url += `&site_id=${siteId}`;
+        window.open(url, '_blank', 'noopener,noreferrer');
     },
     downloadClientWageSheet: (month, year, siteId = null) => {
         const token = localStorage.getItem('token');
