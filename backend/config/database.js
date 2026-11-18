@@ -76,7 +76,7 @@ const poolConfig = finalConnectionString
       port: process.env.DB_PORT || 5432,
       database: process.env.DB_NAME || 'NKD_CRM',
       user: process.env.DB_USER || 'postgres',
-      password: () => String(process.env.DB_PASSWORD ?? ''),
+      password: String(process.env.DB_PASSWORD ?? ''),
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
       max: 20,
       idleTimeoutMillis: 30000,
