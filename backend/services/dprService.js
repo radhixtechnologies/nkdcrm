@@ -737,21 +737,26 @@ class DprService {
     /**
      * Generate official printable PDF for DPR matching the exact GTPL / LUMINA reference sheet
      */
+    /**
+     * Generate PDF export matching the exact 2-page Adobe Acrobat Google Sheet layout shared by client
+     */
     async generateDprPdf(dpr, res) {
-        const doc = new PDFDocument({ margin: 20, size: 'A4', layout: 'landscape', bufferPages: true });
+        const doc = new PDFDocument({ margin: 24, size: 'A4', layout: 'landscape', bufferPages: true });
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="DPR-${String(dpr.report_no || dpr.dpr_id).replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+        if (typeof res.setHeader === 'function') {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `inline; filename="DPR-${String(dpr.report_no || dpr.dpr_id).replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
+        }
         doc.pipe(res);
 
-        const W = 801.89; // total usable width across 841.89
-        const leftW = 430;
-        const rightW = W - leftW; // 371.89
+        const W = 794; // Total usable width on A4 landscape with 24pt margins
+        const leftW = 425;
+        const rightW = W - leftW; // 369
 
         const drawCell = (x, y, w, h, text, options = {}) => {
             const {
                 bold = false,
-                size = 8,
+                size = 7.5,
                 align = 'left',
                 valign = 'middle',
                 fill = null,
@@ -772,7 +777,7 @@ class DprService {
             if (text !== undefined && text !== null && String(text).trim() !== '') {
                 doc.fillColor(textColor).font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
                 const str = String(text);
-                const textY = valign === 'middle' ? y + (h - size) / 2 - 1 : y + padY;
+                const textY = valign === 'middle' ? y + (h - size) / 2 - 0.5 : y + padY;
                 doc.text(str, x + padX, textY, {
                     width: w - padX * 2,
                     height: h - padY * 2,
@@ -784,19 +789,31 @@ class DprService {
         };
 
         const tryEmbedImage = (photoUrl, x, y, maxW, maxH) => {
-            if (!photoUrl) return false;
-            const candidates = [
-                path.resolve(__dirname, '..', photoUrl.replace(/^\//, '')),
-                path.resolve(__dirname, '../../', photoUrl.replace(/^\//, '')),
-                path.resolve(__dirname, '../../uploads', path.basename(photoUrl)),
-                path.resolve(__dirname, '../uploads', path.basename(photoUrl)),
-                path.resolve(process.cwd(), photoUrl.replace(/^\//, '')),
-                path.resolve(process.cwd(), 'backend', photoUrl.replace(/^\//, '')),
-                path.resolve(process.cwd(), 'backend', 'uploads', path.basename(photoUrl)),
-                path.resolve(process.cwd(), 'backend', 'public', photoUrl.replace(/^\//, ''))
-            ];
-            for (const cand of candidates) {
-                try {
+            if (!photoUrl || typeof photoUrl !== 'string') return false;
+            try {
+                if (photoUrl.startsWith('data:image/')) {
+                    const base64Data = photoUrl.replace(/^data:image\/\w+;base64,/, '');
+                    const imgBuffer = Buffer.from(base64Data, 'base64');
+                    doc.image(imgBuffer, x, y, {
+                        fit: [maxW, maxH],
+                        align: 'center',
+                        valign: 'center'
+                    });
+                    return true;
+                }
+
+                const cleanPath = photoUrl.replace(/^\//, '');
+                const candidates = [
+                    path.resolve(__dirname, '..', cleanPath),
+                    path.resolve(__dirname, '../../', cleanPath),
+                    path.resolve(__dirname, '../../uploads', path.basename(photoUrl)),
+                    path.resolve(__dirname, '../uploads', path.basename(photoUrl)),
+                    path.resolve(process.cwd(), cleanPath),
+                    path.resolve(process.cwd(), 'backend', cleanPath),
+                    path.resolve(process.cwd(), 'backend', 'uploads', path.basename(photoUrl)),
+                    path.resolve(process.cwd(), 'backend', 'public', cleanPath)
+                ];
+                for (const cand of candidates) {
                     if (fs.existsSync(cand) && !cand.endsWith('.svg')) {
                         doc.image(cand, x, y, {
                             fit: [maxW, maxH],
@@ -805,26 +822,36 @@ class DprService {
                         });
                         return true;
                     }
-                } catch (_) {}
+                }
+            } catch (err) {
+                console.error('PDF image embed error:', err.message);
             }
             return false;
         };
 
+        const getPhotoUrl = (idx) => {
+            if (!Array.isArray(dpr.photos)) return null;
+            const item = dpr.photos[idx];
+            if (!item) return null;
+            if (typeof item === 'string') return item;
+            return item.url || item.path || null;
+        };
+
         // ==========================================
-        // PAGE 1: Master Info, Activities & Showstoppers
+        // PAGE 1: Title, Metadata, 13 Activities, Showstoppers 1-7
         // ==========================================
-        let curY = 20;
+        let curY = 24;
 
         // 1. Title Banner (Matching Client Reference)
         const siteTitle = dpr.site_name || 'GTPL LUMINA';
         const locTitle = dpr.city || dpr.location || 'AIROLI , MUMBAI';
         const contractorTitle = dpr.contractor_name || 'NKD POWER SOLUTIONS PVT LTD';
-        const reportDateTitle = formatDisplayDate(dpr.report_date || getIstToday());
+        const reportDateTitle = formatDisplayDate(dpr.report_date || getIstToday()) || '23-10-2026';
         const titleText = `Daily Site Progress Report - ${siteTitle}, ${locTitle} - ${contractorTitle} - Date: ${reportDateTitle}`;
-        drawCell(20, curY, W, 22, titleText, { bold: true, size: 9.5, align: 'center', fill: '#f8fafc' });
+        drawCell(24, curY, W, 22, titleText, { bold: true, size: 8.5, align: 'center', fill: '#ffffff' });
         curY += 22;
 
-        // 2. Project Metadata Grid (5 rows matching client excel sheet)
+        // 2. Metadata Grid (5 rows matching client excel sheet)
         const metaRowH = 13.5;
         const formattedPoVal = dpr.po_value ? Number(dpr.po_value).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '48,374,200.00';
         const formattedBillingVal = dpr.current_billing_value && Number(dpr.current_billing_value) > 0
@@ -832,61 +859,43 @@ class DprService {
             : '  -   ';
 
         const metaRows = [
-            {
-                l1: 'Report No', v1: dpr.report_no || 'GTPL LUMINA/124',
-                l2: 'PO Value in INR Cr.:', v2: formattedPoVal, alignRight: true
-            },
-            {
-                l1: 'End Client Name:', v1: dpr.client_name || 'LUMINA',
-                l2: 'Current Billing Value in INR Cr.:', v2: formattedBillingVal, alignRight: true
-            },
-            {
-                l1: 'PO No. | Date:', v1: dpr.po_number || '600190',
-                l2: 'Billing Progress:', v2: `${dpr.billing_progress_pct || 0}%`, alignRight: true
-            },
-            {
-                l1: 'Start Date:', v1: formatDisplayDate(dpr.start_date) || '16-Apr-26',
-                l2: "Week's Manpower Rate:", v2: dpr.weeks_manpower_rate || '', alignRight: false
-            },
-            {
-                l1: 'Completion Date:', v1: formatDisplayDate(dpr.completion_date) || '24-Jul-26',
-                l2: '', v2: '', alignRight: false
-            }
+            { l1: 'Report No', v1: dpr.report_no || 'GTPL LUMINA/124', l2: 'PO Value in INR Cr.:', v2: formattedPoVal, alignRight: true },
+            { l1: 'End Client Name:', v1: dpr.client_name || 'LUMINA', l2: 'Current Billing Value in INR Cr.:', v2: formattedBillingVal, alignRight: true },
+            { l1: 'PO No. | Date:', v1: dpr.po_number || '600190', l2: 'Billing Progress:', v2: `${dpr.billing_progress_pct || 0}%`, alignRight: true },
+            { l1: 'Start Date:', v1: formatDisplayDate(dpr.start_date) || '16-Apr-26', l2: "Week's Manpower Rate:", v2: dpr.weeks_manpower_rate || '', alignRight: false },
+            { l1: 'Completion Date:', v1: formatDisplayDate(dpr.completion_date) || '24-Jul-26', l2: '', v2: '', alignRight: false }
         ];
 
         metaRows.forEach((row) => {
-            // Left Block: Label (110pt) | Value (320pt)
-            drawCell(20, curY, 110, metaRowH, row.l1, { bold: true, size: 7.5 });
-            drawCell(130, curY, 320, metaRowH, row.v1, { size: 7.5, bold: row.l1 === 'Report No' });
-
-            // Right Block: Label (180pt) | Value (191.89pt)
-            drawCell(450, curY, 180, metaRowH, row.l2, { bold: true, size: 7.5 });
-            drawCell(630, curY, rightW - 180, metaRowH, row.v2, { size: 7.5, align: row.alignRight ? 'right' : 'left' });
+            drawCell(24, curY, 110, metaRowH, row.l1, { bold: true, size: 7 });
+            drawCell(134, curY, 315, metaRowH, row.v1, { size: 7, bold: row.l1 === 'Report No' });
+            drawCell(449, curY, 180, metaRowH, row.l2, { bold: true, size: 7 });
+            drawCell(629, curY, rightW - 180, metaRowH, row.v2, { size: 7, align: row.alignRight ? 'right' : 'left' });
             curY += metaRowH;
         });
 
-        curY += 6;
-
-        // 3. Activity Section Header Bar (Peach Left, Sky Blue Right)
-        drawCell(20, curY, leftW, 18, 'Today Activity Status', { bold: true, size: 8.5, align: 'center', fill: '#fce5cd' });
-        drawCell(450, curY, rightW, 18, 'Activity Planned for Next Day', { bold: true, size: 8.5, align: 'center', fill: '#d9e1f2' });
+        // 3. Activity Section Header Bar (Peach Left, White Right)
+        drawCell(24, curY, leftW, 18, 'Today Activity Status', { bold: true, size: 8, align: 'center', fill: '#fce5cd' });
+        drawCell(449, curY, rightW, 18, 'Activity Planned for Next Day', { bold: true, size: 8, align: 'center', fill: '#ffffff' });
         curY += 18;
 
         // Subheaders
         const subH = 22;
-        // Left: S. No. (26) | Planned (224) | Status (60) | Responsible (48) | Photo Ref (72)
-        drawCell(20, curY, 26, subH, 'S. No.', { bold: true, size: 7, align: 'center' });
-        drawCell(46, curY, 224, subH, 'Planned', { bold: true, size: 7, align: 'center' });
-        drawCell(270, curY, 60, subH, 'Completion Status', { bold: true, size: 6.5, align: 'center' });
-        drawCell(330, curY, 48, subH, 'Dependencies Responsible', { bold: true, size: 6.5, align: 'center' });
-        drawCell(378, curY, 72, subH, 'Photo Reference', { bold: true, size: 6.5, align: 'center' });
+        drawCell(24, curY, 26, subH, 'S. No.', { bold: true, size: 6.5, align: 'center' });
+        drawCell(50, curY, 234, subH, 'Planned', { bold: true, size: 7, align: 'center' });
+        drawCell(284, curY, 50, subH, 'Completion Status', { bold: true, size: 6, align: 'center' });
 
-        // Right: S. No. (26) | Planned in this & next week (345.89)
-        drawCell(450, curY, 26, subH, 'S. No.', { bold: true, size: 7, align: 'center' });
-        drawCell(476, curY, rightW - 26, subH, 'Planned in this & next week (including carry forward if any)', { bold: true, size: 7, align: 'center' });
+        // Dependencies Header
+        drawCell(334, curY, 115, 11, 'Dependencies', { bold: true, size: 6, align: 'center' });
+        drawCell(334, curY + 11, 50, 11, 'Responsible', { bold: true, size: 6, align: 'center' });
+        drawCell(384, curY + 11, 65, 11, 'Photo Reference', { bold: true, size: 6, align: 'center' });
+
+        // Right Subheaders
+        drawCell(449, curY, 26, subH, 'S. No.', { bold: true, size: 6.5, align: 'center' });
+        drawCell(475, curY, rightW - 26, subH, 'Planned in this & next week (including carry forward if any)', { bold: true, size: 7, align: 'center' });
         curY += subH;
 
-        // Exact 13 Rows of Activities (Matching Client Reference)
+        // 13 Activity Rows
         const actRowH = 14.5;
         const todayActs = Array.isArray(dpr.today_activities) ? dpr.today_activities : [];
         const nextActs = Array.isArray(dpr.next_day_activities) ? dpr.next_day_activities : [];
@@ -896,79 +905,86 @@ class DprService {
             const n = nextActs[i - 1];
 
             // Left cols
-            drawCell(20, curY, 26, actRowH, String(i), { size: 7, align: 'center' });
-            drawCell(46, curY, 224, actRowH, t?.description || '', { size: 7 });
-            drawCell(270, curY, 60, actRowH, t?.status || '', { size: 6.5, align: 'center' });
-            drawCell(330, curY, 48, actRowH, t?.dependencies || '', { size: 6.5, align: 'center' });
-            drawCell(378, curY, 72, actRowH, t?.photo_ref || '', { size: 6.5, align: 'center' });
+            drawCell(24, curY, 26, actRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(50, curY, 234, actRowH, t?.description || '', { size: 6.8 });
+            drawCell(284, curY, 50, actRowH, t?.status || '', { size: 6.5, align: 'center' });
+            drawCell(334, curY, 50, actRowH, t?.dependencies || '', { size: 6.5, align: 'center' });
+            drawCell(384, curY, 65, actRowH, t?.photo_ref || '', { size: 6.5, align: 'center' });
 
             // Right cols
-            drawCell(450, curY, 26, actRowH, String(i), { size: 7, align: 'center' });
-            drawCell(476, curY, rightW - 26, actRowH, n?.description || '', { size: 7 });
+            drawCell(449, curY, 26, actRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(475, curY, rightW - 26, actRowH, n?.description || '', { size: 6.8 });
 
             curY += actRowH;
         }
 
-        curY += 6;
-
-        // 4. Show Stoppers Section
-        drawCell(20, curY, leftW, 16, '', { fill: '#ffffff', stroke: false });
-        drawCell(450, curY, rightW, 16, 'Show Stoppers (since nos. of weeks)', { bold: true, size: 8, align: 'center', fill: '#d9e1f2' });
+        // 4. Show Stoppers Section on Page 1
+        drawCell(24, curY, leftW, 16, '', { fill: '#ffffff', stroke: true });
+        drawCell(449, curY, rightW, 16, 'Show Stoppers (since nos. of weeks)', { bold: true, size: 7.5, align: 'center', fill: '#cfe2f3' });
         curY += 16;
 
-        // Show Stoppers Subheaders
+        // Subheaders
         const stopSubH = 16;
-        drawCell(20, curY, 26, stopSubH, 'S. No.', { bold: true, size: 7, align: 'center' });
-        drawCell(46, curY, 274, stopSubH, 'Concern Areas', { bold: true, size: 7, align: 'center' });
-        drawCell(320, curY, 130, stopSubH, '1st Intimation Date', { bold: true, size: 7, align: 'center' });
+        drawCell(24, curY, 26, stopSubH, 'S. No.', { bold: true, size: 6.5, align: 'center' });
+        drawCell(50, curY, 284, stopSubH, 'Concern Areas', { bold: true, size: 7, align: 'center' });
+        drawCell(334, curY, 115, stopSubH, '1st Intimation Date', { bold: true, size: 6.5, align: 'center' });
 
-        drawCell(450, curY, 26, stopSubH, 'S. No.', { bold: true, size: 7, align: 'center' });
-        drawCell(476, curY, rightW - 26, stopSubH, 'Concern Areas', { bold: true, size: 7, align: 'center' });
+        drawCell(449, curY, 26, stopSubH, 'S. No.', { bold: true, size: 6.5, align: 'center' });
+        drawCell(475, curY, rightW - 26, stopSubH, 'Concern Areas', { bold: true, size: 7, align: 'center' });
         curY += stopSubH;
 
-        const stopRowH = 13.5;
+        const stopRowH = 14;
         const stoppers = Array.isArray(dpr.show_stoppers) ? dpr.show_stoppers : [];
 
-        for (let i = 1; i <= 9; i++) {
-            const sLeft = stoppers[i - 1];
-            drawCell(20, curY, 26, stopRowH, String(i), { size: 7, align: 'center' });
-            drawCell(46, curY, 274, stopRowH, sLeft?.concern_area || '', { size: 7 });
-            drawCell(320, curY, 130, stopRowH, sLeft?.intimation_date ? formatDisplayDate(sLeft.intimation_date) : '', { size: 7, align: 'center' });
+        // Rows 1 to 7 on Page 1 (Matching Adobe Acrobat Screenshot 1!)
+        for (let i = 1; i <= 7; i++) {
+            const s = stoppers[i - 1];
+            drawCell(24, curY, 26, stopRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(50, curY, 284, stopRowH, s?.concern_area || '', { size: 6.8 });
+            drawCell(334, curY, 115, stopRowH, s?.intimation_date ? formatDisplayDate(s.intimation_date) : '', { size: 6.5, align: 'center' });
 
-            drawCell(450, curY, 26, stopRowH, String(i), { size: 7, align: 'center' });
-            drawCell(476, curY, rightW - 26, stopRowH, '', { size: 7 });
+            drawCell(449, curY, 26, stopRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(475, curY, rightW - 26, stopRowH, '', { size: 6.8 });
+
+            curY += stopRowH;
+        }
+
+        // ==========================================
+        // PAGE 2: Showstoppers 8-10, Gray Bar, Manpower + Photo 1, Photos 2-7
+        // ==========================================
+        doc.addPage();
+        curY = 24;
+
+        // Rows 8 and 9 of Show Stoppers (Matching Adobe Acrobat Screenshot 2!)
+        for (let i = 8; i <= 9; i++) {
+            const s = stoppers[i - 1];
+            drawCell(24, curY, 26, stopRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(50, curY, 284, stopRowH, s?.concern_area || '', { size: 6.8 });
+            drawCell(334, curY, 115, stopRowH, s?.intimation_date ? formatDisplayDate(s.intimation_date) : '', { size: 6.5, align: 'center' });
+
+            drawCell(449, curY, 26, stopRowH, String(i), { size: 6.5, align: 'center' });
+            drawCell(475, curY, rightW - 26, stopRowH, '', { size: 6.8 });
 
             curY += stopRowH;
         }
 
         // Row 10 on right side
-        drawCell(450, curY, 26, stopRowH, '10', { size: 7, align: 'center' });
-        drawCell(476, curY, rightW - 26, stopRowH, '', { size: 7 });
+        drawCell(24, curY, leftW, stopRowH, '', { fill: '#ffffff', stroke: true });
+        drawCell(449, curY, 26, stopRowH, '10', { size: 6.5, align: 'center' });
+        drawCell(475, curY, rightW - 26, stopRowH, '', { size: 6.8 });
+        curY += stopRowH;
 
-        // Page 1 Footer
-        doc.fillColor('#64748b').font('Helvetica').fontSize(7.5)
-            .text('NKD POWER SOLUTIONS PVT LTD • Daily Site Progress Report • Form GTPL-LUMINA-DPR-01', 20, 572);
-        doc.text('Page 1 of 2', 740, 572, { align: 'right', width: 80 });
+        // Gray Divider Bar (Matching Adobe Acrobat Screenshot 2!)
+        doc.rect(24, curY, W, 10).fill('#94a3b8').stroke('#000000');
+        curY += 10;
 
-        // ==========================================
-        // PAGE 2: Manpower Table & Photo Grid (1 to 7)
-        // ==========================================
-        doc.addPage();
-        curY = 20;
-
-        // Page 2 Header Banner
-        drawCell(20, curY, W, 20, `Daily Site Progress Report - ${siteTitle} - Manpower Deployment & Site Photo Evidence`, {
-            bold: true, size: 9, align: 'center', fill: '#f8fafc'
-        });
-        curY += 24;
-
-        // Manpower Table on Left (Width: 430pt)
+        // Daily Progress for Manpower Header & Table
         const mpHeaderY = curY;
         const mpSubH = 16;
-        drawCell(20, curY, 26, mpSubH, 'S. No.', { bold: true, size: 7, align: 'center' });
-        drawCell(46, curY, 254, mpSubH, 'Daily Progress for Manpower (Type & Count)', { bold: true, size: 7.5 });
-        drawCell(300, curY, 65, mpSubH, 'Required', { bold: true, size: 7.5, align: 'center' });
-        drawCell(365, curY, 85, mpSubH, 'Available', { bold: true, size: 7.5, align: 'center' });
+        drawCell(24, curY, 26, mpSubH, 'S. No.', { bold: true, size: 6.5, align: 'center' });
+        drawCell(50, curY, 254, mpSubH, 'Daily Progress for Manpower (Type & Count)', { bold: true, size: 7 });
+        drawCell(304, curY, 60, mpSubH, 'Required', { bold: true, size: 7, align: 'center' });
+        drawCell(364, curY, 85, mpSubH, 'Available', { bold: true, size: 7, align: 'center' });
         curY += mpSubH;
 
         const defaultTrades = [
@@ -985,7 +1001,7 @@ class DprService {
             { trade: 'Site Manager', defaultAvail: 1 }
         ];
 
-        const mpRowH = 14;
+        const mpRowH = 13.5;
         let totalAvail = 0;
         let totalReq = 0;
 
@@ -996,111 +1012,130 @@ class DprService {
             totalAvail += (Number(avail) || 0);
             if (Number(req)) totalReq += Number(req);
 
-            drawCell(20, curY, 26, mpRowH, String(idx + 1), { size: 7, align: 'center' });
-            drawCell(46, curY, 254, mpRowH, item.trade, { size: 7.5 });
-            drawCell(300, curY, 65, mpRowH, String(req), { size: 7.5, align: 'center' });
-            drawCell(365, curY, 85, mpRowH, String(avail), { size: 7.5, align: 'center' });
+            drawCell(24, curY, 26, mpRowH, String(idx + 1), { size: 6.5, align: 'center' });
+            drawCell(50, curY, 254, mpRowH, item.trade, { size: 7 });
+            drawCell(304, curY, 60, mpRowH, String(req), { size: 7, align: 'center' });
+            drawCell(364, curY, 85, mpRowH, String(avail), { size: 7, align: 'center' });
             curY += mpRowH;
         });
 
-        // Total Row (Available cell has bright yellow background #ffff00!)
+        // Total Row with Bright Yellow Available Highlight (#ffff00!)
         const totalRowH = 16;
-        drawCell(20, curY, 26, totalRowH, '', {});
-        drawCell(46, curY, 254, totalRowH, 'Total', { bold: true, size: 8, align: 'right', padX: 10 });
-        drawCell(300, curY, 65, totalRowH, totalReq > 0 ? String(totalReq) : '', { bold: true, size: 8, align: 'center' });
-        drawCell(365, curY, 85, totalRowH, String(totalAvail), {
+        drawCell(24, curY, 26, totalRowH, '', {});
+        drawCell(50, curY, 254, totalRowH, 'Total', { bold: true, size: 7.5, align: 'right', padX: 8 });
+        drawCell(304, curY, 60, totalRowH, totalReq > 0 ? String(totalReq) : '', { bold: true, size: 7.5, align: 'center' });
+        drawCell(364, curY, 85, totalRowH, String(totalAvail), {
             bold: true,
             size: 8.5,
             align: 'center',
-            fill: '#ffff00', // EXACT BRIGHT YELLOW CELL FROM REFERENCE SCREENSHOT!
+            fill: '#ffff00', // EXACT BRIGHT YELLOW CELL MATCHING ACROBAT SCREENSHOT
             textColor: '#000000'
         });
         curY += totalRowH;
 
-        // Beside Manpower Table on Right: PHOTO : 1
-        const photo1X = 460;
-        const photo1W = W - (photo1X - 20); // 361.89 pt
-        const photo1H = curY - mpHeaderY; // exact height matching manpower table!
+        // Beside Manpower: PHOTO : 1 Box
+        const photo1X = 449;
+        const photo1W = rightW; // 369 pt
+        const photo1H = curY - mpHeaderY; // exact matching height
 
-        // Draw Photo 1 Box
         doc.lineWidth(0.5).rect(photo1X, mpHeaderY, photo1W, photo1H).stroke('#000000');
-        const photo1Obj = (dpr.photos || [])[0];
+        const p1Url = getPhotoUrl(0);
         let p1Drawn = false;
-        if (photo1Obj && photo1Obj.url) {
-            p1Drawn = tryEmbedImage(photo1Obj.url, photo1X + 4, mpHeaderY + 4, photo1W - 8, photo1H - 32);
+        if (p1Url) {
+            p1Drawn = tryEmbedImage(p1Url, photo1X + 4, mpHeaderY + 4, photo1W - 8, photo1H - 28);
         }
 
         if (!p1Drawn) {
-            doc.fillColor('#94a3b8').font('Helvetica').fontSize(14)
-                .text('#REF!', photo1X, mpHeaderY + (photo1H / 2) - 10, { width: photo1W, align: 'center' });
+            doc.fillColor('#94a3b8').font('Helvetica').fontSize(13)
+                .text('#REF!', photo1X, mpHeaderY + (photo1H / 2) - 8, { width: photo1W, align: 'center' });
         }
 
         // Photo 1 Tag at bottom left corner
-        doc.lineWidth(1).rect(photo1X + 8, mpHeaderY + photo1H - 24, 65, 16).stroke('#16a34a');
-        doc.fillColor('#15803d').font('Helvetica-Bold').fontSize(7.5)
-            .text('PHOTO : 1', photo1X + 10, mpHeaderY + photo1H - 20, { width: 61, align: 'center' });
+        doc.lineWidth(1).rect(photo1X + 8, mpHeaderY + photo1H - 22, 60, 15).stroke('#16a34a');
+        doc.fillColor('#15803d').font('Helvetica-Bold').fontSize(7)
+            .text('PHOTO : 1', photo1X + 9, mpHeaderY + photo1H - 18, { width: 58, align: 'center' });
 
-        curY += 14;
+        // Photo Grid (Photos 2 to 7) - 2 rows of 3 columns touching each other
+        const pGridRowH = 150;
+        const col1W = 264;
+        const col2W = 264;
+        const col3W = W - col1W - col2W; // 266 pt
 
-        // Photos 2 to 7 Grid (2 rows of 3 photos each)
-        const pGridRowH = 138;
-        const colPad = 12;
-        const pBoxW = (W - colPad * 2) / 3; // 258 pt each
+        // Row 1 of Photos (Photos 2, 3, 4)
+        // Photo 2
+        doc.lineWidth(0.5).rect(24, curY, col1W, pGridRowH).stroke('#000000');
+        const p2Url = getPhotoUrl(1);
+        let p2Drawn = false;
+        if (p2Url) {
+            p2Drawn = tryEmbedImage(p2Url, 24 + 4, curY + 4, col1W - 8, pGridRowH - 28);
+        }
+        if (!p2Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 2', 24, curY + (pGridRowH / 2) - 6, { width: col1W, align: 'center' });
+        }
+        doc.lineWidth(0.8).rect(24 + 8, curY + pGridRowH - 22, 56, 14).stroke('#2563eb');
+        doc.fillColor('#1d4ed8').font('Helvetica-Bold').fontSize(6.8).text('PHOTO:2', 24 + 10, curY + pGridRowH - 19, { width: 52, align: 'center' });
 
-        // Row 1: Photo 2 | Photo 3 | Photo 4
-        const row1Photos = [
-            { idx: 1, label: 'Photo 2', tag: 'PHOTO:2', x: 20 },
-            { idx: 2, label: 'Photo 3', tag: 'PHOTO:3', x: 20 + pBoxW + colPad },
-            { idx: 3, label: 'Photo 4', tag: 'PHOTO:4', x: 20 + (pBoxW + colPad) * 2 }
-        ];
+        // Photo 3
+        doc.lineWidth(0.5).rect(24 + col1W, curY, col2W, pGridRowH).stroke('#000000');
+        const p3Url = getPhotoUrl(2);
+        let p3Drawn = false;
+        if (p3Url) {
+            p3Drawn = tryEmbedImage(p3Url, 24 + col1W + 4, curY + 4, col2W - 8, pGridRowH - 28);
+        }
+        if (!p3Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 3', 24 + col1W, curY + (pGridRowH / 2) - 6, { width: col2W, align: 'center' });
+        }
+        doc.lineWidth(0.8).rect(24 + col1W + 8, curY + pGridRowH - 22, 56, 14).stroke('#2563eb');
+        doc.fillColor('#1d4ed8').font('Helvetica-Bold').fontSize(6.8).text('PHOTO:3', 24 + col1W + 10, curY + pGridRowH - 19, { width: 52, align: 'center' });
 
-        row1Photos.forEach((p) => {
-            doc.lineWidth(0.5).rect(p.x, curY, pBoxW, pGridRowH).stroke('#000000');
-            const pObj = (dpr.photos || [])[p.idx];
-            let drawn = false;
-            if (pObj && pObj.url) {
-                drawn = tryEmbedImage(pObj.url, p.x + 4, curY + 4, pBoxW - 8, pGridRowH - 30);
-            }
-            if (!drawn) {
-                doc.fillColor('#334155').font('Helvetica').fontSize(9)
-                    .text(p.label, p.x, curY + (pGridRowH / 2) - 10, { width: pBoxW, align: 'center' });
-            }
-            // Tag at bottom left
-            doc.lineWidth(0.8).rect(p.x + 8, curY + pGridRowH - 22, 58, 14).stroke('#2563eb');
-            doc.fillColor('#1d4ed8').font('Helvetica-Bold').fontSize(7)
-                .text(p.tag, p.x + 10, curY + pGridRowH - 19, { width: 54, align: 'center' });
-        });
+        // Photo 4
+        doc.lineWidth(0.5).rect(24 + col1W + col2W, curY, col3W, pGridRowH).stroke('#000000');
+        const p4Url = getPhotoUrl(3);
+        let p4Drawn = false;
+        if (p4Url) {
+            p4Drawn = tryEmbedImage(p4Url, 24 + col1W + col2W + 4, curY + 4, col3W - 8, pGridRowH - 28);
+        }
+        if (!p4Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 4', 24 + col1W + col2W, curY + (pGridRowH / 2) - 6, { width: col3W, align: 'center' });
+        }
+        doc.lineWidth(0.8).rect(24 + col1W + col2W + 8, curY + pGridRowH - 22, 56, 14).stroke('#2563eb');
+        doc.fillColor('#1d4ed8').font('Helvetica-Bold').fontSize(6.8).text('PHOTO:4', 24 + col1W + col2W + 10, curY + pGridRowH - 19, { width: 52, align: 'center' });
 
-        curY += pGridRowH + 12;
+        curY += pGridRowH;
 
-        // Row 2: Photo 5 | Photo 6 | Photo 7
-        const row2Photos = [
-            { idx: 4, label: 'Photo 5', tag: 'PHOTO:5', x: 20 },
-            { idx: 5, label: 'Photo 6', tag: 'PHOTO:6', x: 20 + pBoxW + colPad },
-            { idx: 6, label: 'Photo 7', tag: 'PHOTO:7', x: 20 + (pBoxW + colPad) * 2 }
-        ];
+        // Row 2 of Photos (Photos 5, 6, 7)
+        // Photo 5
+        doc.lineWidth(0.5).rect(24, curY, col1W, pGridRowH).stroke('#000000');
+        const p5Url = getPhotoUrl(4);
+        let p5Drawn = false;
+        if (p5Url) {
+            p5Drawn = tryEmbedImage(p5Url, 24 + 4, curY + 4, col1W - 8, pGridRowH - 12);
+        }
+        if (!p5Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 5', 24, curY + (pGridRowH / 2) - 6, { width: col1W, align: 'center' });
+        }
 
-        row2Photos.forEach((p) => {
-            doc.lineWidth(0.5).rect(p.x, curY, pBoxW, pGridRowH).stroke('#000000');
-            const pObj = (dpr.photos || [])[p.idx];
-            let drawn = false;
-            if (pObj && pObj.url) {
-                drawn = tryEmbedImage(pObj.url, p.x + 4, curY + 4, pBoxW - 8, pGridRowH - 30);
-            }
-            if (!drawn) {
-                doc.fillColor('#334155').font('Helvetica').fontSize(9)
-                    .text(p.label, p.x, curY + (pGridRowH / 2) - 10, { width: pBoxW, align: 'center' });
-            }
-            // Tag at bottom left
-            doc.lineWidth(0.8).rect(p.x + 8, curY + pGridRowH - 22, 58, 14).stroke('#2563eb');
-            doc.fillColor('#1d4ed8').font('Helvetica-Bold').fontSize(7)
-                .text(p.tag, p.x + 10, curY + pGridRowH - 19, { width: 54, align: 'center' });
-        });
+        // Photo 6
+        doc.lineWidth(0.5).rect(24 + col1W, curY, col2W, pGridRowH).stroke('#000000');
+        const p6Url = getPhotoUrl(5);
+        let p6Drawn = false;
+        if (p6Url) {
+            p6Drawn = tryEmbedImage(p6Url, 24 + col1W + 4, curY + 4, col2W - 8, pGridRowH - 12);
+        }
+        if (!p6Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 6', 24 + col1W, curY + (pGridRowH / 2) - 6, { width: col2W, align: 'center' });
+        }
 
-        // Page 2 Footer
-        doc.fillColor('#64748b').font('Helvetica').fontSize(7.5)
-            .text('NKD POWER SOLUTIONS PVT LTD • Site Evidence Photo Register', 20, 572);
-        doc.text('Page 2 of 2', 740, 572, { align: 'right', width: 80 });
+        // Photo 7
+        doc.lineWidth(0.5).rect(24 + col1W + col2W, curY, col3W, pGridRowH).stroke('#000000');
+        const p7Url = getPhotoUrl(6);
+        let p7Drawn = false;
+        if (p7Url) {
+            p7Drawn = tryEmbedImage(p7Url, 24 + col1W + col2W + 4, curY + 4, col3W - 8, pGridRowH - 12);
+        }
+        if (!p7Drawn) {
+            doc.fillColor('#334155').font('Helvetica').fontSize(8.5).text('Photo 7', 24 + col1W + col2W, curY + (pGridRowH / 2) - 6, { width: col3W, align: 'center' });
+        }
 
         doc.end();
     }
