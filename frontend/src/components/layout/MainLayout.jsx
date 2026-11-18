@@ -10,7 +10,7 @@ const MainLayout = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
 
     return (
-        <div className="flex h-screen w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
+        <div className="fixed inset-0 flex h-full w-full overflow-hidden bg-slate-50 text-slate-900 font-sans">
             <Sidebar
                 isOpen={sidebarOpen}
                 toggleSidebar={() => setSidebarOpen(!sidebarOpen)}

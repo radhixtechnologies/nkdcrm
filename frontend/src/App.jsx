@@ -25,6 +25,7 @@ import MobileApp from './pages/MobileApp';
 import DPRReports from './pages/DPRReports';
 import DPRManagementHub from './pages/DPRManagementHub';
 import ProcurementTracker from './pages/ProcurementTracker';
+import AuditSecurityHub from './pages/AuditSecurityHub';
 
 function App() {
   return (
@@ -135,6 +136,15 @@ function App() {
             element={
               <ProtectedRoute requiredRole="SUPER_ADMIN">
                 <UserManagement />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="audit-security"
+            element={
+              <ProtectedRoute requiredRole="SUPER_ADMIN">
+                <AuditSecurityHub />
               </ProtectedRoute>
             }
           />

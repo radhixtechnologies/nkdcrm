@@ -360,14 +360,28 @@ const invoiceService = {
         return res.rows[0];
     },
 
-    async deleteInvoice(invoiceId) {
-        const res = await db.query('DELETE FROM invoices WHERE invoice_id = $1 RETURNING invoice_id', [invoiceId]);
-        if (res.rows.length === 0) {
+    async deleteInvoice(invoiceId, user = null, req = null) {
+        const invRes = await db.query('SELECT * FROM invoices WHERE invoice_id = $1', [invoiceId]);
+        if (invRes.rows.length === 0) {
             const err = new Error('Invoice not found');
             err.status = 404;
             throw err;
         }
-        return { success: true, message: 'Invoice deleted successfully' };
+        const inv = invRes.rows[0];
+
+        // Archive into Recycle Bin & Audit Trail
+        const recycleBinService = require('./recycleBinService');
+        await recycleBinService.moveToBin({
+            module: 'INVOICES',
+            recordId: invoiceId,
+            recordTitle: `Invoice #${inv.invoice_number} (₹${inv.total_amount})`,
+            recordData: inv,
+            user,
+            req
+        }).catch((err) => console.error('Invoice recycle bin archive error:', err));
+
+        await db.query('DELETE FROM invoices WHERE invoice_id = $1', [invoiceId]);
+        return { success: true, message: 'Invoice moved to Recycle Bin successfully' };
     },
 
     async recordInvoicePayment(invoiceId, paymentData) {

@@ -961,6 +961,12 @@ const runExtendedModulesSchema = async () => {
 
     const siteOperationsService = require('./siteOperationsService');
     await siteOperationsService.ensureTables();
+
+    const auditService = require('./auditService');
+    await auditService.ensureAuditTable();
+
+    const recycleBinService = require('./recycleBinService');
+    await recycleBinService.ensureRecycleBinTable();
 };
 
 const createOrUpdateSuperAdmin = async () => {

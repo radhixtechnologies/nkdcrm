@@ -4,12 +4,13 @@ import {
     Building2, Plus, ArrowRight,
     CheckCircle, AlertCircle, RefreshCw,
     ShieldAlert, Receipt, AlertTriangle,
-    ClipboardList, Boxes
+    ClipboardList, Boxes, ShieldCheck, RotateCcw, Activity
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import EmployeeDashboard from './EmployeeDashboard';
 import dashboardService from '../services/dashboardService';
+import auditRecycleService from '../services/auditRecycleService';
 import { extractApiError } from '../services/api';
 import AreaTrendChart from '../components/charts/AreaTrendChart';
 import BarChart from '../components/charts/BarChart';
@@ -240,17 +241,26 @@ const AdminDashboard = () => {
     const { hasPermission } = useAuth();
     const [stats, setStats] = useState(null);
     const [charts, setCharts] = useState(null);
+    const [recentAudit, setRecentAudit] = useState([]);
+    const [auditStats, setAuditStats] = useState({});
+    const [binStats, setBinStats] = useState({});
     const [loading, setLoading] = useState(true);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const [statsRes, chartsRes] = await Promise.all([
+            const [statsRes, chartsRes, recentAuditRes, auditStatsRes, binStatsRes] = await Promise.all([
                 dashboardService.getStats(),
                 dashboardService.getCharts(),
+                auditRecycleService.getRecentAudit(6).catch(() => ({ data: { data: [] } })),
+                auditRecycleService.getAuditStats().catch(() => ({ data: { data: {} } })),
+                auditRecycleService.getRecycleBinStats().catch(() => ({ data: { data: {} } }))
             ]);
             setStats(statsRes.data?.data || null);
             setCharts(chartsRes.data?.data || null);
+            setRecentAudit(recentAuditRes.data?.data || []);
+            setAuditStats(auditStatsRes.data?.data || {});
+            setBinStats(binStatsRes.data?.data || {});
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
             toast.error(extractApiError(error, 'Failed to load live dashboard stats'), { id: 'dashboard-load-err' });
@@ -592,6 +602,101 @@ const AdminDashboard = () => {
                                     </div>
                                 </div>
                             ))
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Live Security Audit Trail & Recycle Bin Widget */}
+            <div className="card-hover-effect rounded-2xl border border-slate-200/90 bg-gradient-to-r from-slate-900 to-indigo-950 p-6 text-white shadow-md">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <ShieldCheck size={22} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-base font-bold text-white">Security & Audit Activity Stream</h3>
+                                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 border border-emerald-400/40">
+                                    Live Trail
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-300">Forensic action logs ("Kisne kya kiya") & 1-Click Recycle Bin restore center</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Link
+                            to="/audit-security"
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs shadow-xs transition-transform active:scale-95"
+                        >
+                            <Activity size={14} className="text-primary-600" />
+                            <span>Audit & Recycle Hub</span>
+                            <ArrowRight size={13} />
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-5">
+                    {/* Left: Quick Stats */}
+                    <div className="space-y-3">
+                        <div className="bg-white/10 rounded-xl p-3.5 border border-white/10 flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] text-slate-300 font-medium uppercase">Today's Recorded Actions</p>
+                                <p className="text-2xl font-black text-white mt-0.5">{auditStats.todayCount ?? 0}</p>
+                            </div>
+                            <Activity size={24} className="text-emerald-400 opacity-80" />
+                        </div>
+
+                        <div className="bg-white/10 rounded-xl p-3.5 border border-white/10 flex items-center justify-between">
+                            <div>
+                                <p className="text-[11px] text-slate-300 font-medium uppercase">Recycle Bin Items (Protected)</p>
+                                <p className="text-2xl font-black text-rose-300 mt-0.5">{binStats.activeTrashCount ?? 0}</p>
+                            </div>
+                            <RotateCcw size={24} className="text-rose-400 opacity-80" />
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 leading-relaxed bg-white/5 p-3 rounded-xl border border-white/5">
+                            💡 <strong>Zero Data Loss Policy:</strong> When any record is deleted, it is safely stored in the Recycle Bin. Super Admin can restore it with 1 click.
+                        </div>
+                    </div>
+
+                    {/* Right: Latest 5 actions stream */}
+                    <div className="lg:col-span-2 bg-slate-950/60 rounded-xl p-4 border border-white/10">
+                        <div className="flex items-center justify-between text-xs text-slate-400 font-bold uppercase tracking-wider mb-3">
+                            <span>Recent Operational Actions</span>
+                            <Link to="/audit-security" className="text-primary-400 hover:underline normal-case text-[11px] font-semibold">
+                                View all ➔
+                            </Link>
+                        </div>
+
+                        {recentAudit.length === 0 ? (
+                            <div className="py-8 text-center text-xs text-slate-400">
+                                No recent activity logged yet.
+                            </div>
+                        ) : (
+                            <div className="space-y-2.5">
+                                {recentAudit.slice(0, 5).map((log) => (
+                                    <div key={log.log_id} className="flex items-center justify-between gap-3 text-xs p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                                                log.action === 'CREATE' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                                                log.action === 'UPDATE' ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30' :
+                                                log.action === 'DELETE' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30' :
+                                                log.action === 'RESTORE' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' :
+                                                'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                                            }`}>
+                                                {log.action}
+                                            </span>
+                                            <span className="font-bold text-slate-200 truncate">{log.user_name || 'System'}</span>
+                                            <span className="text-slate-400 truncate">• {log.module}: {log.record_title || log.record_id}</span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-400 whitespace-nowrap font-mono shrink-0">
+                                            {new Date(log.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </div>
                 </div>

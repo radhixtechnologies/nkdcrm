@@ -21,6 +21,7 @@ import {
     Smartphone,
     ClipboardList,
     Boxes,
+    Activity,
     X
 } from 'lucide-react';
 
@@ -49,6 +50,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
         { title: 'Benefits & Perks', path: '/benefits', icon: <CreditCard size={20} />, moduleCode: 'BENEFITS' },
         { title: 'Reports', path: '/reports', icon: <FileText size={20} />, moduleCode: 'REPORTS' },
         { title: 'User Management', path: '/users', icon: <ShieldCheck size={20} />, moduleCode: 'USERS', superAdminOnly: true },
+        { title: 'Audit & Security Hub', path: '/audit-security', icon: <Activity size={20} />, moduleCode: 'USERS', superAdminOnly: true, badge: 'Live' },
     ];
 
     const filteredMenuItems = menuItems.filter(item => {
@@ -77,7 +79,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
                     fixed inset-y-0 left-0 z-50 h-full border-r border-slate-200 bg-white flex flex-col
                     transition-all duration-300 ease-in-out
                     ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-                    md:translate-x-0 md:relative md:h-full md:shrink-0
+                    md:translate-x-0 md:sticky md:top-0 md:h-full md:shrink-0
                     ${isOpen ? 'w-64' : 'w-64 md:w-20'}
                 `}
             >

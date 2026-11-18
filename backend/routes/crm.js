@@ -853,7 +853,7 @@ router.delete('/employees/:employeeCode', requirePermission('EMPLOYEES', 'can_de
             const byId = await resolveEmployee(code);
             if (byId) code = byId.employee_code;
         }
-        return sendData(res, await employeeService.deleteEmployee(code));
+        return sendData(res, await employeeService.deleteEmployee(code, req.user, req));
     } catch (error) { return sendError(next, error); }
 });
 

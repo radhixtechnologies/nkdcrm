@@ -10,6 +10,7 @@ const upload = require('./config/multer');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const crmRoutes = require('./routes/crm');
+const auditRecycleRoutes = require('./routes/auditRecycle');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -142,12 +143,12 @@ const serveApkHandler = (req, res) => {
     ];
     const apkPath = candidateApks.find(p => fs.existsSync(p));
     if (apkPath) {
-        const stat = fs.statSync(apkPath);
         res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-        res.setHeader('Content-Length', stat.size);
-        res.setHeader('Content-Disposition', 'attachment; filename="NKD-CRM.apk"');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.sendFile(apkPath);
+        return res.download(apkPath, 'NKD-CRM.apk', (err) => {
+            if (err && !res.headersSent) {
+                console.error('APK download error:', err);
+            }
+        });
     } else {
         res.status(404).json({
             success: false,
@@ -162,6 +163,7 @@ app.get('/NKD-CRM.apk', serveApkHandler);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api', auditRecycleRoutes);
 app.use('/api', crmRoutes);
 
 app.use('/api', (req, res) => {

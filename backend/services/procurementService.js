@@ -773,17 +773,31 @@ class ProcurementService {
     }
 
     /**
-     * Delete item
+     * Delete item (Archives to Recycle Bin for 1-Click Restore)
      */
-    async deleteItem(id) {
+    async deleteItem(id, user = null, req = null) {
         await this.ensureTable();
-        const res = await pool.query('DELETE FROM project_procurement_items WHERE item_id = $1 RETURNING item_id', [cleanInt(id)]);
-        if (res.rows.length === 0) {
+        const pRes = await pool.query('SELECT * FROM project_procurement_items WHERE item_id = $1', [cleanInt(id)]);
+        if (pRes.rows.length === 0) {
             const err = new Error('Procurement item not found');
             err.status = 404;
             throw err;
         }
-        return { success: true };
+        const item = pRes.rows[0];
+
+        // Archive into Recycle Bin & Audit Trail
+        const recycleBinService = require('./recycleBinService');
+        await recycleBinService.moveToBin({
+            module: 'PROCUREMENT',
+            recordId: id,
+            recordTitle: `Procurement: ${item.item_description} (${item.vendor_name || 'Vendor'})`,
+            recordData: item,
+            user,
+            req
+        }).catch((err) => console.error('Procurement recycle bin archive error:', err));
+
+        await pool.query('DELETE FROM project_procurement_items WHERE item_id = $1', [cleanInt(id)]);
+        return { success: true, message: 'Item moved to Recycle Bin' };
     }
 
     /**

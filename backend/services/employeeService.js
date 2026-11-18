@@ -6,6 +6,8 @@
 
 const db = require('../config/database');
 const bcrypt = require('bcrypt');
+const auditService = require('./auditService');
+const recycleBinService = require('./recycleBinService');
 
 const cleanDate = (val) => {
     if (val === undefined || val === null) return null;
@@ -242,6 +244,20 @@ class EmployeeService {
             }
 
             delete newEmployee.password_hash;
+
+            // Audit Trail
+            auditService.logAction({
+                action: 'CREATE',
+                module: 'EMPLOYEES',
+                recordId: newEmployee.employee_code,
+                recordTitle: `${newEmployee.full_name || newEmployee.first_name} (${newEmployee.employee_code})`,
+                details: {
+                    designation: newEmployee.designation,
+                    department: newEmployee.department,
+                    date_of_joining: newEmployee.date_of_joining
+                }
+            }).catch(() => {});
+
             return newEmployee;
         } catch (error) {
             if (error.code === '23505' && (error.constraint === 'employees_pkey' || error.constraint === 'employees_employee_code_key')) {
@@ -495,10 +511,24 @@ class EmployeeService {
         }
 
         delete updatedEmp.password_hash;
+
+        // Audit Trail
+        auditService.logAction({
+            action: 'UPDATE',
+            module: 'EMPLOYEES',
+            recordId: employeeCode,
+            recordTitle: `${updatedEmp.full_name || updatedEmp.first_name} (${employeeCode})`,
+            details: {
+                designation: updatedEmp.designation,
+                department: updatedEmp.department,
+                site_id: updatedEmp.site_id
+            }
+        }).catch(() => {});
+
         return updatedEmp;
     }
 
-    async deleteEmployee(employeeCode) {
+    async deleteEmployee(employeeCode, user = null, req = null) {
         const checkQuery = `
             SELECT e.employee_id, r.role_code
             FROM employees e
@@ -536,6 +566,17 @@ class EmployeeService {
 
         const deleted = result.rows[0];
         if (deleted) delete deleted.password_hash;
+
+        // Archive into Recycle Bin & Audit Trail
+        recycleBinService.moveToBin({
+            module: 'EMPLOYEES',
+            recordId: employee.employee_id,
+            recordTitle: `${deleted.full_name || deleted.first_name} (${employeeCode})`,
+            recordData: { ...deleted, employee_code: employeeCode },
+            user,
+            req
+        }).catch((err) => console.error('Recycle bin archive error:', err));
+
         return deleted;
     }
 

@@ -446,17 +446,31 @@ class DprService {
     }
 
     /**
-     * Delete DPR
+     * Delete DPR (Archives to Recycle Bin for 1-Click Restore)
      */
-    async deleteDpr(id) {
+    async deleteDpr(id, user = null, req = null) {
         await this.ensureDprTable();
-        const res = await pool.query('DELETE FROM daily_progress_reports WHERE dpr_id = $1 RETURNING dpr_id', [cleanInt(id)]);
-        if (res.rows.length === 0) {
+        const dprRes = await pool.query('SELECT * FROM daily_progress_reports WHERE dpr_id = $1', [cleanInt(id)]);
+        if (dprRes.rows.length === 0) {
             const err = new Error('DPR record not found');
             err.status = 404;
             throw err;
         }
-        return { success: true };
+        const dpr = dprRes.rows[0];
+
+        // Archive into Recycle Bin & Audit Trail
+        const recycleBinService = require('./recycleBinService');
+        await recycleBinService.moveToBin({
+            module: 'DPR',
+            recordId: id,
+            recordTitle: `DPR Report: ${dpr.report_no || id} (${dpr.report_date ? String(dpr.report_date).slice(0, 10) : ''})`,
+            recordData: dpr,
+            user,
+            req
+        }).catch((err) => console.error('DPR recycle bin archive error:', err));
+
+        await pool.query('DELETE FROM daily_progress_reports WHERE dpr_id = $1', [cleanInt(id)]);
+        return { success: true, message: 'DPR moved to Recycle Bin' };
     }
 
     /**

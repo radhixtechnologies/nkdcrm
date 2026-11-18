@@ -338,20 +338,33 @@ const assetService = {
         return res.rows[0];
     },
 
-    async deleteAsset(id) {
-        const existingRes = await db.query('SELECT quantity_allocated FROM assets WHERE asset_id = $1', [id]);
+    async deleteAsset(id, user = null, req = null) {
+        const existingRes = await db.query('SELECT * FROM assets WHERE asset_id = $1', [id]);
         if (existingRes.rows.length === 0) {
             const err = new Error('Asset not found');
             err.status = 404;
             throw err;
         }
-        if (existingRes.rows[0].quantity_allocated > 0) {
+        const asset = existingRes.rows[0];
+        if (asset.quantity_allocated > 0) {
             const err = new Error('Cannot delete asset that has units currently issued to employees');
             err.status = 400;
             throw err;
         }
+
+        // Archive into Recycle Bin & Audit Trail
+        const recycleBinService = require('./recycleBinService');
+        await recycleBinService.moveToBin({
+            module: 'ASSETS',
+            recordId: id,
+            recordTitle: `Asset: ${asset.asset_name} (${asset.asset_code || id})`,
+            recordData: asset,
+            user,
+            req
+        }).catch((err) => console.error('Asset recycle bin archive error:', err));
+
         await db.query('DELETE FROM assets WHERE asset_id = $1', [id]);
-        return { success: true, message: 'Asset deleted successfully' };
+        return { success: true, message: 'Asset moved to Recycle Bin successfully' };
     }
 };
 

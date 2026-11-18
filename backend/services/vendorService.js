@@ -243,14 +243,28 @@ const vendorService = {
         };
     },
 
-    async deleteVendor(id) {
-        const res = await db.query('DELETE FROM vendors WHERE vendor_id = $1 RETURNING vendor_id', [id]);
-        if (res.rows.length === 0) {
+    async deleteVendor(id, user = null, req = null) {
+        const vRes = await db.query('SELECT * FROM vendors WHERE vendor_id = $1', [id]);
+        if (vRes.rows.length === 0) {
             const err = new Error('Vendor not found');
             err.status = 404;
             throw err;
         }
-        return { success: true, message: 'Vendor deleted successfully' };
+        const v = vRes.rows[0];
+
+        // Archive into Recycle Bin & Audit Trail
+        const recycleBinService = require('./recycleBinService');
+        await recycleBinService.moveToBin({
+            module: 'VENDORS',
+            recordId: id,
+            recordTitle: `Vendor: ${v.vendor_name}`,
+            recordData: v,
+            user,
+            req
+        }).catch((err) => console.error('Vendor recycle bin archive error:', err));
+
+        await db.query('DELETE FROM vendors WHERE vendor_id = $1', [id]);
+        return { success: true, message: 'Vendor moved to Recycle Bin successfully' };
     },
 
     async deleteAgreement(id) {

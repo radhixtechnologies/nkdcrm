@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const { authenticate, requireRole, getJwtSecret } = require('../middleware/auth');
+const auditService = require('../services/auditService');
 
 const router = express.Router();
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
@@ -219,6 +220,23 @@ router.post('/login', async (req, res, next) => {
             employeeId: user.employeeId,
             employeeCode: user.employeeCode
         }, getJwtSecret(), { expiresIn: jwtExpiresIn });
+
+        // Log successful login to Audit Trail
+        auditService.logAction({
+            req,
+            userId: user.userId,
+            userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+            userEmail: user.email,
+            roleCode: user.roleCode,
+            action: 'LOGIN',
+            module: 'AUTH',
+            recordId: String(user.userId),
+            recordTitle: `User Signed In (${user.roleCode})`,
+            details: {
+                role: user.roleName || user.roleCode,
+                employeeCode: user.employeeCode
+            }
+        }).catch(() => {});
 
         return res.json({
             success: true,
