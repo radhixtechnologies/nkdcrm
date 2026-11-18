@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const auditService = require('../services/auditService');
 const recycleBinService = require('../services/recycleBinService');
-const { verifyToken, requireRole } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 
 // All audit & recycle routes require authentication
-router.use(verifyToken);
+router.use(authenticate);
 
 // ==================== AUDIT LOGS ENDPOINTS ==================== //
 

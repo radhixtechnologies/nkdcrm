@@ -195,6 +195,7 @@ const requireAnyPermission = (...checks) => async (req, res, next) => {
 
 module.exports = {
     authenticate,
+    verifyToken: authenticate,
     requireRole,
     requirePermission,
     requireAnyPermission,
