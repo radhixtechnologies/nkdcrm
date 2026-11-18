@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     ShieldCheck, RotateCcw, Trash2, Search, Filter, RefreshCw,
     Calendar, User, AlertTriangle, CheckCircle2, Clock, Eye,
@@ -62,8 +63,19 @@ const AuditSecurityHub = () => {
     const roleCode = (user?.roleCode || user?.role?.roleCode || (typeof user?.role === 'string' ? user.role : '') || '').toUpperCase();
     const isSuperAdmin = roleCode === 'SUPER_ADMIN';
 
+    const [searchParams] = useSearchParams();
+    const tabParam = searchParams.get('tab');
+    const initialTab = tabParam === 'recycle' ? 'recycle' : tabParam === 'policies' ? 'policies' : 'audit';
+
     // Active View Tab: 'audit' | 'recycle' | 'policies'
-    const [activeTab, setActiveTab] = useState('audit');
+    const [activeTab, setActiveTab] = useState(initialTab);
+
+    useEffect(() => {
+        const t = searchParams.get('tab');
+        if (t && ['audit', 'recycle', 'policies'].includes(t)) {
+            setActiveTab(t);
+        }
+    }, [searchParams]);
 
     // Audit State
     const [auditLogs, setAuditLogs] = useState([]);

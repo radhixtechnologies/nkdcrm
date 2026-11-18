@@ -6,11 +6,12 @@ import {
     LogOut,
     Menu,
     Smartphone,
-    ShieldCheck
+    ShieldCheck,
+    Search
 } from 'lucide-react';
 import { getBackendOrigin, getFileUrl } from '../../services/api';
 
-const Header = ({ toggleMobileSidebar }) => {
+const Header = ({ toggleMobileSidebar, onOpenSearch }) => {
     const { user, logout, getRoleCode } = useAuth();
     const navigate = useNavigate();
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -71,7 +72,34 @@ const Header = ({ toggleMobileSidebar }) => {
             </div>
 
             {/* Right Side Actions */}
-            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                {/* Desktop Global Search Omnibar */}
+                <button
+                    type="button"
+                    onClick={onOpenSearch}
+                    className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-500 hover:text-slate-800 border border-slate-200 text-xs transition-all duration-200 w-44 lg:w-60 xl:w-72 cursor-pointer shadow-2xs group"
+                    title="Search entire CRM: modules, reports, excel sheet, staff, invoices (Ctrl + K)"
+                >
+                    <Search size={14} className="text-slate-400 group-hover:text-primary-600 transition-colors shrink-0" />
+                    <span className="flex-1 text-left truncate text-slate-400 group-hover:text-slate-600 font-medium text-[11px]">
+                        Search modules & functions...
+                    </span>
+                    <kbd className="hidden lg:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-mono font-bold bg-white border border-slate-300 rounded text-slate-500 shadow-2xs">
+                        Ctrl+K
+                    </kbd>
+                </button>
+
+                {/* Mobile Search Icon Button */}
+                <button
+                    type="button"
+                    onClick={onOpenSearch}
+                    className="md:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                    aria-label="Search modules and functions"
+                    title="Search entire CRM (Ctrl + K)"
+                >
+                    <Search size={18} />
+                </button>
+
                 {/* Security & Recycle Bin Direct Access (Admins & Super Admins) */}
                 {isAdminOrSuperAdmin && (
                     <Link
@@ -141,6 +169,22 @@ const Header = ({ toggleMobileSidebar }) => {
                             >
                                 <User size={15} className="text-slate-400" /> My Profile
                             </Link>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setDropdownOpen(false);
+                                    if (onOpenSearch) onOpenSearch();
+                                }}
+                                className="w-[calc(100%-0.5rem)] flex items-center justify-between px-4 py-2 text-xs font-semibold text-slate-700 hover:text-primary-600 hover:bg-primary-50/80 transition-colors rounded-lg mx-1 text-left cursor-pointer"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <Search size={15} className="text-slate-400" /> Global Search
+                                </div>
+                                <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-slate-100 border border-slate-200 rounded text-slate-500">
+                                    Ctrl+K
+                                </kbd>
+                            </button>
 
                             {isAdminOrSuperAdmin && (
                                 <Link
