@@ -143,7 +143,7 @@ function App() {
           <Route
             path="audit-security"
             element={
-              <ProtectedRoute requiredRole="SUPER_ADMIN">
+              <ProtectedRoute requiredRole={['SUPER_ADMIN', 'ADMIN', 'ADMINISTRATOR']}>
                 <AuditSecurityHub />
               </ProtectedRoute>
             }

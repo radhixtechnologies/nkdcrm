@@ -5,7 +5,8 @@ import {
     User,
     LogOut,
     Menu,
-    Smartphone
+    Smartphone,
+    ShieldCheck
 } from 'lucide-react';
 import { getBackendOrigin, getFileUrl } from '../../services/api';
 
@@ -14,6 +15,9 @@ const Header = ({ toggleMobileSidebar }) => {
     const navigate = useNavigate();
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const dropdownRef = useRef(null);
+
+    const roleCode = (user?.roleCode || user?.role?.roleCode || (typeof user?.role === 'string' ? user.role : '') || getRoleCode() || '').toUpperCase();
+    const isAdminOrSuperAdmin = roleCode === 'SUPER_ADMIN' || roleCode === 'ADMIN' || roleCode === 'ADMINISTRATOR';
 
     const apkUrl = `${getBackendOrigin()}/api/download/apk`;
     const roleLabel = user?.role?.roleName || (typeof user?.role === 'string' ? user.role : '') || user?.roleName || getRoleCode() || 'User';
@@ -68,6 +72,19 @@ const Header = ({ toggleMobileSidebar }) => {
 
             {/* Right Side Actions */}
             <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+                {/* Security & Recycle Bin Direct Access (Admins & Super Admins) */}
+                {isAdminOrSuperAdmin && (
+                    <Link
+                        to="/audit-security"
+                        className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all duration-200 active:scale-95 shadow-2xs border border-slate-700/60"
+                        title="Audit Logs, Forensic Trails & 1-Click Recycle Bin"
+                    >
+                        <ShieldCheck size={14} className="text-emerald-400" />
+                        <span>Security & Recycle</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                    </Link>
+                )}
+
                 {/* Download Android APK Direct Action Button */}
                 <a
                     href={apkUrl}
@@ -124,6 +141,16 @@ const Header = ({ toggleMobileSidebar }) => {
                             >
                                 <User size={15} className="text-slate-400" /> My Profile
                             </Link>
+
+                            {isAdminOrSuperAdmin && (
+                                <Link
+                                    to="/audit-security"
+                                    className="flex items-center gap-3 px-4 py-2 text-xs font-semibold text-slate-700 hover:text-primary-600 hover:bg-primary-50/80 transition-colors rounded-lg mx-1"
+                                    onClick={() => setDropdownOpen(false)}
+                                >
+                                    <ShieldCheck size={15} className="text-emerald-500" /> Audit & Security Hub
+                                </Link>
+                            )}
 
                             <a
                                 href={apkUrl}

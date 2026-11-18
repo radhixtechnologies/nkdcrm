@@ -30,6 +30,7 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
 
     const roleCode = (user?.roleCode || user?.role?.roleCode || (typeof user?.role === 'string' ? user.role : '') || '').toUpperCase();
     const isSuperAdmin = roleCode === 'SUPER_ADMIN';
+    const isAdminOrSuperAdmin = isSuperAdmin || roleCode === 'ADMIN' || roleCode === 'ADMINISTRATOR';
 
     const menuItems = [
         { title: 'Dashboard', path: '/dashboard', icon: <LayoutDashboard size={20} />, moduleCode: 'DASHBOARD' },
@@ -50,12 +51,13 @@ const Sidebar = ({ isOpen, toggleSidebar, mobileOpen, closeMobileSidebar }) => {
         { title: 'Benefits & Perks', path: '/benefits', icon: <CreditCard size={20} />, moduleCode: 'BENEFITS' },
         { title: 'Reports', path: '/reports', icon: <FileText size={20} />, moduleCode: 'REPORTS' },
         { title: 'User Management', path: '/users', icon: <ShieldCheck size={20} />, moduleCode: 'USERS', superAdminOnly: true },
-        { title: 'Audit & Security Hub', path: '/audit-security', icon: <Activity size={20} />, moduleCode: 'USERS', superAdminOnly: true, badge: 'Live' },
+        { title: 'Audit & Security Hub', path: '/audit-security', icon: <Activity size={20} />, moduleCode: 'USERS', adminOnly: true, badge: 'Live' },
     ];
 
     const filteredMenuItems = menuItems.filter(item => {
         if (isSuperAdmin) return true;
-        if (item.superAdminOnly) return false;
+        if (item.superAdminOnly && !isSuperAdmin) return false;
+        if (item.adminOnly && !isAdminOrSuperAdmin) return false;
 
         // Dynamic permission check based on moduleCode
         if (item.moduleCode && typeof hasPermission === 'function') {
