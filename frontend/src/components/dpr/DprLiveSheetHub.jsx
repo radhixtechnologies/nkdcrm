@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast';
 import dprService from '../../services/dprService';
 import { extractApiError } from '../../services/api';
+import DprClientExcelSheet from './DprClientExcelSheet';
 
 // Excel column letter generator (0 -> A, 1 -> B, 25 -> Z, 26 -> AA)
 const getExcelColumnLetter = (colIdx) => {
@@ -127,8 +128,8 @@ const getStatusBadgeClass = (status) => {
 };
 
 const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) => {
-    // Mode: 'excel' (In-App Interactive Spreadsheet) or 'google' (Google Sheets Embed)
-    const [sheetMode, setSheetMode] = useState('excel');
+    // Mode: 'client_dpr' (Client Official GTPL LUMINA Format), 'excel' (In-App Interactive Spreadsheet) or 'google' (Google Sheets Embed)
+    const [sheetMode, setSheetMode] = useState('client_dpr');
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -509,6 +510,19 @@ const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) =
                         <div className="bg-slate-800/90 p-1 rounded-xl border border-slate-700/80 flex items-center">
                             <button
                                 type="button"
+                                onClick={() => setSheetMode('client_dpr')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                    sheetMode === 'client_dpr'
+                                        ? 'bg-emerald-600 text-white shadow-sm'
+                                        : 'text-slate-300 hover:text-white'
+                                }`}
+                                title="Client Official GTPL LUMINA DPR Spreadsheet"
+                            >
+                                <FileSpreadsheet size={13} />
+                                Client DPR Sheet (GTPL LUMINA)
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => setSheetMode('excel')}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                                     sheetMode === 'excel'
@@ -516,8 +530,8 @@ const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) =
                                         : 'text-slate-300 hover:text-white'
                                 }`}
                             >
-                                <FileSpreadsheet size={13} />
-                                In-App Excel Sheet
+                                <Table size={13} />
+                                Custom Work Sheet
                             </button>
                             <button
                                 type="button"
@@ -594,6 +608,17 @@ const DprLiveSheetHub = ({ sites = [], selectedSiteId = 'ALL', onSiteChange }) =
                     </div>
                 )}
             </div>
+
+            {/* ======================================================== */}
+            {/* MODE 0: CLIENT OFFICIAL GTPL LUMINA DPR SPREADSHEET       */}
+            {/* ======================================================== */}
+            {sheetMode === 'client_dpr' && (
+                <DprClientExcelSheet
+                    sites={sites}
+                    selectedSiteId={currentSiteId}
+                    onSiteChange={onSiteChange}
+                />
+            )}
 
             {/* ======================================================== */}
             {/* MODE 1: IN-APP INTERACTIVE EXCEL SPREADSHEET             */}
